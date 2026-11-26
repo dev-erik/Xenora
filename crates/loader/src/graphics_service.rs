@@ -103,15 +103,15 @@ pub fn graphics_call_v1(
     let opcode = words[1];
     let used = match opcode {
         1 => 0,
-        2 | 3 | 12 | 26 | 27 | 31 | 32 | 33 | 36 | 38 | 47 => 1,
+        2 | 3 | 12 | 26 | 27 | 31 | 32 | 33 | 36 | 38 | 47 | 60 => 1,
         4 | 11 | 14 | 25 | 28 | 30 | 34 | 39 | 48 => 2,
         5 | 7 | 15 | 17 | 29 | 41 | 42 | 56 => 3,
         9 | 10 | 13 | 16 | 18 | 19 | 20 | 35 | 46 | 49 => 4,
         6 | 8 | 21 | 23 | 37 | 45 => 5,
-        24 | 40 | 43 | 51 | 52 | 55 => 6,
+        24 | 40 | 43 | 51 | 52 | 55 | 59 => 6,
         44 => 11,
         50 | 54 => 13,
-        53 => 7,
+        53 | 57 | 58 => 7,
         22 => 12,
         _ => return Ok(STATUS_INVALID_CALL),
     };
@@ -130,7 +130,8 @@ pub fn graphics_call_v1(
         || opcode == 51
         || opcode == 52
         || opcode == 53
-        || opcode == 55)
+        || opcode == 55
+        || (57..=59).contains(&opcode))
         && graphics.guest_object_count() >= MAX_GUEST_OBJECTS
     {
         return Ok(STATUS_GRAPHICS_ERROR);
@@ -456,6 +457,36 @@ pub fn graphics_call_v1(
                     (args.size(11)?, args.size(12)?),
                 )?;
             }
+            57 | 58 => {
+                let desc = crate::graphics::GraphicsArrayRangeViewDesc {
+                    base_slice: args.u32(2)?,
+                    slice_count: args.u32(3)?,
+                    base_mip: args.u32(4)?,
+                    mip_count: args.u32(5)?,
+                    format: view_format(args.0[6])?,
+                };
+                value = if opcode == 57 {
+                    graphics.create_array_range_view(args.handle(0), args.handle(1), desc)?
+                } else {
+                    graphics.create_child_array_range_view(args.handle(0), args.handle(1), desc)?
+                }
+                .to_u64();
+            }
+            59 => {
+                value = graphics
+                    .create_array_range_slice_view(
+                        args.handle(0),
+                        args.handle(1),
+                        GraphicsArraySliceViewDesc {
+                            slice: args.u32(2)?,
+                            base_mip: args.u32(3)?,
+                            mip_count: args.u32(4)?,
+                            format: view_format(args.0[5])?,
+                        },
+                    )?
+                    .to_u64();
+            }
+            60 => graphics.destroy_array_range_view(args.handle(0))?,
             52 => {
                 let format = view_format(args.0[5])?;
                 value = graphics

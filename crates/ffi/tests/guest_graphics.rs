@@ -5422,6 +5422,16 @@ fn guest_array_transfer_pair(direction: u8) {
 #[test]
 #[cfg_attr(not(feature = "gpu-tests"), ignore = "requires native Metal")]
 fn original_guest_array_views_slices_nested_mips_snapshots_and_retirement() {
+    guest_array_view_snapshots(false);
+}
+
+#[test]
+#[cfg_attr(not(feature = "gpu-tests"), ignore = "requires native Metal")]
+fn original_guest_array_ranges_nested_snapshots_and_retirement() {
+    guest_array_view_snapshots(true);
+}
+
+fn guest_array_view_snapshots(ranges: bool) {
     for layers in [1u64, 2] {
         for (asynchronous, queued) in [(false, false), (true, false), (true, true)] {
             let mut guest = GuestScript::new();
@@ -5432,11 +5442,30 @@ fn original_guest_array_views_slices_nested_mips_snapshots_and_retirement() {
             let texture = guest.handle(51, &[H(device), I(5), I(3), I(3), I(layers), I(COPY_DEST)]);
             // Opcode45 order matches37: device,parent,relative base,count,format.
             // An sRGB parent does not silently override its linear child's format.
-            let parent = guest.handle(
-                52,
-                &[H(device), H(texture), I(layers - 1), I(1), I(2), I(1)],
-            );
-            let first_slice = guest.handle(52, &[H(device), H(texture), I(0), I(1), I(1), I(0)]);
+            let (parent, first_slice) = if ranges {
+                let range = guest.handle(
+                    57,
+                    &[H(device), H(texture), I(0), I(layers), I(0), I(3), I(1)],
+                );
+                let child = guest.handle(
+                    58,
+                    &[H(device), H(range), I(layers - 1), I(1), I(1), I(2), I(1)],
+                );
+                let parent = guest.handle(59, &[H(device), H(child), I(0), I(0), I(2), I(1)]);
+                let first = guest.handle(59, &[H(device), H(range), I(0), I(1), I(1), I(0)]);
+                // Range parents are descriptors, not lifetime dependencies of children.
+                guest.ok(60, &[H(range)]);
+                guest.ok(60, &[H(child)]);
+                (parent, first)
+            } else {
+                (
+                    guest.handle(
+                        52,
+                        &[H(device), H(texture), I(layers - 1), I(1), I(2), I(1)],
+                    ),
+                    guest.handle(52, &[H(device), H(texture), I(0), I(1), I(1), I(0)]),
+                )
+            };
             let linear = guest.handle(45, &[H(device), H(parent), I(0), I(2), I(0)]);
             let srgb = guest.handle(45, &[H(device), H(parent), I(0), I(2), I(1)]);
             let last = guest.handle(45, &[H(device), H(linear), I(1), I(1), I(0)]);
@@ -5592,6 +5621,16 @@ fn original_guest_array_views_slices_nested_mips_snapshots_and_retirement() {
 #[test]
 #[cfg_attr(not(feature = "gpu-tests"), ignore = "requires native Metal")]
 fn original_guest_array_views_pending_copy_sample_and_retirement() {
+    guest_array_view_pending(false);
+}
+
+#[test]
+#[cfg_attr(not(feature = "gpu-tests"), ignore = "requires native Metal")]
+fn original_guest_array_ranges_pending_copy_sample_and_retirement() {
+    guest_array_view_pending(true);
+}
+
+fn guest_array_view_pending(ranges: bool) {
     for producer_first in [false, true] {
         let mut guest = GuestScript::new();
         let device = guest.handle(1, &[]);
@@ -5607,9 +5646,19 @@ fn original_guest_array_views_pending_copy_sample_and_retirement() {
         guest.ok(9, &[H(root), I(0), I(poison), I(144)]);
         let bytes = guest.bytes(&[17, 53, 127, 193, 29, 71, 131, 197]);
         guest.ok(9, &[H(source), I(0), I(bytes), I(8)]);
-        let parent = guest.handle(52, &[H(device), H(root), I(1), I(0), I(3), I(0)]);
-        let view = guest.handle(45, &[H(device), H(parent), I(1), I(1), I(0)]);
-        guest.ok(38, &[H(parent)]);
+        let view = if ranges {
+            let range = guest.handle(57, &[H(device), H(root), I(1), I(1), I(0), I(3), I(0)]);
+            let child = guest.handle(58, &[H(device), H(range), I(0), I(1), I(1), I(1), I(0)]);
+            guest.ok(60, &[H(range)]);
+            let view = guest.handle(59, &[H(device), H(child), I(0), I(0), I(1), I(0)]);
+            guest.ok(60, &[H(child)]);
+            view
+        } else {
+            let parent = guest.handle(52, &[H(device), H(root), I(1), I(0), I(3), I(0)]);
+            let view = guest.handle(45, &[H(device), H(parent), I(1), I(1), I(0)]);
+            guest.ok(38, &[H(parent)]);
+            view
+        };
         guest.barrier(lists[0], source, COPY_DEST, COPY_SOURCE);
         guest.ok(
             50,

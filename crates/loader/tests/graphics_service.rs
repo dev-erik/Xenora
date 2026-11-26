@@ -90,7 +90,7 @@ fn cpu_invalid_envelopes_and_reserved_words_preserve_result() {
         (0, 0),
         (0, 2),
         (1, 0),
-        (1, 57), // First unassigned opcode after typed color targets.
+        (1, 61), // First unassigned opcode after array range views.
         (1, u64::MAX),
         (2, 1),
         (15, 1),

@@ -105,6 +105,10 @@ loader ResourceStates bits. Unsupported formats and layouts fail.
 | 54 | CopyTypedImage | same thirteen arguments as opcode50 | 0 |
 | 55 | CreateTypedPipeline | device, vertex address, vertex byte count, pixel address, pixel byte count, type bits | pipeline handle |
 | 56 | TypedColorTargets | list, count, record address | 0 |
+| 57 | CreateArrayRangeView | device, backing, base slice u32, slice count u32, base mip u32, mip count u32, view format | range handle |
+| 58 | CreateChildArrayRangeView | device, parent range, relative base slice u32, slice count u32, relative base mip u32, mip count u32, view format | range handle |
+| 59 | CreateArrayRangeSliceView | device, parent range, relative slice u32, relative base mip u32, mip count u32, view format | 2D view handle |
+| 60 | DestroyArrayRangeView | range handle | 0 |
 
 
 CreatePipeline reads nonempty, four-byte-aligned shader blobs of at most 1024 bytes
@@ -769,3 +773,30 @@ and byte count before publishing any resource.
 Only RGBA8 in slot0 updates the RGBA presentation image; other packed outputs remain
 available through resource readback and execution results. This does not perform
 implicit float, integer, channel-order or color-space conversion.
+
+## Array-range descriptors and selected 2D children
+
+Opcode57 selects nonempty contiguous slice and mip intervals from an explicit
+array resource. One-layer arrays remain arrays. Both intervals use checked bounds;
+zero counts, overflow, incompatible storage families and ordinary 2D roots reject.
+View-format codes are the same as opcode52. A valid device handle is required;
+resources retain the existing context-wide handle model.
+
+Opcode58 selects intervals relative to its parent range. Opcode59 selects one
+relative slice and a relative mip interval as an ordinary read-only 2D view usable
+by opcode39 or48. Nested offsets normalize directly to the original backing.
+Children may select a compatible linear or sRGB interpretation independently.
+For example, a root range starting at slice1/mip1, a child starting at relative
+slice1/mip1, and a selected view at relative slice1/mip1 address root slice3/mip3.
+
+Range handles are descriptor objects, not shader-bindable array textures or writable
+attachments. Passing a range directly as a sampled 2D view rejects. Shader-selected
+array indexing and writable subresource views remain unimplemented.
+
+Opcode60 destroys only a range handle. Children retain root identity independently
+and survive parent destruction. A live range prevents backing destruction; after
+selection the existing recorded/pending 2D-view lifetime rules also apply. Ranges
+count against the shared4096-object cap, without separately charging backing bytes.
+Invalid descriptors and result spans reject before allocation or destruction.
+Whole-backing state and dependency rules remain unchanged: range selection does not
+yet permit concurrent overlapping or independent-subresource writes.

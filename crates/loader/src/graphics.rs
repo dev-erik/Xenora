@@ -519,6 +519,21 @@ pub struct GraphicsArraySliceViewDesc {
     pub format: GraphicsTextureViewFormat,
 }
 
+/// A read-only array range. Select a slice child before binding as texture2D.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct GraphicsArrayRangeViewDesc {
+    pub base_slice: u32,
+    pub slice_count: u32,
+    pub base_mip: u32,
+    pub mip_count: u32,
+    pub format: GraphicsTextureViewFormat,
+}
+
+struct GraphicsArrayRangeView {
+    backing: GraphicsHandle,
+    desc: GraphicsArrayRangeViewDesc,
+}
+
 struct GraphicsTextureView {
     slice: Option<u32>,
     backing: GraphicsHandle,
@@ -1266,6 +1281,7 @@ pub struct GraphicsContext {
     graph_backend: bool,
     geometry_backend: bool,
     texture_views: HashMap<GraphicsHandle, GraphicsTextureView>,
+    array_range_views: HashMap<GraphicsHandle, GraphicsArrayRangeView>,
     samplers: HashMap<GraphicsHandle, xenora_texture::SamplerDesc>,
     retired_views: HashMap<GraphicsHandle, GraphicsTextureView>,
     queued_backend: Option<Arc<QueuedRenderer>>,
@@ -1351,6 +1367,7 @@ impl GraphicsContext {
             graph_backend: false,
             geometry_backend: false,
             texture_views: HashMap::new(),
+            array_range_views: HashMap::new(),
             samplers: HashMap::new(),
             retired_views: HashMap::new(),
             queued_backend: None,
@@ -3782,6 +3799,7 @@ impl GraphicsContext {
             + self.queued.len()
             + self.samplers.len()
             + self.texture_views.len()
+            + self.array_range_views.len()
             + self.retired_views.len()
     }
 
@@ -4221,6 +4239,134 @@ impl GraphicsContext {
         Ok(handle)
     }
 
+    /// Create a descriptor-only range over an explicit array backing. Range handles
+    /// cannot bind as texture2D; a selected slice child must be created first.
+    pub fn create_array_range_view(
+        &mut self,
+        device: GraphicsHandle,
+        backing: GraphicsHandle,
+        desc: GraphicsArrayRangeViewDesc,
+    ) -> Result<GraphicsHandle, GraphicsError> {
+        if !self.devices.contains_key(&device) {
+            return Err(GraphicsError::InvalidDeviceHandle);
+        }
+        if self.guest_object_count() >= crate::graphics_service::MAX_GUEST_OBJECTS {
+            return Err(GraphicsError::ResourceLifetimeViolation);
+        }
+        let texture = self.sampled_resource_desc(backing)?;
+        let layers = texture
+            .array_layers
+            .ok_or(GraphicsError::InvalidDescriptor)?;
+        if texture.format != desc.format.storage_format()
+            || desc.slice_count == 0
+            || desc.mip_count == 0
+            || desc
+                .base_slice
+                .checked_add(desc.slice_count)
+                .is_none_or(|end| end > layers)
+            || desc
+                .base_mip
+                .checked_add(desc.mip_count)
+                .is_none_or(|end| end > texture.mip_levels)
+        {
+            return Err(GraphicsError::InvalidDescriptor);
+        }
+        let handle = self.allocate_handle();
+        self.array_range_views
+            .insert(handle, GraphicsArrayRangeView { backing, desc });
+        Ok(handle)
+    }
+
+    /// Normalize a parent-relative range directly to its root. The child owns an
+    /// independent root reference and remains valid after parent destruction.
+    pub fn create_child_array_range_view(
+        &mut self,
+        device: GraphicsHandle,
+        parent: GraphicsHandle,
+        relative_desc: GraphicsArrayRangeViewDesc,
+    ) -> Result<GraphicsHandle, GraphicsError> {
+        let parent = self
+            .array_range_views
+            .get(&parent)
+            .ok_or(GraphicsError::InvalidResourceHandle)?;
+        if relative_desc.slice_count == 0
+            || relative_desc.mip_count == 0
+            || relative_desc
+                .base_slice
+                .checked_add(relative_desc.slice_count)
+                .is_none_or(|end| end > parent.desc.slice_count)
+            || relative_desc
+                .base_mip
+                .checked_add(relative_desc.mip_count)
+                .is_none_or(|end| end > parent.desc.mip_count)
+        {
+            return Err(GraphicsError::InvalidDescriptor);
+        }
+        let desc = GraphicsArrayRangeViewDesc {
+            base_slice: parent
+                .desc
+                .base_slice
+                .checked_add(relative_desc.base_slice)
+                .ok_or(GraphicsError::InvalidDescriptor)?,
+            base_mip: parent
+                .desc
+                .base_mip
+                .checked_add(relative_desc.base_mip)
+                .ok_or(GraphicsError::InvalidDescriptor)?,
+            ..relative_desc
+        };
+        self.create_array_range_view(device, parent.backing, desc)
+    }
+
+    /// Select one parent-relative slice and mip range as an ordinary bindable 2D
+    /// view, retaining the full root backing without copying any subresources.
+    pub fn create_array_range_slice_view(
+        &mut self,
+        device: GraphicsHandle,
+        parent: GraphicsHandle,
+        relative_desc: GraphicsArraySliceViewDesc,
+    ) -> Result<GraphicsHandle, GraphicsError> {
+        let parent = self
+            .array_range_views
+            .get(&parent)
+            .ok_or(GraphicsError::InvalidResourceHandle)?;
+        if relative_desc.slice >= parent.desc.slice_count
+            || relative_desc.mip_count == 0
+            || relative_desc
+                .base_mip
+                .checked_add(relative_desc.mip_count)
+                .is_none_or(|end| end > parent.desc.mip_count)
+        {
+            return Err(GraphicsError::InvalidDescriptor);
+        }
+        let desc = GraphicsArraySliceViewDesc {
+            slice: parent
+                .desc
+                .base_slice
+                .checked_add(relative_desc.slice)
+                .ok_or(GraphicsError::InvalidDescriptor)?,
+            base_mip: parent
+                .desc
+                .base_mip
+                .checked_add(relative_desc.base_mip)
+                .ok_or(GraphicsError::InvalidDescriptor)?,
+            ..relative_desc
+        };
+        self.create_array_slice_view(device, parent.backing, desc)
+    }
+
+    /// Ranges are never recorded by commands. Children independently retain the
+    /// root, so destroying a range does not require retiring or traversing children.
+    pub fn destroy_array_range_view(
+        &mut self,
+        handle: GraphicsHandle,
+    ) -> Result<(), GraphicsError> {
+        self.array_range_views
+            .remove(&handle)
+            .ok_or(GraphicsError::InvalidResourceHandle)?;
+        Ok(())
+    }
+
     /// Select one explicit array slice without copying any backing bytes.
     pub fn create_array_slice_view(
         &mut self,
@@ -4595,6 +4741,10 @@ impl GraphicsContext {
             .texture_views
             .values()
             .any(|view| view.backing == resource)
+            || self
+                .array_range_views
+                .values()
+                .any(|view| view.backing == resource)
         {
             return Err(GraphicsError::ResourceLifetimeViolation);
         }

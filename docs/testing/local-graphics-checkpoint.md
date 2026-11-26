@@ -4,6 +4,7 @@ This summary records the accumulated graphics checkpoint and the subsequent
 nested-view, compute-cache, sampler-handle, guest-copy, R8, mip/slice, array-view and typed-format increments on 25 November 2026. It is not release certification or a
 claim of Xbox hardware equivalence. Supporting raw logs, mutation records and
 source manifests remain local and are not distributed with the repository.
+The array-range descriptor increment below was validated on 26 November 2026.
 
 ## One-command validation
 
@@ -14,6 +15,35 @@ failure, and saves each step's output under `artifacts/validation-*`. A successf
 run ends with `PASS`. Quick mode also rejects filters that select no passing tests.
 Use `--help` for prerequisites. These tests render offscreen and compare pixels;
 they do not open an application window. Avoid other GPU test runs at the same time.
+
+## Array-range descriptor checkpoint
+
+[Array-range descriptors](../graphics-call-v1.md#array-range-descriptors-and-selected-2d-children)
+select and nest layer/mip intervals. Selected 2D children normalize to the root and
+remain valid after parent destruction. Ranges retain their backing and share the
+existing object budget. They cannot bind directly as shader arrays or attachments;
+writable views, shader-selected layers and range-aware write hazards remain open.
+
+Quick validation passed **168 tests across44 steps**, with zero failures or ignored tests.
+
+Six new CPU tests cover canonical offsets, bounds/overflow, one-layer arrays,
+ten storage families, parent/root lifetimes, budget recovery and invalid-result-span
+atomicity. Two new original guest cases verify literal slice/mip pixels, linear/sRGB
+interpretations, updated snapshots across all three adapters, and pending copied
+versions with parent/resource retirement in both collection orders.
+
+All nine gates passed: **907 passed, zero failed, 109 ignored** in the workspace,
+and **405 passed, zero failed, one manual case ignored** in the GPU script. GPU
+script totals include overlapping CPU tests and must not be added as unique GPU
+cases. The guest binary was verified as ARM64 with system Metal on the same M4 Max
+host; Metal API/shader validation was enabled.
+
+Two deliberate production mutations were detected and restored byte-for-byte:
+omitting the relative slice changed the CPU canonical selection from `(3,3,1)` to
+`(2,3,1)`; omitting a nested relative mip produced the wrong mip's decoy pixels in
+the native guest test. Later formatting and the final gates cover the final source.
+These results establish this descriptor increment, not complete resource-view support
+or Xbox hardware equivalence. Logs and manifests use `artifacts/array-ranges-*`.
 
 ## Typed formats and resource roles checkpoint
 

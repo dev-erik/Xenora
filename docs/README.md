@@ -16,6 +16,8 @@ either path. The [changelog](../CHANGELOG.md) records notable changes.
 
 ## Native Metal graphics
 
+- [Array-range descriptors](graphics-call-v1.md#array-range-descriptors-and-selected-2d-children) — Nested layer/mip ranges and independently retained 2D children; [implementation plan](superpowers/plans/2026-11-26-array-range-views.md).
+
 - [Typed resource formats and roles](resource-formats.md) — Finite storage, transfer, sampling and attachment matrix, representation rules and exclusions.
 
 - [Multi-node queued graphs](interfaces.md#opt-in-multi-node-queued-graphs) — Bounded transitive dependencies, exact resource versions and legacy backend limits.

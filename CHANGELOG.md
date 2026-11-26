@@ -18,6 +18,11 @@ remains unsupported.
 - Extended the read-only RDNA2 planning CLI (`python3 -m qa rdna2`) with family/status filters, compact summaries, Codex-ready manifests under `artifacts/`, active-claim exclusion (family claims exclude those families; path-only claims block overlapping permitted files), coverage reconcile against `semantic_coverage` without inflating counts, and inventory diffs. Covered by `tests/qa/test_rdna2_plan.py`; planning only, no GPU production edits.
 
 ### Added
+- Immutable array-range descriptors and nested selections through guest opcodes57–60.
+  Selected 2D children compose relative slice/mip offsets, retain the root backing
+  independently of parent lifetime, and reuse exact queued-version sampling.
+  Bounds, storage families and the shared object cap are validated before mutation.
+  These descriptor ranges do not yet provide shader-indexed arrays or writable views.
 - Explicit typed texture transfers, sampling and attachment roles through guest
   opcodes53–56. The finite matrix covers R8, RG8, RGBA8, BGRA8, RGBA16Float,
   R32Float, R32Uint, Depth32Float and runtime-supported BC1/BC3. Copies preserve
