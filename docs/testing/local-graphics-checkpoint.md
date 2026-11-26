@@ -16,6 +16,37 @@ run ends with `PASS`. Quick mode also rejects filters that select no passing tes
 Use `--help` for prerequisites. These tests render offscreen and compare pixels;
 they do not open an application window. Avoid other GPU test runs at the same time.
 
+## Explicit range-composition checkpoint
+
+Opcode65 separates semantic inputs from the destination used to preserve newer,
+disjoint writes. Load and sampling use the requested ancestor; copy-back starts
+from an explicitly authorized descendant. Checks cover every intervening write,
+selected slice/mip overlap, whole-root barriers and exact backing layout.
+Published identities survive receipt release, so losing a newer capability cannot
+silently authorize replacing its contents with an older root. Retired public roots
+remain in failure ordering without blocking unrelated successor preparation.
+
+All nine repository gates passed: workspace **921 passed, zero failed, 117 ignored**;
+GPU script **417 passed, zero failed, one manual case ignored**. Totals overlap and
+are not unique GPU counts. Focused evidence includes **8 CPU tests**, **5 private
+native tests** (four existing transaction tests plus role separation), and **1 original
+guest composition test** exercising both collection orders. The guest preserves B's
+slice0 while reading sampled data from A and loading A's slice1. CPU tests cover
+transitive overlap, distinct mips, released/retained publication, unrelated ancestry,
+failed ancestry with a cached successful result and uploaded-root retirement.
+
+The full run caught a legacy second-frame Load regression in generation handling;
+it was fixed without changing the legacy test. The final full run and focused legacy
+case passed. Two production mutations compiled and failed assertions: Load from the
+composition base, and omitted published-base admission validation. SHA-256 hashes
+confirmed exact restoration; restored CPU8 and private native5 tests passed.
+Logs: `artifacts/validation-full.mWnUdr`, `artifacts/range-composition-*`, and
+`artifacts/range-mutation-*`. CPU failure injection is not GPU fault evidence, and
+naturally ordered descendant waits do not establish independent producer gating.
+
+Shader-indexed array sampling and shader storage-write views remain open in S2.4.
+Composition is serialized; independent subresource concurrency remains S2.7 work.
+
 ## Guest selected attachment transaction checkpoint
 
 Writable guest color/depth selections now compose into complete immutable texture

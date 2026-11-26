@@ -90,6 +90,9 @@ run_tests() {
 }
 printf 'Running %s validation. Logs: %s\n' "$mode" "$log_dir"
 if [[ "$mode" == quick ]]; then
+    run_tests attachment-composition-loader cargo test --locked -p xenora-loader --test attachment_composition -- --nocapture
+    run_tests attachment-composition-boundaries cargo test --locked -p xenora-loader --test attachment_composition_boundaries -- --nocapture
+    run_tests attachment-composition-guest cargo test --locked -p xenora-ffi --features gpu-tests --test guest_graphics original_guest_attachment_composition_ -- --nocapture --test-threads=1
     run_tests attachment-transactions-loader cargo test --locked -p xenora-loader --test attachment_transactions -- --nocapture
     run_tests attachment-transactions-failure cargo test --locked -p xenora-ffi --features gpu-tests --lib queued_attachment_transaction_ -- --nocapture --test-threads=1
     run_tests attachment-transactions-guest cargo test --locked -p xenora-ffi --features gpu-tests --test guest_graphics original_guest_attachment_transactions_ -- --nocapture --test-threads=1

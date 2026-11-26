@@ -18,6 +18,10 @@ remains unsupported.
 - Extended the read-only RDNA2 planning CLI (`python3 -m qa rdna2`) with family/status filters, compact summaries, Codex-ready manifests under `artifacts/`, active-claim exclusion (family claims exclude those families; path-only claims block overlapping permitted files), coverage reconcile against `semantic_coverage` without inflating counts, and inventory diffs. Covered by `tests/qa/test_rdna2_plan.py`; planning only, no GPU production edits.
 
 ### Added
+- Explicit selected-root composition through opcode65 separates exact shader/Load
+  ancestry from the newer backing used for copy-back. Slice/mip access checks reject
+  overlap and unknown lineage. Published-version tracking survives receipt release,
+  preventing stale full-root replacement; barriers remain whole-resource operations.
 - Guest writable color/depth selections through opcodes61–64. A queued transaction
   composes selected rendering into complete immutable texture versions and validates
   every root before atomic guest publication. Partial native admission failure drains

@@ -93,8 +93,8 @@ They are not an atomic compound submission or direct mutation of the original vi
 
 This native building block is also used by the guest attachment transaction
 described below. Its own tests use original trusted Metal shaders; guest integration
-is checked separately. Shader-indexed array ranges, shader storage writes and
-range-aware write conflicts remain open.
+is checked separately. Shader-indexed array ranges and shader storage writes remain open.
+Explicit range-aware composition is described in the guest call reference.
 
 Metal views share their source allocation; fresh destinations preserve Xenora's
 immutable produced-version contract. See [Apple's texture-view documentation](https://developer.apple.com/documentation/metal/mtltexture).
@@ -114,7 +114,7 @@ original producer and complete root allocation, including roots produced by type
 copies rather than earlier render passes.
 
 The guest transaction below owns both rendering and copy-back. Shader-indexed
-arrays, storage-write views and range-aware composition remain open. See the
+arrays and storage-write views remain open. See the
 [completion plan](superpowers/plans/2026-11-26-view-completion.md).
 
 ## Guest selected attachment transactions
@@ -130,7 +130,8 @@ use one native queue, so the last point fences every output. The loader validate
 all root identities, layouts and lengths before publishing any root. A failure
 after partial native admission drains the cohort and rejects unpublished work;
 it does not roll back the native timeline. Node and cumulative byte limits apply
-to the complete operation. Cross-submission hazards remain whole-root.
+to the complete operation. Explicit range-aware composition is described in the guest call reference;
+whole-resource barriers remain conservative.
 
 See the [guest call reference](graphics-call-v1.md) for records, lifetime rules
 and capability requirements. Run `scripts/validate-graphics.sh quick` for focused

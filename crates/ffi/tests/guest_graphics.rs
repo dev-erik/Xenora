@@ -6468,3 +6468,6 @@ fn original_guest_typed_roles_pending_load_and_rendered_depth_sample() {
 
 #[path = "guest_graphics/attachment_transactions.rs"]
 mod attachment_transactions;
+
+#[path = "guest_graphics/attachment_composition.rs"]
+mod attachment_composition;

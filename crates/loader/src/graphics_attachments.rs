@@ -17,6 +17,7 @@ pub enum GraphicsAttachmentRootInput {
     Produced(GraphicsProducedVersion),
 }
 pub struct GraphicsAttachmentRoot {
+    pub destination_base: Option<GraphicsProducedVersion>,
     pub desc: GraphicsTypedTextureDesc,
     pub prior: GraphicsAttachmentRootInput,
     pub output: GraphicsProducedVersion,
@@ -545,6 +546,7 @@ impl GraphicsContext {
                 output: GraphicsProducedOutput::AttachmentRoot(index as u8),
             };
             roots.push(GraphicsAttachmentRoot {
+                destination_base: preparation.destination_bases.get(&root.root).copied(),
                 desc: root.desc,
                 prior,
                 output,
@@ -566,10 +568,8 @@ impl GraphicsContext {
         for (handle, node) in &self.queued {
             if node.receipt.status == GraphicsSubmissionStatus::Pending
                 && !closure.contains(handle)
-                && (writes
-                    .iter()
-                    .any(|h| node.reads.contains(h) || node.writes.contains(h))
-                    || reads.iter().any(|h| node.writes.contains(h)))
+                && (preparation.ranges.conflicts(&node.ranges)
+                    || writes.iter().any(|h| node.writes.contains(h)))
             {
                 return Err(GraphicsError::ResourceLifetimeViolation);
             }
@@ -610,6 +610,7 @@ impl GraphicsContext {
         self.queued.insert(
             handle,
             QueuedReceipt {
+                publication_bases: self.publication_bases(outputs.keys().copied()),
                 depth_allocation_bytes: 0,
                 color_allocation_bytes: 0,
                 copy_allocation_bytes: allocation,
@@ -619,6 +620,8 @@ impl GraphicsContext {
                 point,
                 generation,
                 serial,
+                semantic_dependencies: preparation.semantic_dependencies.clone(),
+                ranges: preparation.ranges.clone(),
                 dependencies,
                 ticket,
                 reads,

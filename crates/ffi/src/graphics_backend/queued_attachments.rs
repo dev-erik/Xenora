@@ -83,6 +83,12 @@ fn validate(request: &GraphicsAttachmentTransactionRequest) -> Result<usize, Gra
         {
             return Err(GraphicsError::InvalidDescriptor);
         }
+        if let Some(base) = root.destination_base
+            && (!matches!(root.prior, GraphicsAttachmentRootInput::Produced(_))
+                || !request.waits.contains(&base.point))
+        {
+            return Err(GraphicsError::InvalidDescriptor);
+        }
         match &root.prior {
             GraphicsAttachmentRootInput::Host(bytes) if bytes.len() != packed.byte_len() => {
                 return Err(GraphicsError::InvalidDescriptor);
@@ -219,6 +225,24 @@ impl State {
                 }
             })
             .collect::<Result<Vec<_>, _>>()?;
+        // Resolve the separately authorized composition base before any native
+        // admission. It preserves unrelated writes; it must never replace Load's
+        // semantic input above.
+        let destinations = request
+            .roots
+            .iter()
+            .map(|root| {
+                root.destination_base
+                    .map(|version| {
+                        let output = produced_typed_output(&self.entries, version)?;
+                        if output.desc() != native_desc(root.desc) {
+                            return Err(GraphicsError::InvalidDescriptor);
+                        }
+                        Ok(output)
+                    })
+                    .transpose()
+            })
+            .collect::<Result<Vec<_>, GraphicsError>>()?;
         let host_bytes = request
             .roots
             .iter()
@@ -355,6 +379,11 @@ impl State {
                     .typed_output()
                     .map_err(metal_error)?;
                 patches.push((d.root_index, d.mip, d.slice, output));
+            }
+            for (root, destination) in roots.iter_mut().zip(destinations) {
+                if let Some(destination) = destination {
+                    *root = destination;
+                }
             }
             for (index, mip, slice, output) in patches {
                 let point = self
@@ -497,6 +526,7 @@ mod tests {
                     mip_levels: 2,
                     array_layers: Some(2),
                 },
+                destination_base: None,
                 prior: GraphicsAttachmentRootInput::Host(Arc::from([17u8; 80])),
                 output: GraphicsProducedVersion {
                     point,
@@ -699,6 +729,7 @@ mod tests {
                 mip_levels: 1,
                 array_layers: None,
             },
+            destination_base: None,
             prior: GraphicsAttachmentRootInput::HostDepth(Arc::new(
                 DepthSnapshot::from_packed_bytes([1, 2], &bytes).unwrap(),
             )),
@@ -735,5 +766,69 @@ mod tests {
             panic!("root output")
         };
         assert_eq!(roots[1].bytes, bytes);
+    }
+    #[test]
+    fn queued_attachment_transaction_composition_base_never_replaces_load_source() {
+        // Backend role-separation test. Loader range proofs are exercised by
+        // guest tests; here differing selected contents expose any source swap.
+        let mut state = State::new().unwrap();
+        let a = request(1, false);
+        let (sender_a, receiver_a) = mpsc::channel();
+        state.submit_attachments(&a, sender_a).unwrap();
+        let mut b = request(1, false);
+        b.point.value = 2;
+        b.roots[0].output.point = b.point;
+        b.roots[0].prior = GraphicsAttachmentRootInput::Produced(a.roots[0].output);
+        b.waits = vec![a.point];
+        b.colors[0].slice = 0;
+        b.colors[0].attachment.clear = GraphicsTypedColorClear::Float([0., 1., 0., 1.]);
+        let mut other = b.colors[0].clone();
+        other.slice = 1;
+        other.attachment.clear = GraphicsTypedColorClear::Float([1., 1., 0., 1.]);
+        b.colors.push(other);
+        let (sender_b, receiver_b) = mpsc::channel();
+        state.submit_attachments(&b, sender_b).unwrap();
+        let mut c = request(1, false);
+        c.point.value = 3;
+        c.roots[0].output.point = c.point;
+        c.roots[0].prior = GraphicsAttachmentRootInput::Produced(a.roots[0].output);
+        c.roots[0].destination_base = Some(b.roots[0].output);
+        c.colors[0].load = true;
+        c.waits = vec![a.point];
+        let (invalid_sender, _) = mpsc::channel();
+        assert!(state.submit_attachments(&c, invalid_sender).is_err());
+        assert_eq!(state.entries.len(), 2);
+        assert!(
+            !state.poisoned,
+            "missing base dependency must reject before admission"
+        );
+        c.waits = vec![a.point, b.point];
+        let (sender_c, receiver_c) = mpsc::channel();
+        state.submit_attachments(&c, sender_c).unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while state.entries.values().any(|e| e.completed.is_some()) {
+            state.progress();
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        let mut expected_a = [17u8; 80];
+        expected_a[72..80].copy_from_slice(&[255, 0, 0, 255, 255, 0, 0, 255]);
+        let mut expected_b = expected_a;
+        expected_b[32..40].copy_from_slice(&[0, 255, 0, 255, 0, 255, 0, 255]);
+        expected_b[72..80].copy_from_slice(&[255, 255, 0, 255, 255, 255, 0, 255]);
+        let mut expected_c = expected_b;
+        expected_c[72..80].copy_from_slice(&[255, 0, 0, 255, 255, 0, 0, 255]);
+        for (receiver, expected) in [
+            (receiver_c, expected_c),
+            (receiver_b, expected_b),
+            (receiver_a, expected_a),
+        ] {
+            let GraphicsQueuedWorkOutput::AttachmentTransaction(roots) =
+                receiver.recv().unwrap().unwrap()
+            else {
+                panic!("transaction result")
+            };
+            assert_eq!(roots[0].bytes, expected);
+        }
     }
 }

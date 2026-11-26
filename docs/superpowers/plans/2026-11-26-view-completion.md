@@ -20,7 +20,7 @@ no claim about console execution.
   backing results atomically. Failed copy-back cannot publish a rendered fragment.
 - [x] Multiple writable selections of one backing compose deterministically;
   sampling observes the requested produced ancestor, independent of collection order.
-- [ ] Range-aware access checks distinguish slice/mip overlaps. Independent writes
+- [x] Range-aware access checks distinguish slice/mip overlaps. Independent writes
   cannot lose each other's changes through whole-root snapshot replacement.
 - [ ] Shader-indexed array sampling carries array type, coordinate/index semantics,
   range bounds and exact producer ownership through decoder/compiler/guest/native APIs.

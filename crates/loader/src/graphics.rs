@@ -19,6 +19,10 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use xenora_texture::{PackedTextureArrayLayout, PackedTextureLayout, TextureFormat};
 
+#[path = "graphics_ranges.rs"]
+mod ranges;
+use ranges::{RangeAccesses, RootPublication};
+
 #[path = "graphics_attachments.rs"]
 mod attachments;
 pub use attachments::*;
@@ -1166,6 +1170,9 @@ struct QueuedReceipt {
     generation: u64,
     serial: u64,
     dependencies: Vec<GraphicsHandle>,
+    semantic_dependencies: Vec<GraphicsHandle>,
+    ranges: RangeAccesses,
+    publication_bases: HashMap<GraphicsHandle, RootPublication>,
     ticket: Box<dyn GraphicsQueuedPendingWork>,
     receipt: SubmissionReceipt,
     writes: HashSet<GraphicsHandle>,
@@ -1178,6 +1185,9 @@ struct QueuedReceipt {
 
 #[derive(Default)]
 struct QueuedPreparation {
+    semantic_dependencies: Vec<GraphicsHandle>,
+    destination_bases: HashMap<GraphicsHandle, GraphicsProducedVersion>,
+    ranges: RangeAccesses,
     states: HashMap<GraphicsHandle, ResourceStates>,
     produced: HashMap<GraphicsHandle, GraphicsProducedVersion>,
     layouts: HashMap<GraphicsHandle, GraphicsProducedLayout>,
@@ -1312,6 +1322,7 @@ pub struct GraphicsContext {
     queued_failed: bool,
     queued_serial: u64,
     published_serial: u64,
+    root_publications: HashMap<GraphicsHandle, RootPublication>,
     submission: Option<SubmissionReceipt>,
     retired_resources: HashMap<GraphicsHandle, GraphicsResource>,
     retired_depth: HashMap<GraphicsHandle, DepthResource>,
@@ -1401,6 +1412,7 @@ impl GraphicsContext {
             queued_failed: false,
             queued_serial: 0,
             published_serial: 0,
+            root_publications: HashMap::new(),
             submission: None,
             retired_resources: HashMap::new(),
             retired_depth: HashMap::new(),
@@ -1471,8 +1483,23 @@ impl GraphicsContext {
         waits: &[GraphicsQueuePoint],
         memory: &GuestMemory,
     ) -> Result<GraphicsHandle, GraphicsError> {
+        self.submit_command_list_after_internal(queue, list, waits, None, memory)
+    }
+
+    fn submit_command_list_after_internal(
+        &mut self,
+        queue: GraphicsHandle,
+        list: GraphicsHandle,
+        waits: &[GraphicsQueuePoint],
+        composition_waits: Option<&[GraphicsQueuePoint]>,
+        memory: &GuestMemory,
+    ) -> Result<GraphicsHandle, GraphicsError> {
         let capacity = self.queued_submission_capacity();
-        if waits.len() > capacity {
+        if waits
+            .len()
+            .checked_add(composition_waits.map_or(0, |w| w.len()))
+            .is_none_or(|n| n > capacity)
+        {
             return Err(GraphicsError::InvalidDescriptor);
         }
         if self.queued_backend.is_none() {
@@ -1517,6 +1544,23 @@ impl GraphicsContext {
             }
             dependencies.push(handle);
         }
+        let explicit_semantic = dependencies.clone();
+        let mut composition_dependencies = Vec::new();
+        for point in composition_waits.unwrap_or(&[]) {
+            let (&handle, node) = self
+                .queued
+                .iter()
+                .find(|(_, n)| n.point == *point)
+                .ok_or(GraphicsError::InvalidResourceHandle)?;
+            if node.generation != generation
+                || node.receipt.status == GraphicsSubmissionStatus::Failed
+                || dependencies.contains(&handle)
+            {
+                return Err(GraphicsError::InvalidDescriptor);
+            }
+            composition_dependencies.push(handle);
+            dependencies.push(handle);
+        }
         if let Some((&handle, node)) = self
             .queued
             .iter()
@@ -1529,7 +1573,15 @@ impl GraphicsContext {
             dependencies.push(handle);
         }
         let closure = self.queued_dependency_closure(&dependencies)?;
-        let preparation = self.queued_preparation(&closure, generation)?;
+        let semantic_dependencies = if composition_waits.is_some() {
+            explicit_semantic
+        } else {
+            dependencies.clone()
+        };
+        let semantic_closure = self.semantic_closure(&semantic_dependencies)?;
+        let mut preparation = self.queued_preparation(&semantic_closure, generation)?;
+        preparation.semantic_dependencies = semantic_dependencies;
+
         if self.command_lists.get(&list).is_some_and(|commands| {
             commands.commands.iter().any(|command| {
                 matches!(
@@ -1540,6 +1592,9 @@ impl GraphicsContext {
                 )
             })
         }) {
+            if composition_waits.is_some() {
+                return Err(GraphicsError::InvalidDescriptor);
+            }
             return self.submit_queued_copy(
                 queue,
                 list,
@@ -1580,14 +1635,58 @@ impl GraphicsContext {
         if let Some(plan) = &prepared.attachments {
             writes.extend(plan.roots.iter().map(|r| r.root));
         }
+        preparation.ranges =
+            self.range_accesses(list, prepared.attachments.as_ref(), &reads, &writes);
+        if !composition_dependencies.is_empty() {
+            let plan = prepared
+                .attachments
+                .as_ref()
+                .ok_or(GraphicsError::InvalidDescriptor)?;
+            preparation.destination_bases = self.composition_bases(
+                plan,
+                &preparation,
+                &composition_dependencies,
+                &preparation.ranges,
+                generation,
+            )?;
+        }
+        for root in &writes {
+            if let Some(chosen) = preparation
+                .destination_bases
+                .get(root)
+                .or_else(|| preparation.produced.get(root))
+            {
+                self.validate_published_base(*root, *chosen, generation)?;
+            }
+        }
         for (handle, node) in &self.queued {
+            if composition_waits.is_some()
+                && node.generation == generation
+                && !semantic_closure.contains(handle)
+            {
+                for root in writes.iter().filter(|h| node.outputs.contains_key(h)) {
+                    let base = preparation
+                        .destination_bases
+                        .get(root)
+                        .ok_or(GraphicsError::ResourceLifetimeViolation)?;
+                    let owner = self
+                        .queued
+                        .iter()
+                        .find(|(_, n)| n.outputs.get(root) == Some(base))
+                        .map(|(h, _)| *h)
+                        .ok_or(GraphicsError::InvalidResourceHandle)?;
+                    if !self.queued_dependency_closure(&[owner])?.contains(handle) {
+                        return Err(GraphicsError::ResourceLifetimeViolation);
+                    }
+                }
+            }
             if node.receipt.status != GraphicsSubmissionStatus::Pending {
                 continue;
             }
-            let conflict = writes
-                .iter()
-                .any(|h| node.reads.contains(h) || node.writes.contains(h))
-                || reads.iter().any(|h| node.writes.contains(h));
+            let conflict = preparation.ranges.conflicts(&node.ranges)
+                // Disjoint writers still need an explicit composition base; simply
+                // accepting two complete-root outputs would lose one update.
+                || writes.iter().any(|h| node.writes.contains(h));
             if conflict && !closure.contains(handle) {
                 return Err(GraphicsError::ResourceLifetimeViolation);
             }
@@ -1877,6 +1976,7 @@ impl GraphicsContext {
                 depth_allocation_bytes,
                 color_allocation_bytes,
                 copy_allocation_bytes: 0,
+                publication_bases: self.publication_bases(output_handles.keys().copied()),
                 layouts: output_handles
                     .iter()
                     .map(|(handle, version)| {
@@ -1905,6 +2005,8 @@ impl GraphicsContext {
                 point,
                 generation,
                 serial,
+                semantic_dependencies: preparation.semantic_dependencies.clone(),
+                ranges: preparation.ranges.clone(),
                 dependencies,
                 ticket,
                 reads,
@@ -2306,6 +2408,9 @@ impl GraphicsContext {
         {
             return Err(GraphicsError::InvalidDescriptor);
         }
+        if let Some(version) = prior {
+            self.validate_published_base(destination, version, generation)?;
+        }
         let bytes = layout.byte_len()?;
         let padded = match layout {
             GraphicsCopyLayout::Buffer { .. } => bytes
@@ -2507,6 +2612,7 @@ impl GraphicsContext {
         self.queued.insert(
             handle,
             QueuedReceipt {
+                publication_bases: self.publication_bases([destination]),
                 color_allocation_bytes: 0,
                 depth_allocation_bytes: 0,
                 copy_allocation_bytes,
@@ -2522,6 +2628,8 @@ impl GraphicsContext {
                 point,
                 generation,
                 serial,
+                semantic_dependencies: preparation.semantic_dependencies.clone(),
+                ranges: RangeAccesses::whole(&reads, &writes),
                 dependencies,
                 ticket,
                 reads,
@@ -2705,30 +2813,45 @@ impl GraphicsContext {
             return Ok(GraphicsSubmissionStatus::Pending);
         };
         let commit = node.commit.take().expect("pending queued commit");
+        let publication_valid = self.validate_publication_commit(handle);
         let result = if failed {
             Err(GraphicsError::BackendError(
                 "submission dependency failed".into(),
             ))
         } else {
-            result.and_then(|output| match (commit, output) {
-                (
-                    QueuedCommit::Attachment(commit),
-                    GraphicsQueuedWorkOutput::AttachmentTransaction(output),
-                ) => self
-                    .commit_attachment_transaction(commit, output)
-                    .map(QueuedOutcome::Render),
-                (QueuedCommit::Render(commit), GraphicsQueuedWorkOutput::Render(output)) => self
-                    .commit_submission(commit, output)
-                    .map(QueuedOutcome::Render),
-                (QueuedCommit::Copy(commit), GraphicsQueuedWorkOutput::Copy { layout, bytes }) => {
-                    self.commit_copy(commit, layout, bytes)
-                        .map(QueuedOutcome::Copy)
-                }
-                _ => Err(GraphicsError::BackendError(
-                    "submission output kind mismatch".into(),
-                )),
-            })
+            publication_valid
+                .and(result)
+                .and_then(|output| match (commit, output) {
+                    (
+                        QueuedCommit::Attachment(commit),
+                        GraphicsQueuedWorkOutput::AttachmentTransaction(output),
+                    ) => self
+                        .commit_attachment_transaction(commit, output)
+                        .map(QueuedOutcome::Render),
+                    (QueuedCommit::Render(commit), GraphicsQueuedWorkOutput::Render(output)) => {
+                        self.commit_submission(commit, output)
+                            .map(QueuedOutcome::Render)
+                    }
+                    (
+                        QueuedCommit::Copy(commit),
+                        GraphicsQueuedWorkOutput::Copy { layout, bytes },
+                    ) => self
+                        .commit_copy(commit, layout, bytes)
+                        .map(QueuedOutcome::Copy),
+                    _ => Err(GraphicsError::BackendError(
+                        "submission output kind mismatch".into(),
+                    )),
+                })
         };
+        if result.is_ok() {
+            let node = &self.queued[&handle];
+            for (root, version) in &node.outputs {
+                if self.resources.contains_key(root) || self.depth_resources.contains_key(root) {
+                    let publication = self.root_publications.entry(*root).or_default();
+                    publication.version = Some((node.generation, *version));
+                }
+            }
+        }
         let node = self.queued.get_mut(&handle).unwrap();
         node.receipt
             .references
@@ -3050,6 +3173,15 @@ impl GraphicsContext {
         closure: &[GraphicsHandle],
         generation: u64,
     ) -> Result<QueuedPreparation, GraphicsError> {
+        self.queued_preparation_from(closure, generation, true)
+    }
+
+    fn queued_preparation_from(
+        &self,
+        closure: &[GraphicsHandle],
+        generation: u64,
+        semantic: bool,
+    ) -> Result<QueuedPreparation, GraphicsError> {
         let mut preparation = QueuedPreparation::default();
         let mut ancestors = HashMap::new();
         let mut state_owners = HashMap::<GraphicsHandle, Vec<GraphicsHandle>>::new();
@@ -3061,12 +3193,29 @@ impl GraphicsContext {
             {
                 return Err(GraphicsError::InvalidDescriptor);
             }
-            ancestors.insert(*handle, self.queued_dependency_closure(&node.dependencies)?);
+            ancestors.insert(
+                *handle,
+                if semantic {
+                    self.semantic_closure(&node.semantic_dependencies)?
+                } else {
+                    self.queued_dependency_closure(&node.dependencies)?
+                },
+            );
+            // Retired roots remain in dependency/failure ordering, but their
+            // handles can no longer contribute public state or produced inputs.
             for resource in node.state_definitions.keys() {
-                state_owners.entry(*resource).or_default().push(*handle);
+                if self.resources.contains_key(resource)
+                    || self.depth_resources.contains_key(resource)
+                {
+                    state_owners.entry(*resource).or_default().push(*handle);
+                }
             }
             for resource in node.outputs.keys() {
-                output_owners.entry(*resource).or_default().push(*handle);
+                if self.resources.contains_key(resource)
+                    || self.depth_resources.contains_key(resource)
+                {
+                    output_owners.entry(*resource).or_default().push(*handle);
+                }
             }
         }
         let maximal = |owners: &[GraphicsHandle]| -> Result<GraphicsHandle, GraphicsError> {
@@ -3090,6 +3239,13 @@ impl GraphicsContext {
         for (resource, owners) in output_owners {
             let owner = maximal(&owners)?;
             let node = &self.queued[&owner];
+            if node
+                .publication_bases
+                .get(&resource)
+                .is_none_or(|p| p.host_epoch != self.publication(resource).host_epoch)
+            {
+                return Err(GraphicsError::ResourceLifetimeViolation);
+            }
             let layout = node
                 .layouts
                 .get(&resource)
@@ -4915,6 +5071,7 @@ impl GraphicsContext {
         {
             self.retired_depth.insert(resource, value);
         }
+        self.root_publications.remove(&resource);
         Ok(())
     }
 
@@ -4935,6 +5092,11 @@ impl GraphicsContext {
             .map_err(|_| MemoryError::AllocationFailed)?;
         bytes.resize(size, 0);
         memory.read_bytes(address, &mut bytes)?;
+        let host_epoch = self
+            .publication(resource)
+            .host_epoch
+            .checked_add(1)
+            .ok_or(GraphicsError::InvalidDescriptor)?;
         if let Some(depth) = self.depth_resources.get_mut(&resource) {
             let len = depth.typed_desc.byte_len()?;
             let mut full = Vec::new();
@@ -4959,6 +5121,13 @@ impl GraphicsContext {
         } else {
             self.resources.get_mut(&resource).unwrap().data[range].copy_from_slice(&bytes);
         }
+        self.root_publications.insert(
+            resource,
+            RootPublication {
+                host_epoch,
+                version: None,
+            },
+        );
         Ok(())
     }
 
@@ -6883,6 +7052,31 @@ impl GraphicsContext {
                 ));
             }
         }
+        let host_publications = if commit.serial.is_none() {
+            commit
+                .targets
+                .iter()
+                .copied()
+                .chain(commit.depth)
+                .map(|root| {
+                    self.publication(root)
+                        .host_epoch
+                        .checked_add(1)
+                        .map(|host_epoch| {
+                            (
+                                root,
+                                RootPublication {
+                                    host_epoch,
+                                    version: None,
+                                },
+                            )
+                        })
+                        .ok_or(GraphicsError::InvalidDescriptor)
+                })
+                .collect::<Result<Vec<_>, _>>()?
+        } else {
+            Vec::new()
+        };
         // All destinations are pinned or synchronously validated. Acquire the only
         // fallible commit lock before touching colors, depth, barriers or history.
         let mut presentation = self
@@ -6907,6 +7101,9 @@ impl GraphicsContext {
             } else if let Some(depth) = self.depth_resources.get_mut(&handle) {
                 depth.state = state;
             }
+        }
+        for (root, publication) in host_publications {
+            self.root_publications.insert(root, publication);
         }
         let history = &mut self
             .queues

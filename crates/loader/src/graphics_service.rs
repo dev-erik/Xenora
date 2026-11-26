@@ -108,7 +108,7 @@ pub fn graphics_call_v1(
         5 | 7 | 15 | 17 | 29 | 41 | 42 | 56 | 63 => 3,
         9 | 10 | 13 | 16 | 18 | 19 | 20 | 35 | 46 | 49 | 64 => 4,
         6 | 8 | 21 | 23 | 37 | 45 | 61 => 5,
-        24 | 40 | 43 | 51 | 52 | 55 | 59 => 6,
+        24 | 40 | 43 | 51 | 52 | 55 | 59 | 65 => 6,
         44 => 11,
         50 | 54 => 13,
         53 | 57 | 58 => 7,
@@ -640,6 +640,47 @@ pub fn graphics_call_v1(
                 .to_u64();
             }
             38 => graphics.destroy_texture_view(args.handle(0))?,
+            65 => {
+                let semantic_count = args.size(3)?;
+                let composition_count = args.size(5)?;
+                if semantic_count
+                    .checked_add(composition_count)
+                    .is_none_or(|n| n > MAX_QUEUED_GRAPH_NODES)
+                    || (semantic_count == 0 && args.0[2] != 0)
+                    || (composition_count == 0 && args.0[4] != 0)
+                {
+                    return Err(GraphicsError::InvalidDescriptor);
+                }
+                let read_waits =
+                    |address, count| -> Result<Vec<GraphicsQueuePoint>, GraphicsError> {
+                        let mut bytes = [0u8; MAX_QUEUED_GRAPH_NODES * 16];
+                        if count != 0 {
+                            memory.read_bytes(address, &mut bytes[..count * 16])?;
+                        }
+                        Ok(bytes[..count * 16]
+                            .as_chunks::<16>()
+                            .0
+                            .iter()
+                            .map(|record| GraphicsQueuePoint {
+                                queue: GraphicsHandle::from_u64(u64::from_le_bytes(
+                                    record[..8].try_into().unwrap(),
+                                )),
+                                value: u64::from_le_bytes(record[8..].try_into().unwrap()),
+                            })
+                            .collect())
+                    };
+                let semantic = read_waits(args.0[2], semantic_count)?;
+                let composition = read_waits(args.0[4], composition_count)?;
+                value = graphics
+                    .submit_command_list_after_composed(
+                        args.handle(0),
+                        args.handle(1),
+                        &semantic,
+                        &composition,
+                        memory,
+                    )?
+                    .to_u64();
+            }
             35 => {
                 let count = args.size(3)?;
                 if count > MAX_QUEUED_GRAPH_NODES || (count == 0 && args.0[2] != 0) {

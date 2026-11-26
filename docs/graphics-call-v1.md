@@ -840,5 +840,36 @@ payload budgets remain enforced. This may reject a large transaction even when t
 number of guest receipts is below16. Normal successful submission does not wait on
 the CPU between render and copy-back.
 
-Whole-root cross-submission hazards still apply. Range-aware scheduling,
-shader-indexed arrays and shader storage-write views remain separate S2.4 work.
+Ordinary submissions retain their existing dependency rules. Explicit range-aware
+composition is described below. Shader-indexed arrays and shader storage-write
+views remain separate S2.4 work.
+
+
+## Explicit selected-root composition
+
+Opcode65 takes six arguments: queue, closed list, semantic wait-table address,
+semantic wait count, composition wait-table address, composition wait count. Each
+wait record is two little-endian u64 words `(queue handle, value)`. Combined counts
+must fit the existing graph limit; an empty table requires address zero. The result
+is a submission receipt. The installed backend must support attachment transactions.
+
+Semantic waits choose the exact versions used for sampling and attachment Load.
+Composition waits choose a newer full-root destination into which selected outputs
+are copied. They never replace the semantic Load source. Opcode35 keeps its existing
+queue-order behavior. Opcode65 uses explicit semantic ancestry even when its native
+execution also waits for an earlier submission on the same queue.
+
+A composition base must descend from the selected semantic produced root, retain
+identical layout and generation, and contain only known intervening writes disjoint
+from the new operation's read and write ranges. Unknown lineage, ambiguous heads,
+overlap, failed predecessors and conflicting whole-resource state reject. Host
+snapshots cannot substitute for missing produced ancestry. An execution dependency
+alone does not authorize replacing a newer root with a version derived from an
+older ancestor. The latest published version remains recorded after receipt release;
+a stale base rejects when the required newer capability is no longer available.
+
+Sampled views declare their selected slice and mip interval; writable attachments
+select one slice/mip. Legacy whole-resource accesses and barriers remain conservative.
+Disjoint write composition is serialized on the native queue, retains both inputs,
+and publishes a complete root atomically. It does not provide concurrent subresource
+execution or shader storage-write support.
