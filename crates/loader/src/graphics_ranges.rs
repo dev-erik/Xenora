@@ -132,11 +132,21 @@ impl GraphicsContext {
     ) -> RangeAccesses {
         let mut result = RangeAccesses::whole(reads, writes);
         let mut sampled = [None; 2];
+        let mut descriptor_revision: Option<&GraphicsDescriptorRevision> = None;
+        let mut pipeline = None;
         let mut sampled_ranges: HashMap<GraphicsHandle, Vec<AccessRange>> = HashMap::new();
         let mut non_sample_reads = HashSet::new();
         for command in &self.command_lists[&list].commands {
             match command {
+                GraphicsCommand::SetDescriptorTable(r) => {
+                    descriptor_revision = r.as_deref();
+                    sampled = [None; 2];
+                }
+                GraphicsCommand::SetGraphicsPipeline(p) => {
+                    pipeline = *p;
+                }
                 GraphicsCommand::SetSampledArrayRanges { ranges, .. } => {
+                    descriptor_revision = None;
                     sampled = ranges.map(|h| {
                         h.map(|h| {
                             let v = &self.array_range_views[&h];
@@ -153,6 +163,7 @@ impl GraphicsContext {
                     });
                 }
                 GraphicsCommand::SetSampledViews { views, .. } => {
+                    descriptor_revision = None;
                     sampled = views.map(|h| {
                         h.map(|h| {
                             let v = &self.texture_views[&h];
@@ -169,9 +180,11 @@ impl GraphicsContext {
                     })
                 }
                 GraphicsCommand::SetSampledBindings { textures, .. } => {
+                    descriptor_revision = None;
                     sampled = textures.map(|h| h.map(|h| (h, AccessRange::Whole)))
                 }
                 GraphicsCommand::SetSampledTexture { texture, .. } => {
+                    descriptor_revision = None;
                     sampled[0] = texture.map(|h| (h, AccessRange::Whole))
                 }
                 GraphicsCommand::SetVertexBuffer { resource, .. }
@@ -184,8 +197,45 @@ impl GraphicsContext {
                     instance_count,
                     ..
                 } if *vertex_count_per_instance != 0 && *instance_count != 0 => {
-                    for (h, r) in sampled.iter().flatten() {
-                        sampled_ranges.entry(*h).or_default().push(*r);
+                    if let Some(revision) = descriptor_revision {
+                        for (slot, root) in self
+                            .descriptor_roots(Some(revision), pipeline)
+                            .into_iter()
+                            .enumerate()
+                        {
+                            if let Some(root) = root {
+                                let b = &revision.bindings;
+                                let range = if let Some(v) = b.sampled_ranges[slot] {
+                                    AccessRange::Texture {
+                                        slice: v.base_slice,
+                                        slices: v.slice_count,
+                                        mip: v.base_mip,
+                                        mips: v.mip_count,
+                                    }
+                                } else if let Some(v) = b.array_views[slot] {
+                                    AccessRange::Texture {
+                                        slice: v.slice,
+                                        slices: 1,
+                                        mip: v.base_mip,
+                                        mips: v.mip_count,
+                                    }
+                                } else if let Some(v) = b.views[slot] {
+                                    AccessRange::Texture {
+                                        slice: 0,
+                                        slices: 1,
+                                        mip: v.base_mip,
+                                        mips: v.mip_count,
+                                    }
+                                } else {
+                                    AccessRange::Whole
+                                };
+                                sampled_ranges.entry(root).or_default().push(range);
+                            }
+                        }
+                    } else {
+                        for (h, r) in sampled.iter().flatten() {
+                            sampled_ranges.entry(*h).or_default().push(*r);
+                        }
                     }
                 }
                 GraphicsCommand::DrawIndexedInstanced {
@@ -193,8 +243,45 @@ impl GraphicsContext {
                     instance_count,
                     ..
                 } if *index_count_per_instance != 0 && *instance_count != 0 => {
-                    for (h, r) in sampled.iter().flatten() {
-                        sampled_ranges.entry(*h).or_default().push(*r);
+                    if let Some(revision) = descriptor_revision {
+                        for (slot, root) in self
+                            .descriptor_roots(Some(revision), pipeline)
+                            .into_iter()
+                            .enumerate()
+                        {
+                            if let Some(root) = root {
+                                let b = &revision.bindings;
+                                let range = if let Some(v) = b.sampled_ranges[slot] {
+                                    AccessRange::Texture {
+                                        slice: v.base_slice,
+                                        slices: v.slice_count,
+                                        mip: v.base_mip,
+                                        mips: v.mip_count,
+                                    }
+                                } else if let Some(v) = b.array_views[slot] {
+                                    AccessRange::Texture {
+                                        slice: v.slice,
+                                        slices: 1,
+                                        mip: v.base_mip,
+                                        mips: v.mip_count,
+                                    }
+                                } else if let Some(v) = b.views[slot] {
+                                    AccessRange::Texture {
+                                        slice: 0,
+                                        slices: 1,
+                                        mip: v.base_mip,
+                                        mips: v.mip_count,
+                                    }
+                                } else {
+                                    AccessRange::Whole
+                                };
+                                sampled_ranges.entry(root).or_default().push(range);
+                            }
+                        }
+                    } else {
+                        for (h, r) in sampled.iter().flatten() {
+                            sampled_ranges.entry(*h).or_default().push(*r);
+                        }
                     }
                 }
                 _ => {}

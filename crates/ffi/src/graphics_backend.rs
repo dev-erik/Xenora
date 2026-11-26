@@ -487,7 +487,10 @@ fn render_pipeline_request(
                 .iter()
                 .map(|c| c.typed.map_or(TextureFormat::Rgba8Unorm, |t| t.format))
                 .collect();
-            if pipeline.storage.is_some() {
+            if pipeline.storage.is_some()
+                || pipeline.descriptor_requirements.is_some()
+                || draw.descriptor_bindings.is_some()
+            {
                 return Err(GraphicsError::NativeMetalRequired);
             }
             if draw

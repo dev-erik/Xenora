@@ -6,9 +6,10 @@ use std::fmt::{self, Write};
 
 mod graphics;
 pub use graphics::{
-    CompiledGraphics, GraphicsArrayLayer, GraphicsExportType, GraphicsPipelineTypes,
-    GraphicsSampleType, GraphicsStorageType, PIXEL_ENTRY_POINT, VERTEX_ENTRY_POINT,
-    compile_graphics, compile_graphics_pipeline, compile_graphics_pipeline_typed,
+    CompiledGraphics, CompiledGraphics4, GraphicsArrayLayer, GraphicsExportType,
+    GraphicsPipelineTypes, GraphicsPipelineTypes4, GraphicsSampleType, GraphicsStorageType,
+    PIXEL_ENTRY_POINT, VERTEX_ENTRY_POINT, compile_graphics, compile_graphics_pipeline,
+    compile_graphics_pipeline_typed, compile_graphics_pipeline_typed4,
 };
 
 pub use xenora_decoder::Architecture;

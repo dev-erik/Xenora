@@ -6476,3 +6476,6 @@ mod attachment_composition;
 mod array_sampling;
 #[path = "guest_graphics/storage_views.rs"]
 mod storage_views;
+
+#[path = "guest_graphics/descriptor_tables.rs"]
+mod descriptor_tables;

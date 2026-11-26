@@ -949,3 +949,8 @@ one copy-back node and its persistent allocation to the existing transaction bud
 Depth, BC, sRGB and array-dimension stores, atomics, arbitrary addresses and general
 fragment races are outside this finite contract. This is synthetic Metal validation,
 not Xbox hardware equivalence or commercial game execution support.
+
+## Descriptor tables
+
+[Opcodes70–74](descriptor-tables.md) add immutable recorded tables, four-slot typed
+pipelines and bounded GPU descriptor indexing. Legacy bindings preserve their ABI.

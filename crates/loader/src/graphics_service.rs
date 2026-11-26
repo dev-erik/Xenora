@@ -103,12 +103,12 @@ pub fn graphics_call_v1(
     let opcode = words[1];
     let used = match opcode {
         1 => 0,
-        2 | 3 | 12 | 26 | 27 | 31 | 32 | 33 | 36 | 38 | 47 | 60 | 62 | 68 => 1,
-        4 | 11 | 14 | 25 | 28 | 30 | 34 | 39 | 48 | 66 | 69 => 2,
+        2 | 3 | 12 | 26 | 27 | 31 | 32 | 33 | 36 | 38 | 47 | 60 | 62 | 68 | 70 | 72 => 1,
+        4 | 11 | 14 | 25 | 28 | 30 | 34 | 39 | 48 | 66 | 69 | 73 => 2,
         5 | 7 | 15 | 17 | 29 | 41 | 42 | 56 | 63 => 3,
-        9 | 10 | 13 | 16 | 18 | 19 | 20 | 35 | 46 | 49 | 64 | 67 => 4,
+        9 | 10 | 13 | 16 | 18 | 19 | 20 | 35 | 46 | 49 | 64 | 67 | 71 => 4,
         6 | 8 | 21 | 23 | 37 | 45 | 61 => 5,
-        24 | 40 | 43 | 51 | 52 | 55 | 59 | 65 => 6,
+        24 | 40 | 43 | 51 | 52 | 55 | 59 | 65 | 74 => 6,
         44 => 11,
         50 | 54 => 13,
         53 | 57 | 58 => 7,
@@ -133,7 +133,9 @@ pub fn graphics_call_v1(
         || opcode == 55
         || (57..=59).contains(&opcode)
         || opcode == 61
-        || opcode == 67)
+        || opcode == 67
+        || opcode == 70
+        || opcode == 74)
         && graphics.guest_object_count() >= MAX_GUEST_OBJECTS
     {
         return Ok(STATUS_GRAPHICS_ERROR);
@@ -155,7 +157,8 @@ pub fn graphics_call_v1(
         || opcode == 63
         || opcode == 64
         || opcode == 66
-        || opcode == 69)
+        || opcode == 69
+        || opcode == 73)
         && graphics
             .guest_command_count(args.handle(0))
             .is_some_and(|count| count >= MAX_GUEST_COMMANDS)
@@ -659,6 +662,67 @@ pub fn graphics_call_v1(
                 .to_u64();
             }
             38 => graphics.destroy_texture_view(args.handle(0))?,
+            70 => value = graphics.create_descriptor_table(args.handle(0))?.to_u64(),
+            71 => {
+                let first = args.size(1)?;
+                let count = args.size(2)?;
+                if count == 0 || first.checked_add(count).is_none_or(|n| n > 8) {
+                    return Err(GraphicsError::InvalidDescriptor);
+                }
+                let mut bytes = [0u8; 128];
+                memory.read_bytes(args.0[3], &mut bytes[..count * 16])?;
+                let mut entries = Vec::with_capacity(count);
+                for record in bytes[..count * 16].as_chunks::<16>().0 {
+                    let kind = u64::from_le_bytes(record[..8].try_into().unwrap());
+                    let raw = u64::from_le_bytes(record[8..].try_into().unwrap());
+                    let h = GraphicsHandle::from_u64(raw);
+                    entries.push(match kind {
+                        0 if raw == 0 => GraphicsDescriptorEntry::Null,
+                        1 if raw != 0 => GraphicsDescriptorEntry::TextureView(h),
+                        2 if raw != 0 => GraphicsDescriptorEntry::ArrayRange(h),
+                        3 if raw != 0 => GraphicsDescriptorEntry::Sampler(h),
+                        _ => return Err(GraphicsError::InvalidDescriptor),
+                    });
+                }
+                value = graphics.update_descriptor_table(args.handle(0), first, &entries)?;
+            }
+            72 => graphics.destroy_descriptor_table(args.handle(0))?,
+            73 => graphics.cmd_set_descriptor_table(
+                args.handle(0),
+                (args.0[1] != 0).then(|| args.handle(1)),
+            )?,
+            74 => {
+                let mut bytes = [0u8; 96];
+                memory.read_bytes(args.0[5], &mut bytes)?;
+                let mut types = xenora_shader::GraphicsPipelineTypes4::default();
+                for (i, b) in bytes.as_chunks::<8>().0.iter().enumerate() {
+                    let kind = u64::from_le_bytes(*b);
+                    if i < 4 {
+                        use xenora_shader::GraphicsSampleType as T;
+                        types.textures[i] = match kind {
+                            0 => T::Float,
+                            1 => T::Uint,
+                            2 => T::Depth,
+                            3 => T::FloatArray,
+                            4 => T::UintArray,
+                            5 if i == 0 => T::StorageFloat,
+                            6 if i == 0 => T::StorageUint,
+                            _ => return Err(GraphicsError::InvalidDescriptor),
+                        };
+                    } else {
+                        types.colors[i - 4] = match kind {
+                            0 => xenora_shader::GraphicsExportType::Float,
+                            1 => xenora_shader::GraphicsExportType::Uint,
+                            _ => return Err(GraphicsError::InvalidDescriptor),
+                        };
+                    }
+                }
+                let vertex = code(memory, args.0[1], args.0[2])?;
+                let pixel = code(memory, args.0[3], args.0[4])?;
+                value = graphics
+                    .create_typed_graphics_pipeline4(args.handle(0), &vertex, &pixel, types)?
+                    .to_u64();
+            }
             67 => {
                 value = graphics
                     .create_storage_view(

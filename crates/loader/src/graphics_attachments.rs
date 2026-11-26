@@ -662,6 +662,7 @@ impl GraphicsContext {
                 .collect(),
             colors: plan.colors,
         };
+        let descriptor_revisions = self.recorded_descriptor_revisions(commit.render.list);
         self.queued.insert(
             handle,
             QueuedReceipt {
@@ -686,6 +687,7 @@ impl GraphicsContext {
                 released: false,
                 rejected_dependencies: HashSet::new(),
                 receipt: SubmissionReceipt {
+                    descriptor_revisions,
                     handle,
                     pending: None,
                     commit: None,

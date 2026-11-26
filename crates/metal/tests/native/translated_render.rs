@@ -2907,9 +2907,9 @@ fn translated_two_slots_reject_conflicts_before_compile_and_preserve_depth() {
             valid.clone(),
             two_slot_pair(&textures[0], &samplers[1], 1, 0),
         ], // sampler conflict
-        vec![two_slot_pair(&textures[0], &samplers[0], 2, 0)],
-        vec![two_slot_pair(&textures[0], &samplers[0], 0, 2)],
-        vec![valid.clone(); 5],
+        vec![two_slot_pair(&textures[0], &samplers[0], 4, 0)],
+        vec![two_slot_pair(&textures[0], &samplers[0], 0, 4)],
+        vec![valid.clone(); 17],
     ];
     for conflict in conflicts {
         let near = POSITIONS.map(|[x, y, _, w]| [x, y, 0.25, w]);

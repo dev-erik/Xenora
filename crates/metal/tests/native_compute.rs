@@ -1,5 +1,8 @@
 use xenora_metal::NativeCompute;
 
+#[path = "native/descriptor_tables.rs"]
+mod descriptor_tables;
+
 #[path = "native/async_render.rs"]
 mod async_render;
 #[path = "native/bc_sampled.rs"]

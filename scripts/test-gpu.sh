@@ -54,6 +54,8 @@ timeout 30s cargo test --locked -p xenora-ffi --features gpu-tests --test integr
 # Original PE guest calls the versioned pipeline/resource service through import dispatch.
 cargo test --locked -p xenora-ffi --features gpu-tests --lib --no-run
 timeout 30s cargo test --locked -p xenora-ffi --features gpu-tests --lib async_tests -- --nocapture --test-threads=1
+# Descriptor rejection must precede attachment host-seed admission.
+timeout 30s cargo test --locked -p xenora-ffi --features gpu-tests --lib queued_descriptor_ -- --nocapture --test-threads=1
 # Real two-queue producer/consumer: both commits precede a controlled GPU gate.
 timeout 30s cargo test --locked -p xenora-ffi --features gpu-tests --lib queued::tests -- --nocapture --test-threads=1
 

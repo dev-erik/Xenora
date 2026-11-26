@@ -30,6 +30,9 @@ mod storage;
 pub use attachments::*;
 use attachments::{AttachmentCommit, AttachmentPlan};
 use storage::StorageDrawValidation;
+#[path = "graphics_descriptors.rs"]
+mod descriptors;
+pub use descriptors::*;
 
 #[path = "graphics_resource_roles.rs"]
 mod resource_roles;
@@ -333,6 +336,7 @@ pub enum GraphicsCommand {
     },
     SetShaderUniforms(Option<[u32; 8]>),
     SetGraphicsPipeline(Option<GraphicsHandle>),
+    SetDescriptorTable(Option<Arc<GraphicsDescriptorRevision>>),
     SetSampledTexture {
         texture: Option<GraphicsHandle>,
         sampler: xenora_texture::SamplerDesc,
@@ -486,6 +490,7 @@ impl Default for GraphicsDrawState {
 /// Validated positions and viewport for one ordered draw.
 #[derive(Debug)]
 pub struct GraphicsPipeline {
+    pub descriptor_requirements: Option<GraphicsDescriptorRequirements>,
     pub storage: Option<xenora_shader::GraphicsStorageType>,
     pub array_layers: [Vec<xenora_shader::GraphicsArrayLayer>; 2],
     pub types: xenora_shader::GraphicsPipelineTypes,
@@ -597,6 +602,7 @@ pub struct GraphicsSampledBindings {
 
 #[derive(Clone, Debug, Default)]
 pub struct GraphicsDraw {
+    pub descriptor_bindings: Option<GraphicsDescriptorBindings<GraphicsTextureSnapshot>>,
     pub uniforms: Option<[u32; 8]>,
     pub vertices: Vec<[f32; 4]>,
     pub colors: Vec<[f32; 4]>,
@@ -779,6 +785,7 @@ impl GraphicsGeometryInput {
 
 #[derive(Clone, Debug)]
 pub struct GraphicsQueuedDraw {
+    pub descriptor_bindings: Option<GraphicsDescriptorBindings<GraphicsTextureInput>>,
     pub sampled_ranges: [Option<GraphicsArrayRangeViewDesc>; 2],
     pub array_views: [Option<GraphicsArraySliceViewDesc>; 2],
     /// Some selects GPU gather and requires empty expanded vertices/colors.
@@ -1169,7 +1176,7 @@ enum QueuedOutcome {
 type QueuedAccesses = (
     HashSet<GraphicsHandle>,
     HashSet<GraphicsHandle>,
-    Vec<[Option<GraphicsHandle>; 2]>,
+    Vec<[Option<GraphicsHandle>; 4]>,
 );
 
 struct QueuedReceipt {
@@ -1252,6 +1259,7 @@ struct PreparedSubmission {
 }
 
 struct SubmissionReceipt {
+    descriptor_revisions: Vec<Arc<GraphicsDescriptorRevision>>,
     handle: GraphicsHandle,
     pending: Option<Box<dyn GraphicsPendingSubmission>>,
     commit: Option<SubmissionCommit>,
@@ -1309,6 +1317,9 @@ pub struct GraphicsContext {
     array_view_backend: bool,
     shader_array_views: bool,
     shader_storage_views: bool,
+    descriptor_backend: bool,
+    descriptor_tables: HashMap<GraphicsHandle, Arc<GraphicsDescriptorRevision>>,
+    descriptor_revisions: Vec<std::sync::Weak<GraphicsDescriptorRevision>>,
     texture_capabilities: GraphicsTextureCapabilities,
     uniform_backend: bool,
     produced_color_backend: bool,
@@ -1404,6 +1415,9 @@ impl GraphicsContext {
             array_view_backend: false,
             shader_array_views: false,
             shader_storage_views: false,
+            descriptor_backend: false,
+            descriptor_tables: HashMap::new(),
+            descriptor_revisions: Vec::new(),
             texture_capabilities: GraphicsTextureCapabilities::default(),
             uniform_backend: false,
             produced_color_backend: false,
@@ -1472,6 +1486,7 @@ impl GraphicsContext {
         self.view_backend = false;
         self.array_view_backend = false;
         self.shader_array_views = false;
+        self.descriptor_backend = false;
         self.shader_storage_views = false;
         self.backend = None;
         self.pass_backend = None;
@@ -1883,6 +1898,10 @@ impl GraphicsContext {
             .zip(sampled_handles)
             .zip(prepared.geometry)
         {
+            let descriptor_bindings = draw
+                .descriptor_bindings
+                .map(|b| self.queued_descriptor_bindings(b, handles, &preparation))
+                .transpose()?;
             let mut textures = [None, None];
             for (slot, snapshot) in draw.sampled_bindings.textures.into_iter().enumerate() {
                 if let Some(snapshot) = snapshot {
@@ -1946,6 +1965,7 @@ impl GraphicsContext {
                 }
             }
             draws.push(GraphicsQueuedDraw {
+                descriptor_bindings,
                 geometry,
                 uniforms: draw.uniforms,
                 array_views: draw.sampled_bindings.array_views,
@@ -2042,6 +2062,7 @@ impl GraphicsContext {
                 released: false,
                 rejected_dependencies: HashSet::new(),
                 receipt: SubmissionReceipt {
+                    descriptor_revisions: self.recorded_descriptor_revisions(list),
                     handle,
                     pending: None,
                     commit: None,
@@ -2665,6 +2686,7 @@ impl GraphicsContext {
                 released: false,
                 rejected_dependencies: HashSet::new(),
                 receipt: SubmissionReceipt {
+                    descriptor_revisions: self.recorded_descriptor_revisions(list),
                     handle,
                     pending: None,
                     commit: None,
@@ -2737,12 +2759,23 @@ impl GraphicsContext {
         let mut reads = HashSet::new();
         let mut writes = HashSet::new();
         let mut sampled = [None; 2];
+        let mut descriptors = None;
+        let mut pipeline = None;
         let mut vertex = None;
         let mut colors = None;
         let mut index = None;
         let mut draws = Vec::new();
         for command in &self.command_lists[&list].commands {
             let indexed = match command {
+                GraphicsCommand::SetDescriptorTable(r) => {
+                    descriptors = r.as_deref();
+                    sampled = [None; 2];
+                    continue;
+                }
+                GraphicsCommand::SetGraphicsPipeline(p) => {
+                    pipeline = *p;
+                    continue;
+                }
                 GraphicsCommand::SetStorageView(view) => {
                     if let Some(handle) = view {
                         let root = self.storage_views[handle].root;
@@ -2752,19 +2785,23 @@ impl GraphicsContext {
                     continue;
                 }
                 GraphicsCommand::SetSampledArrayRanges { ranges, .. } => {
+                    descriptors = None;
                     sampled =
                         ranges.map(|handle| handle.map(|h| self.array_range_views[&h].backing));
                     continue;
                 }
                 GraphicsCommand::SetSampledViews { views, .. } => {
+                    descriptors = None;
                     sampled = views.map(|handle| handle.map(|h| self.texture_views[&h].backing));
                     continue;
                 }
                 GraphicsCommand::SetSampledBindings { textures, .. } => {
+                    descriptors = None;
                     sampled = *textures;
                     continue;
                 }
                 GraphicsCommand::SetSampledTexture { texture, .. } => {
+                    descriptors = None;
                     sampled[0] = *texture;
                     continue;
                 }
@@ -2801,8 +2838,13 @@ impl GraphicsContext {
             if indexed {
                 reads.extend(index);
             }
-            reads.extend(sampled.iter().flatten().copied());
-            draws.push(sampled);
+            let handles = if descriptors.is_some() {
+                self.descriptor_roots(descriptors, pipeline)
+            } else {
+                [sampled[0], sampled[1], None, None]
+            };
+            reads.extend(handles.iter().flatten().copied());
+            draws.push(handles);
         }
         (reads, writes, draws)
     }
@@ -2892,9 +2934,14 @@ impl GraphicsContext {
             }
         }
         let node = self.queued.get_mut(&handle).unwrap();
-        node.receipt
-            .references
-            .retain(|handle| node.outputs.contains_key(handle));
+        node.receipt.references.retain(|handle| {
+            node.outputs.contains_key(handle)
+                || node
+                    .receipt
+                    .descriptor_revisions
+                    .iter()
+                    .any(|r| r.roots().any(|root| root == *handle))
+        });
         match result {
             Ok(outcome) => {
                 node.receipt.status = GraphicsSubmissionStatus::Complete;
@@ -3568,6 +3615,7 @@ impl GraphicsContext {
         self.view_backend = false;
         self.array_view_backend = false;
         self.shader_array_views = false;
+        self.descriptor_backend = false;
         self.shader_storage_views = false;
         self.multislot_backend = false;
         self.backend = None;
@@ -3644,6 +3692,9 @@ impl GraphicsContext {
         let mut references = HashSet::new();
         for command in &self.command_lists[&list].commands {
             match command {
+                GraphicsCommand::SetDescriptorTable(Some(r)) => {
+                    references.extend(r.roots());
+                }
                 GraphicsCommand::CopyResource {
                     destination,
                     source,
@@ -3750,6 +3801,7 @@ impl GraphicsContext {
         let pending = renderer(prepared.request)?;
         let handle = self.allocate_handle();
         self.submission = Some(SubmissionReceipt {
+            descriptor_revisions: self.recorded_descriptor_revisions(list),
             handle,
             pending: Some(pending),
             commit: Some(prepared.commit),
@@ -3904,6 +3956,7 @@ impl GraphicsContext {
         self.view_backend = false;
         self.array_view_backend = false;
         self.shader_array_views = false;
+        self.descriptor_backend = false;
         self.shader_storage_views = false;
         self.multislot_backend = false;
         self.async_backend = None;
@@ -4029,6 +4082,7 @@ impl GraphicsContext {
         self.view_backend = false;
         self.array_view_backend = false;
         self.shader_array_views = false;
+        self.descriptor_backend = false;
         self.shader_storage_views = false;
         self.multislot_backend = false;
         self.backend = None;
@@ -4059,6 +4113,7 @@ impl GraphicsContext {
         self.view_backend = false;
         self.array_view_backend = false;
         self.shader_array_views = false;
+        self.descriptor_backend = false;
         self.shader_storage_views = false;
         self.multislot_backend = false;
         self.backend = None;
@@ -4088,7 +4143,8 @@ impl GraphicsContext {
     }
 
     pub(crate) fn guest_object_count(&self) -> usize {
-        self.devices.len()
+        self.descriptor_tables.len()
+            + self.devices.len()
             + self.queues.len()
             + self.allocators.len()
             + self.command_lists.len()
@@ -4451,6 +4507,7 @@ impl GraphicsContext {
             }
         }
         let pipeline = Arc::new(GraphicsPipeline {
+            descriptor_requirements: None,
             storage: compiled.storage,
             array_layers: compiled.array_layers,
             types: compiled.types,
@@ -5106,6 +5163,13 @@ impl GraphicsContext {
     /// Destroy a color, buffer or depth resource after all recorded references are released.
     pub fn destroy_resource(&mut self, resource: GraphicsHandle) -> Result<(), GraphicsError> {
         if self
+            .descriptor_tables
+            .values()
+            .any(|r| r.roots().any(|h| h == resource))
+        {
+            return Err(GraphicsError::ResourceLifetimeViolation);
+        }
+        if self
             .writable_views
             .values()
             .chain(self.storage_views.values())
@@ -5130,6 +5194,9 @@ impl GraphicsContext {
         }
         let referenced = self.command_lists.values().any(|list| {
             list.commands.iter().any(|command| match command {
+                GraphicsCommand::SetDescriptorTable(r) => {
+                    r.as_ref().is_some_and(|r| r.roots().any(|h| h == resource))
+                }
                 GraphicsCommand::CopyResource {
                     destination,
                     source,
@@ -6294,6 +6361,7 @@ impl GraphicsContext {
         let mut pipeline_handle = None;
         let mut uniforms = None;
         let mut storage_view = None;
+        let mut descriptor_revision: Option<&GraphicsDescriptorRevision> = None;
         let mut sampled_textures = [None; 2];
         let mut sampled_views = [None; 2];
         let mut sampled_array_views = [None; 2];
@@ -6309,6 +6377,17 @@ impl GraphicsContext {
 
         for cmd in commands {
             match cmd {
+                GraphicsCommand::SetDescriptorTable(r) => {
+                    if queued.is_none() || !self.descriptor_backend {
+                        return Err(GraphicsError::NativeMetalRequired);
+                    }
+                    descriptor_revision = r.as_deref();
+                    sampled_textures = [None; 2];
+                    sampled_samplers = [None; 2];
+                    sampled_views = [None; 2];
+                    sampled_array_views = [None; 2];
+                    sampled_ranges = [None; 2];
+                }
                 GraphicsCommand::SetWritableColorTargets { .. }
                 | GraphicsCommand::SetWritableDepthTarget { .. } => {
                     unreachable!("normalized attachment commands")
@@ -6331,6 +6410,7 @@ impl GraphicsContext {
                     uniforms = *values;
                 }
                 GraphicsCommand::SetSampledArrayRanges { ranges, samplers } => {
+                    descriptor_revision = None;
                     if queued.is_none() || !self.shader_array_views {
                         return Err(GraphicsError::NativeMetalRequired);
                     }
@@ -6342,6 +6422,7 @@ impl GraphicsContext {
                     sampled_samplers = *samplers;
                 }
                 GraphicsCommand::SetSampledViews { views, samplers } => {
+                    descriptor_revision = None;
                     sampled_ranges = [None; 2];
                     sampled_textures =
                         views.map(|handle| handle.map(|h| self.texture_views[&h].backing));
@@ -6365,6 +6446,7 @@ impl GraphicsContext {
                     sampled_samplers = *samplers;
                 }
                 GraphicsCommand::SetSampledTexture { texture, sampler } => {
+                    descriptor_revision = None;
                     sampled_ranges[0] = None;
                     sampled_views[0] = None;
                     sampled_array_views[0] = None;
@@ -6372,6 +6454,7 @@ impl GraphicsContext {
                     sampled_samplers[0] = texture.map(|_| *sampler);
                 }
                 GraphicsCommand::SetSampledBindings { textures, samplers } => {
+                    descriptor_revision = None;
                     sampled_ranges = [None; 2];
                     sampled_views = [None; 2];
                     sampled_array_views = [None; 2];
@@ -6584,6 +6667,13 @@ impl GraphicsContext {
                     if draw_count >= MAX_NATIVE_RENDER_DRAWS {
                         return Err(GraphicsError::InvalidDescriptor);
                     }
+                    let descriptor_roots =
+                        self.descriptor_roots(descriptor_revision, pipeline_handle);
+                    let active_sampled = if descriptor_revision.is_some() {
+                        descriptor_roots
+                    } else {
+                        [sampled_textures[0], sampled_textures[1], None, None]
+                    };
                     self.validate_storage_draw(StorageDrawValidation {
                         plan: attachments.as_ref(),
                         view: storage_view,
@@ -6593,7 +6683,7 @@ impl GraphicsContext {
                         viewport,
                         state: draw_state,
                         depth_active: depth_target.is_some() || explicit_depth_clear,
-                        sampled: &sampled_textures,
+                        sampled: &active_sampled,
                         states: &pending_states,
                         colors: &color_targets,
                     })?;
@@ -6609,7 +6699,7 @@ impl GraphicsContext {
                     {
                         return Err(GraphicsError::InvalidDescriptor);
                     }
-                    if sampled_textures.iter().flatten().any(|handle| {
+                    if active_sampled.iter().flatten().any(|handle| {
                         color_targets.contains(handle) || depth_target == Some(*handle)
                     }) {
                         return Err(GraphicsError::InvalidDescriptor);
@@ -6691,21 +6781,48 @@ impl GraphicsContext {
                                 return Err(GraphicsError::ResourceLifetimeViolation);
                             }
                         }
-                        let (pipeline, sampled, sampled_bindings) = self.draw_bindings(
-                            pipeline_handle,
-                            (
-                                sampled_textures,
-                                sampled_samplers,
-                                sampled_views,
-                                sampled_array_views,
-                                sampled_ranges,
+                        let descriptor_mode = pipeline_handle
+                            .and_then(|h| self.pipelines.get(&h))
+                            .is_some_and(|p| p.descriptor_requirements.is_some());
+                        let descriptor_bindings = if descriptor_mode {
+                            Some(self.descriptor_draw_bindings(
+                                descriptor_revision,
+                                pipeline_handle,
                                 uniforms,
-                            ),
-                            &pending_states,
-                            &mut texture_snapshots,
-                            &color_loads,
-                            queued,
-                        )?;
+                                &pending_states,
+                                &mut texture_snapshots,
+                                &color_loads,
+                                queued,
+                            )?)
+                        } else {
+                            if descriptor_revision.is_some() {
+                                return Err(GraphicsError::InvalidDescriptor);
+                            }
+                            None
+                        };
+                        let (pipeline, sampled, sampled_bindings) = if descriptor_mode {
+                            (
+                                pipeline_handle.and_then(|h| self.pipelines.get(&h).cloned()),
+                                None,
+                                GraphicsSampledBindings::default(),
+                            )
+                        } else {
+                            self.draw_bindings(
+                                pipeline_handle,
+                                (
+                                    sampled_textures,
+                                    sampled_samplers,
+                                    sampled_views,
+                                    sampled_array_views,
+                                    sampled_ranges,
+                                    uniforms,
+                                ),
+                                &pending_states,
+                                &mut texture_snapshots,
+                                &color_loads,
+                                queued,
+                            )?
+                        };
                         let colors = if gather.is_some() {
                             Vec::new()
                         } else if let Some((resource, offset, stride)) = vertex_colors {
@@ -6720,6 +6837,7 @@ impl GraphicsContext {
                             vec![[0.0; 4]; vertices.len()]
                         };
                         pass_draws.push(GraphicsDraw {
+                            descriptor_bindings,
                             uniforms,
                             colors,
                             pipeline,
@@ -6754,6 +6872,13 @@ impl GraphicsContext {
                     if draw_count >= MAX_NATIVE_RENDER_DRAWS {
                         return Err(GraphicsError::InvalidDescriptor);
                     }
+                    let descriptor_roots =
+                        self.descriptor_roots(descriptor_revision, pipeline_handle);
+                    let active_sampled = if descriptor_revision.is_some() {
+                        descriptor_roots
+                    } else {
+                        [sampled_textures[0], sampled_textures[1], None, None]
+                    };
                     self.validate_storage_draw(StorageDrawValidation {
                         plan: attachments.as_ref(),
                         view: storage_view,
@@ -6763,7 +6888,7 @@ impl GraphicsContext {
                         viewport,
                         state: draw_state,
                         depth_active: depth_target.is_some() || explicit_depth_clear,
-                        sampled: &sampled_textures,
+                        sampled: &active_sampled,
                         states: &pending_states,
                         colors: &color_targets,
                     })?;
@@ -6779,7 +6904,7 @@ impl GraphicsContext {
                     {
                         return Err(GraphicsError::InvalidDescriptor);
                     }
-                    if sampled_textures.iter().flatten().any(|handle| {
+                    if active_sampled.iter().flatten().any(|handle| {
                         color_targets.contains(handle) || depth_target == Some(*handle)
                     }) {
                         return Err(GraphicsError::InvalidDescriptor);
@@ -6884,21 +7009,48 @@ impl GraphicsContext {
                                 return Err(GraphicsError::ResourceLifetimeViolation);
                             }
                         }
-                        let (pipeline, sampled, sampled_bindings) = self.draw_bindings(
-                            pipeline_handle,
-                            (
-                                sampled_textures,
-                                sampled_samplers,
-                                sampled_views,
-                                sampled_array_views,
-                                sampled_ranges,
+                        let descriptor_mode = pipeline_handle
+                            .and_then(|h| self.pipelines.get(&h))
+                            .is_some_and(|p| p.descriptor_requirements.is_some());
+                        let descriptor_bindings = if descriptor_mode {
+                            Some(self.descriptor_draw_bindings(
+                                descriptor_revision,
+                                pipeline_handle,
                                 uniforms,
-                            ),
-                            &pending_states,
-                            &mut texture_snapshots,
-                            &color_loads,
-                            queued,
-                        )?;
+                                &pending_states,
+                                &mut texture_snapshots,
+                                &color_loads,
+                                queued,
+                            )?)
+                        } else {
+                            if descriptor_revision.is_some() {
+                                return Err(GraphicsError::InvalidDescriptor);
+                            }
+                            None
+                        };
+                        let (pipeline, sampled, sampled_bindings) = if descriptor_mode {
+                            (
+                                pipeline_handle.and_then(|h| self.pipelines.get(&h).cloned()),
+                                None,
+                                GraphicsSampledBindings::default(),
+                            )
+                        } else {
+                            self.draw_bindings(
+                                pipeline_handle,
+                                (
+                                    sampled_textures,
+                                    sampled_samplers,
+                                    sampled_views,
+                                    sampled_array_views,
+                                    sampled_ranges,
+                                    uniforms,
+                                ),
+                                &pending_states,
+                                &mut texture_snapshots,
+                                &color_loads,
+                                queued,
+                            )?
+                        };
                         let colors = if gather.is_some() {
                             Vec::new()
                         } else {
@@ -6910,6 +7062,7 @@ impl GraphicsContext {
                             )?
                         };
                         pass_draws.push(GraphicsDraw {
+                            descriptor_bindings,
                             uniforms,
                             colors,
                             pipeline,
@@ -7417,6 +7570,12 @@ impl GraphicsContext {
             if uint != (export == xenora_shader::GraphicsExportType::Uint) {
                 return Err(GraphicsError::InvalidDescriptor);
             }
+        }
+        if pipeline
+            .as_ref()
+            .is_some_and(|p| p.descriptor_requirements.is_some())
+        {
+            return Err(GraphicsError::InvalidDescriptor);
         }
         let pairs = pipeline.as_ref().map_or(0, |p| p.sampled_pairs);
         if pairs & !15 != 0

@@ -20,6 +20,9 @@ use xenora_texture::PackedTextureArrayLayout;
 
 #[path = "queued_attachments.rs"]
 mod attachments;
+#[path = "queued_descriptors.rs"]
+mod descriptors;
+use descriptors::{sampled_inputs, validate_descriptor_draw};
 #[path = "queued_typed.rs"]
 mod typed;
 use typed::{loader_desc, native_desc};
@@ -1151,19 +1154,23 @@ fn submit_native_inputs(
                 .pipeline
                 .as_ref()
                 .ok_or(GraphicsError::InvalidDescriptor)?;
-            let texture_formats = std::array::from_fn(|slot| {
-                draw.textures[slot].as_ref().map(|t| match t {
-                    GraphicsTextureInput::Host(t) => t.format,
-                    GraphicsTextureInput::ProducedTyped { desc, .. } => desc.format,
-                    _ => TextureFormat::Rgba8Unorm,
-                })
-            });
-            validate_pipeline_formats(
-                pipeline,
-                &color_formats,
-                texture_formats,
-                draw.sampled_ranges.map(|r| r.is_some()),
-            )?;
+            if pipeline.descriptor_requirements.is_some() || draw.descriptor_bindings.is_some() {
+                validate_descriptor_draw(draw, &color_formats)?;
+            } else {
+                let texture_formats = std::array::from_fn(|slot| {
+                    draw.textures[slot].as_ref().map(|t| match t {
+                        GraphicsTextureInput::Host(t) => t.format,
+                        GraphicsTextureInput::ProducedTyped { desc, .. } => desc.format,
+                        _ => TextureFormat::Rgba8Unorm,
+                    })
+                });
+                validate_pipeline_formats(
+                    pipeline,
+                    &color_formats,
+                    texture_formats,
+                    draw.sampled_ranges.map(|r| r.is_some()),
+                )?;
+            }
             let expected_storage = match pipeline.storage {
                 Some(xenora_shader::GraphicsStorageType::Float) => Some(TextureFormat::Rgba8Unorm),
                 Some(xenora_shader::GraphicsStorageType::Uint) => Some(TextureFormat::R32Uint),
@@ -1173,15 +1180,16 @@ fn submit_native_inputs(
                 return Err(GraphicsError::InvalidDescriptor);
             }
             validate_shader_array_layers(draw)?;
-            if pipeline.color_targets != request.colors.len()
-                || pipeline.sampled_pairs & !15 != 0
-                || pipeline.uses_texture != (pipeline.sampled_pairs != 0)
-                || (0..2).any(|slot| {
-                    draw.textures[slot].is_some()
-                        != (pipeline.sampled_pairs & (3 << (slot * 2)) != 0)
-                        || draw.samplers[slot].is_some()
-                            != (pipeline.sampled_pairs & (5 << slot) != 0)
-                })
+            if pipeline.descriptor_requirements.is_none()
+                && (pipeline.color_targets != request.colors.len()
+                    || pipeline.sampled_pairs & !15 != 0
+                    || pipeline.uses_texture != (pipeline.sampled_pairs != 0)
+                    || (0..2).any(|slot| {
+                        draw.textures[slot].is_some()
+                            != (pipeline.sampled_pairs & (3 << (slot * 2)) != 0)
+                            || draw.samplers[slot].is_some()
+                                != (pipeline.sampled_pairs & (5 << slot) != 0)
+                    }))
             {
                 return Err(GraphicsError::InvalidDescriptor);
             }
@@ -1197,7 +1205,8 @@ fn submit_native_inputs(
     let mut produced_array_views: HashMap<_, xenora_metal::RenderColorView> = HashMap::new();
     let mut bindings = Vec::new();
     for draw in &request.draws {
-        let samplers = draw
+        let inputs = sampled_inputs(draw)?;
+        let samplers = inputs
             .samplers
             .iter()
             .map(|sampler| {
@@ -1207,30 +1216,26 @@ fn submit_native_inputs(
             })
             .collect::<Result<Vec<_>, _>>()?;
         let mut pairs = Vec::new();
-        let mask = draw
-            .pipeline
-            .as_ref()
-            .ok_or(GraphicsError::InvalidDescriptor)?
-            .sampled_pairs;
-        for (texture_slot, texture) in draw.textures.iter().enumerate() {
+        let mask = inputs.mask;
+        for (texture_slot, texture) in inputs.textures.iter().enumerate() {
             let Some(texture) = texture else {
-                if draw.array_views[texture_slot].is_some()
-                    || draw.views[texture_slot].is_some()
-                    || draw.sampled_ranges[texture_slot].is_some()
+                if inputs.array_views[texture_slot].is_some()
+                    || inputs.views[texture_slot].is_some()
+                    || inputs.sampled_ranges[texture_slot].is_some()
                 {
                     return Err(GraphicsError::InvalidDescriptor);
                 }
                 continue;
             };
-            let array_desc = draw.array_views[texture_slot];
+            let array_desc = inputs.array_views[texture_slot];
             let is_array = match texture {
                 GraphicsTextureInput::Host(t) => t.array_layers.is_some(),
                 GraphicsTextureInput::ProducedArray { .. } => true,
                 GraphicsTextureInput::ProducedTyped { desc, .. } => desc.array_layers.is_some(),
                 _ => false,
             };
-            if let Some(range) = draw.sampled_ranges[texture_slot] {
-                if !is_array || array_desc.is_some() || draw.views[texture_slot].is_some() {
+            if let Some(range) = inputs.sampled_ranges[texture_slot] {
+                if !is_array || array_desc.is_some() || inputs.views[texture_slot].is_some() {
                     return Err(GraphicsError::InvalidDescriptor);
                 }
                 let native = native_array_range_desc(range);
@@ -1287,7 +1292,7 @@ fn submit_native_inputs(
                     _ => return Err(GraphicsError::InvalidDescriptor),
                 };
                 for (sampler_slot, sampler) in samplers.iter().enumerate() {
-                    if mask & (1 << (texture_slot * 2 + sampler_slot)) == 0 {
+                    if mask & (1 << (texture_slot * inputs.stride + sampler_slot)) == 0 {
                         continue;
                     }
                     let sampler = sampler
@@ -1318,7 +1323,7 @@ fn submit_native_inputs(
                 continue;
             }
             if is_array != array_desc.is_some()
-                || (array_desc.is_some() && draw.views[texture_slot].is_some())
+                || (array_desc.is_some() && inputs.views[texture_slot].is_some())
             {
                 return Err(GraphicsError::InvalidDescriptor);
             }
@@ -1374,7 +1379,7 @@ fn submit_native_inputs(
                 GraphicsTextureInput::Host(snapshot) => upload_selected_view(
                     gpu,
                     snapshot,
-                    draw.views[texture_slot],
+                    inputs.views[texture_slot],
                     array_desc,
                     &mut cache,
                     &mut view_cache,
@@ -1389,7 +1394,7 @@ fn submit_native_inputs(
                             .array_slice_view(native_array_view_desc(array))
                             .map_err(metal_error)?
                     } else {
-                        let view = draw.views[texture_slot].map(native_view_desc).unwrap_or(
+                        let view = inputs.views[texture_slot].map(native_view_desc).unwrap_or(
                             xenora_metal::TextureViewDesc {
                                 base_mip: 0,
                                 mip_count: desc.mip_levels,
@@ -1418,7 +1423,7 @@ fn submit_native_inputs(
                     };
                     Some(view)
                 } else {
-                    match (texture, draw.views[texture_slot]) {
+                    match (texture, inputs.views[texture_slot]) {
                         (GraphicsTextureInput::Produced { version, .. }, Some(desc)) => {
                             let key = (*version, desc);
                             let view = match produced_views.entry(key) {
@@ -1438,7 +1443,7 @@ fn submit_native_inputs(
                     }
                 };
             for (sampler_slot, sampler) in samplers.iter().enumerate() {
-                if mask & (1 << (texture_slot * 2 + sampler_slot)) == 0 {
+                if mask & (1 << (texture_slot * inputs.stride + sampler_slot)) == 0 {
                     continue;
                 }
                 let sampler = sampler
@@ -1783,6 +1788,7 @@ where
     context.enable_attachment_transactions()?;
     context.enable_shader_array_views()?;
     context.enable_shader_storage_views()?;
+    context.enable_descriptor_tables()?;
     Ok(())
 }
 
@@ -2986,25 +2992,25 @@ fn validate_shader_array_layers(
     draw: &xenora_loader::graphics::GraphicsQueuedDraw,
 ) -> Result<(), GraphicsError> {
     use xenora_shader::{GraphicsArrayLayer, GraphicsSampleType};
-    let pipeline = draw
-        .pipeline
-        .as_ref()
-        .ok_or(GraphicsError::InvalidDescriptor)?;
-    for slot in 0..2 {
+    let inputs = sampled_inputs(draw)?;
+    for slot in 0..inputs.stride {
+        if inputs.stride == 4 && !inputs.needs_texture(slot) {
+            continue;
+        }
         let is_array = matches!(
-            pipeline.types.textures[slot],
+            inputs.types[slot],
             GraphicsSampleType::FloatArray | GraphicsSampleType::UintArray
         );
-        if is_array != draw.sampled_ranges[slot].is_some() {
+        if is_array != inputs.sampled_ranges[slot].is_some() {
             return Err(GraphicsError::InvalidDescriptor);
         }
-        let Some(range) = draw.sampled_ranges[slot] else {
-            if !pipeline.array_layers[slot].is_empty() {
+        let Some(range) = inputs.sampled_ranges[slot] else {
+            if !inputs.layers[slot].is_empty() {
                 return Err(GraphicsError::InvalidDescriptor);
             }
             continue;
         };
-        let (mips, layers) = match draw.textures[slot]
+        let (mips, layers) = match inputs.textures[slot]
             .as_ref()
             .ok_or(GraphicsError::InvalidDescriptor)?
         {
@@ -3030,11 +3036,11 @@ fn validate_shader_array_layers(
                 .base_mip
                 .checked_add(range.mip_count)
                 .is_none_or(|end| end > mips)
-            || pipeline.array_layers[slot].is_empty()
+            || inputs.layers[slot].is_empty()
         {
             return Err(GraphicsError::InvalidDescriptor);
         }
-        for source in &pipeline.array_layers[slot] {
+        for source in &inputs.layers[slot] {
             match *source {
                 GraphicsArrayLayer::Constant(layer) if layer < range.slice_count => {}
                 GraphicsArrayLayer::Uniform(index) => {

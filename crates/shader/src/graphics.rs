@@ -65,6 +65,33 @@ enum Op {
     },
 }
 
+// Internal binding identity: fixed slot 0..3, or uniform word 0..7 encoded as 4..11.
+// A sample snapshots this identity; no later SGPR assignment can change it.
+fn binding_slot(index: u8) -> usize {
+    if index < 4 { index as usize } else { 0 }
+}
+fn binding_candidates(index: u8) -> std::ops::Range<u8> {
+    if index < 4 { index..index + 1 } else { 0..4 }
+}
+fn binding_expression(index: u8) -> String {
+    if index < 4 {
+        format!("{index}u")
+    } else {
+        format!("uniforms[{}]", index - 4)
+    }
+}
+fn binding_pairs(texture: u8, sampler: u8) -> u16 {
+    let mut mask = 0;
+    for t in binding_candidates(texture) {
+        for s in binding_candidates(sampler) {
+            if texture < 4 || sampler != texture || t == s {
+                mask |= 1u16 << (t * 4 + s);
+            }
+        }
+    }
+    mask
+}
+
 struct Export {
     offset: usize,
     values: [Value; 4],
@@ -207,7 +234,7 @@ pub enum GraphicsStorageType {
     Uint,
 }
 
-fn storage_type(types: GraphicsPipelineTypes) -> Option<GraphicsStorageType> {
+fn storage_type(types: GraphicsPipelineTypes4) -> Option<GraphicsStorageType> {
     match types.textures[0] {
         GraphicsSampleType::StorageFloat => Some(GraphicsStorageType::Float),
         GraphicsSampleType::StorageUint => Some(GraphicsStorageType::Uint),
@@ -262,6 +289,41 @@ pub struct CompiledGraphics {
     /// Deduplicated layer requirements per texture across all reachable samples.
     /// See [`GraphicsArrayLayer`] for mandatory per-draw binding validation.
     pub array_layers: [Vec<GraphicsArrayLayer>; 2],
+    /// Uniform words read by the vertex stage; bit zero denotes s24.
+    pub vertex_uniform_mask: u8,
+    /// Uniform words read by the pixel stage; bit zero denotes s24.
+    pub pixel_uniform_mask: u8,
+    /// Union of vertex and pixel uniform requirements.
+    pub required_uniform_mask: u8,
+}
+
+/// Four-slot synthetic resource types. Storage remains restricted to slot0.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct GraphicsPipelineTypes4 {
+    pub textures: [GraphicsSampleType; 4],
+    pub colors: [GraphicsExportType; 8],
+}
+
+/// Compiled graphics stages and resource requirements derived from their lifted IR.
+#[derive(Debug)]
+pub struct CompiledGraphics4 {
+    /// Captured integer uniform words that the host must validate as < 4 per draw.
+    pub descriptor_index_uniform_mask: u8,
+    pub types: GraphicsPipelineTypes4,
+    /// Slot0 storage requirement, including proven unique pixel-X/Y addresses.
+    /// See [`GraphicsStorageType`] for mandatory host geometry/binding constraints.
+    pub storage: Option<GraphicsStorageType>,
+    /// Generated shader source, disassembly and intermediate representation.
+    pub shader: CompiledShader,
+    /// Number of contiguous color attachments starting at MRT0 (1..=8).
+    pub color_targets: usize,
+    /// Whether the pixel stage requires any synthetic texture/sampler binding.
+    pub uses_texture: bool,
+    /// Required pairs: bit (texture_slot * 4 + sampler_slot), for slots 0..4.
+    pub sampled_pairs: u16,
+    /// Deduplicated layer requirements per texture across all reachable samples.
+    /// See [`GraphicsArrayLayer`] for mandatory per-draw binding validation.
+    pub array_layers: [Vec<GraphicsArrayLayer>; 4],
     /// Uniform words read by the vertex stage; bit zero denotes s24.
     pub vertex_uniform_mask: u8,
     /// Uniform words read by the pixel stage; bit zero denotes s24.
@@ -326,10 +388,67 @@ pub fn compile_graphics_pipeline_typed(
     pixel: &[u8],
     types: GraphicsPipelineTypes,
 ) -> Result<CompiledGraphics, CompileError> {
-    if matches!(
-        types.textures[1],
-        GraphicsSampleType::StorageFloat | GraphicsSampleType::StorageUint
-    ) {
+    let core = compile_graphics_core(
+        architecture,
+        vertex,
+        pixel,
+        GraphicsPipelineTypes4 {
+            textures: [
+                types.textures[0],
+                types.textures[1],
+                GraphicsSampleType::Float,
+                GraphicsSampleType::Float,
+            ],
+            colors: types.colors,
+        },
+        false,
+    )?;
+    let [a, b, _, _] = core.array_layers;
+    Ok(CompiledGraphics {
+        types,
+        storage: core.storage,
+        shader: core.shader,
+        color_targets: core.color_targets,
+        uses_texture: core.uses_texture,
+        sampled_pairs: ((core.sampled_pairs & 3) | ((core.sampled_pairs >> 2) & 12)) as u8,
+        array_layers: [a, b],
+        vertex_uniform_mask: core.vertex_uniform_mask,
+        pixel_uniform_mask: core.pixel_uniform_mask,
+        required_uniform_mask: core.required_uniform_mask,
+    })
+}
+
+/// Four fixed texture bases 0/12/32/44 and sampler bases 8/20/40/52.
+/// Selector bases 60 and 68 require direct s_mov_b32 from s24..s31 into their
+/// first word. They select among all four bindings using integer uniform bits.
+/// Reserved descriptor words cannot be written otherwise. This is a synthetic
+/// ABI, not AMD descriptor interpretation. Computed or ambiguous selectors reject.
+/// The host (including trusted native callers) must capture all required uniforms,
+/// validate descriptor_index_uniform_mask words as < 4, validate every possible
+/// sampled pair and all array layers before dispatch. The switch default is unreachable
+/// only under these preconditions. Storage0 excludes indexed texture selection.
+pub fn compile_graphics_pipeline_typed4(
+    architecture: Architecture,
+    vertex: &[u8],
+    pixel: &[u8],
+    types: GraphicsPipelineTypes4,
+) -> Result<CompiledGraphics4, CompileError> {
+    compile_graphics_core(architecture, vertex, pixel, types, true)
+}
+
+fn compile_graphics_core(
+    architecture: Architecture,
+    vertex: &[u8],
+    pixel: &[u8],
+    types: GraphicsPipelineTypes4,
+    extended: bool,
+) -> Result<CompiledGraphics4, CompileError> {
+    if types.textures[1..].iter().any(|t| {
+        matches!(
+            t,
+            GraphicsSampleType::StorageFloat | GraphicsSampleType::StorageUint
+        )
+    }) {
         return Err(CompileError::GraphicsLink {
             reason: "storage is restricted to texture slot0",
         });
@@ -337,7 +456,7 @@ pub fn compile_graphics_pipeline_typed(
     let storage = storage_type(types);
     let compile_stage = |stage: Stage, bytes: &[u8]| {
         let result = decode_fixture(architecture, bytes).and_then(|decoded| {
-            let lifted = lift(stage, &decoded, bytes.len(), storage.is_some())?;
+            let lifted = lift(stage, &decoded, bytes.len(), storage.is_some(), extended)?;
             Ok((decoded, lifted))
         });
         result.map_err(|error| CompileError::GraphicsStage {
@@ -372,20 +491,20 @@ pub fn compile_graphics_pipeline_typed(
         });
     }
 
-    let sampled_pairs = pixel.values.iter().fold(0u8, |mask, (_, op)| {
+    let sampled_pairs = pixel.values.iter().fold(0u16, |mask, (_, op)| {
         if let Op::SampleLodZero {
             texture_index,
             sampler_index,
             ..
         } = op
         {
-            mask | (1 << (texture_index * 2 + sampler_index))
+            mask | binding_pairs(*texture_index, *sampler_index)
         } else {
             mask
         }
     });
     validate_resource_types(&pixel, types, sampled_pairs, color_count)?;
-    let mut array_layers: [Vec<GraphicsArrayLayer>; 2] = Default::default();
+    let mut array_layers: [Vec<GraphicsArrayLayer>; 4] = Default::default();
     for (_, op) in &pixel.values {
         if let Op::SampleLodZero {
             texture_index,
@@ -393,12 +512,29 @@ pub fn compile_graphics_pipeline_typed(
             ..
         } = op
         {
-            let requirements = &mut array_layers[usize::from(*texture_index)];
-            if !requirements.contains(layer) {
-                requirements.push(*layer);
+            for slot in binding_candidates(*texture_index) {
+                let requirements = &mut array_layers[usize::from(slot)];
+                if !requirements.contains(layer) {
+                    requirements.push(*layer);
+                }
             }
         }
     }
+    let descriptor_index_uniform_mask = pixel.values.iter().fold(0u8, |mask, (_, op)| {
+        if let Op::SampleLodZero {
+            texture_index,
+            sampler_index,
+            ..
+        } = op
+        {
+            [*texture_index, *sampler_index]
+                .into_iter()
+                .filter(|i| *i >= 4)
+                .fold(mask, |mask, i| mask | (1u8 << (i - 4)))
+        } else {
+            mask
+        }
+    });
     let has_sampling = sampled_pairs != 0;
 
     let mut disassembly = String::new();
@@ -420,6 +556,9 @@ pub fn compile_graphics_pipeline_typed(
     if parameter.is_some() {
         msl.push_str("    float4 parameter [[user(locn0), center_perspective]];\n");
     }
+    if descriptor_index_uniform_mask != 0 {
+        msl.insert_str(0, "// Host precondition: descriptor_index_uniform_mask words must be captured uint indices < 4.\n");
+    }
     let vertex_uniforms = if vertex.uniform_mask != 0 {
         ",\n    constant uint* uniforms [[buffer(2)]]"
     } else {
@@ -430,7 +569,12 @@ pub fn compile_graphics_pipeline_typed(
         "}};\n\nvertex VertexOutput {VERTEX_ENTRY_POINT}(\n    uint vertex_id [[vertex_id]],\n    device const float4* positions [[buffer(0)]],\n    device const float4* colors [[buffer(1)]]{vertex_uniforms}) {{\n"
     );
     emit_fp_controls(&vertex, &mut msl);
-    emit_values(&vertex, GraphicsPipelineTypes::default(), &mut ir, &mut msl);
+    emit_values(
+        &vertex,
+        GraphicsPipelineTypes4::default(),
+        &mut ir,
+        &mut msl,
+    );
     msl.push_str("    VertexOutput output;\n");
     emit_export(position, "pos0", "output.position", &mut ir, &mut msl);
     if let Some(parameter) = parameter {
@@ -466,7 +610,7 @@ pub fn compile_graphics_pipeline_typed(
         params.push("VertexOutput input [[stage_in]]".to_string());
     }
     for (slot, sample_type) in types.textures.iter().enumerate() {
-        if sampled_pairs & (0b11 << (slot * 2)) != 0 {
+        if sampled_pairs & (0b1111 << (slot * 4)) != 0 {
             let kind = match sample_type {
                 GraphicsSampleType::Float => "texture2d<float, access::sample>",
                 GraphicsSampleType::Uint => "texture2d<uint, access::sample>",
@@ -480,8 +624,8 @@ pub fn compile_graphics_pipeline_typed(
             params.push(format!("{kind} tex{slot} [[texture({slot})]]"));
         }
     }
-    for slot in 0..2 {
-        if sampled_pairs & (0b0101 << slot) != 0 {
+    for slot in 0..4 {
+        if sampled_pairs & (0x1111 << slot) != 0 {
             params.push(format!("sampler samp{slot} [[sampler({slot})]]"));
         }
     }
@@ -536,7 +680,8 @@ pub fn compile_graphics_pipeline_typed(
         );
     }
     msl.push_str("    return output;\n}\n");
-    Ok(CompiledGraphics {
+    Ok(CompiledGraphics4 {
+        descriptor_index_uniform_mask,
         types,
         storage,
         shader: CompiledShader {
@@ -559,7 +704,33 @@ fn lift(
     decoded: &[DecodedInstruction],
     length: usize,
     storage: bool,
+    extended: bool,
 ) -> Result<StageIr, CompileError> {
+    if extended {
+        for decoded in decoded {
+            let destination = match decoded.instruction {
+                Instruction::ScalarMoveB32 { dst, .. } | Instruction::ScalarAlu { dst, .. } => {
+                    Some(dst)
+                }
+                _ => None,
+            };
+            if let Some(dst) = destination {
+                let direct_selector = matches!(
+                    decoded.instruction,
+                    Instruction::ScalarMoveB32 {
+                        dst: 60 | 68,
+                        src: ScalarSource::Register(24..=31)
+                    }
+                );
+                if matches!(dst, 0..=23 | 32..=55 | 60..=71) && !direct_selector {
+                    return Err(CompileError::Verify {
+                        offset: decoded.offset,
+                        reason: "extended descriptor words are reserved; selectors require direct uniform moves",
+                    });
+                }
+            }
+        }
+    }
     let loops = cfg::analyze(decoded)?;
     let mut loop_headers: Vec<Option<RegisterState>> = vec![None; loops.len()];
     let mut loop_bounds = vec![None; loops.len()];
@@ -899,15 +1070,37 @@ fn lift(
                 // Original synthetic ABI, not guest descriptor decoding. AMD RDNA2
                 // Table41 defines four-SGPR alignment for both base operands.
                 // Texture ranges0..7/12..19 and sampler ranges8..11/20..23 do not overlap.
+                let selector = |register: u8| -> Result<u8, CompileError> {
+                    match scalars[usize::from(register)] {
+                        Some(ScalarValue::Uniform(word)) => Ok(4 + word),
+                        _ => Err(error(
+                            "descriptor selector requires direct uniform provenance; uninitialized, computed or conflicting phi selectors reject",
+                        )),
+                    }
+                };
                 let texture_index = match resource {
                     0 => 0,
                     12 => 1,
-                    _ => return Err(error("sampling outside synthetic texture bases 0 and 12")),
+                    32 if extended => 2,
+                    44 if extended => 3,
+                    60 if extended => selector(60)?,
+                    _ => {
+                        return Err(error(
+                            "sampling outside synthetic texture bases supported by this ABI",
+                        ));
+                    }
                 };
                 let sampler_index = match sampler {
                     8 => 0,
                     20 => 1,
-                    _ => return Err(error("sampling outside synthetic sampler bases 8 and 20")),
+                    40 if extended => 2,
+                    52 if extended => 3,
+                    68 if extended => selector(68)?,
+                    _ => {
+                        return Err(error(
+                            "sampling outside synthetic sampler bases supported by this ABI",
+                        ));
+                    }
                 };
                 let u = read(coord)?;
                 let v = read(coord + 1)?;
@@ -1303,8 +1496,8 @@ fn compare_expression(op: ScalarCompareOp, left: ScalarValue, right: ScalarValue
 
 fn validate_resource_types(
     pixel: &StageIr,
-    types: GraphicsPipelineTypes,
-    pairs: u8,
+    types: GraphicsPipelineTypes4,
+    pairs: u16,
     colors: usize,
 ) -> Result<(), CompileError> {
     let storage = storage_type(types);
@@ -1312,13 +1505,13 @@ fn validate_resource_types(
         .values
         .iter()
         .any(|(_, op)| matches!(op, Op::Store2D { .. }));
-    if storage.is_some() != has_store || (storage.is_some() && pairs & 3 != 0) {
+    if storage.is_some() != has_store || (storage.is_some() && pairs & 15 != 0) {
         return Err(CompileError::GraphicsLink {
             reason: "storage requires a reachable store and excludes sampling texture0",
         });
     }
-    if (0..2).any(|slot| {
-        pairs & (3 << (slot * 2)) == 0
+    if (0..4).any(|slot| {
+        pairs & (15 << (slot * 4)) == 0
             && !(slot == 0 && storage.is_some())
             && types.textures[slot] != GraphicsSampleType::Float
     }) || types.colors[colors..]
@@ -1349,8 +1542,14 @@ fn validate_resource_types(
             ..
         } = op
         {
+            if *texture_index >= 4 && types.textures.iter().any(|t| *t != types.textures[0]) {
+                return Err(CompileError::Verify {
+                    offset: offset.unwrap_or(0),
+                    reason: "indexed textures require homogeneous sample types and dimensions",
+                });
+            }
             let array_type = matches!(
-                types.textures[usize::from(*texture_index)],
+                types.textures[binding_slot(*texture_index)],
                 GraphicsSampleType::FloatArray | GraphicsSampleType::UintArray
             );
             if array_type != layer.is_some() {
@@ -1370,7 +1569,7 @@ fn validate_resource_types(
         }
     }
     let mut integer_bits: Vec<bool> = pixel.values.iter().map(|(_, op)| matches!(op,
-        Op::SampleLodZero {texture_index, ..} if matches!(types.textures[*texture_index as usize],
+        Op::SampleLodZero {texture_index, ..} if matches!(types.textures[binding_slot(*texture_index)],
             GraphicsSampleType::Uint | GraphicsSampleType::UintArray)
     )).collect();
     let mut dependents = vec![Vec::new(); pixel.values.len()];
@@ -1550,7 +1749,7 @@ fn emit_fp_controls(stage: &StageIr, msl: &mut String) {
     }
 }
 
-fn emit_values(stage: &StageIr, types: GraphicsPipelineTypes, ir: &mut String, msl: &mut String) {
+fn emit_values(stage: &StageIr, types: GraphicsPipelineTypes4, ir: &mut String, msl: &mut String) {
     if !stage.runtime_control {
         emit_range(stage, types, 0..stage.values.len(), false, ir, msl);
         return;
@@ -1621,9 +1820,45 @@ fn emit_parallel_copies(
     }
 }
 
+fn sample_expression(
+    types: GraphicsPipelineTypes4,
+    texture_index: u8,
+    sampler_index: u8,
+    u: Value,
+    v: Value,
+    layer: Option<(Value, GraphicsArrayLayer)>,
+    component: u8,
+) -> (&'static str, String) {
+    let channel = ["r", "g", "b", "a"][usize::from(component)];
+    let layer_argument = layer.map_or_else(String::new, |(value, _)| format!(", uint({value})"));
+    let sample = format!(
+        "tex{texture_index}.sample(samp{sampler_index}, float2({u}, {v}){layer_argument}, level(0.0f))"
+    );
+    let (kind, expression) = match types.textures[binding_slot(texture_index)] {
+        GraphicsSampleType::Float | GraphicsSampleType::FloatArray => {
+            ("f32", format!("{sample}.{channel}"))
+        }
+        GraphicsSampleType::Uint | GraphicsSampleType::UintArray => {
+            ("u32.bits", format!("as_type<float>({sample}.{channel})"))
+        }
+        GraphicsSampleType::StorageFloat | GraphicsSampleType::StorageUint => {
+            unreachable!("validated storage/sample exclusion")
+        }
+        GraphicsSampleType::Depth => (
+            "depth",
+            match component {
+                0 => sample,
+                3 => "1.0f".into(),
+                _ => "0.0f".into(),
+            },
+        ),
+    };
+    (kind, expression)
+}
+
 fn emit_range(
     stage: &StageIr,
-    types: GraphicsPipelineTypes,
+    types: GraphicsPipelineTypes4,
     range: std::ops::Range<usize>,
     assignment: bool,
     ir: &mut String,
@@ -1633,6 +1868,48 @@ fn emit_range(
         let (offset, op) = stage.values[index];
 
         let value = Value(index);
+        if let Op::SampleLodZero {
+            u,
+            v,
+            layer,
+            component,
+            texture_index,
+            sampler_index,
+        } = op
+            && (texture_index >= 4 || sampler_index >= 4)
+        {
+            let pairs = binding_pairs(texture_index, sampler_index);
+            let _ = writeln!(
+                ir,
+                "{value} = sample_lz.indexed texture:{} sampler:{} pairs:{pairs:04x}",
+                binding_expression(texture_index),
+                binding_expression(sampler_index)
+            );
+            if !assignment {
+                let _ = writeln!(msl, "    float {value};");
+            }
+            let _ = writeln!(
+                msl,
+                "    switch ({} * 4u + {}) {{",
+                binding_expression(texture_index),
+                binding_expression(sampler_index)
+            );
+            for t in 0..4u8 {
+                for s in 0..4u8 {
+                    if pairs & (1u16 << (t * 4 + s)) != 0 {
+                        let (_, expression) =
+                            sample_expression(types, t, s, u, v, layer, component);
+                        let _ = writeln!(
+                            msl,
+                            "    case {}u: {value} = {expression}; break;",
+                            t * 4 + s
+                        );
+                    }
+                }
+            }
+            msl.push_str("    default: __builtin_unreachable();\n    }\n");
+            continue;
+        }
         let (operation, expression) = match op {
             Op::Store2D {
                 coordinates: [x, y],
@@ -1717,31 +1994,9 @@ fn emit_range(
                 texture_index,
                 sampler_index,
             } => {
+                let (kind, expression) =
+                    sample_expression(types, texture_index, sampler_index, u, v, layer, component);
                 let channel = ["r", "g", "b", "a"][usize::from(component)];
-                let layer_argument =
-                    layer.map_or_else(String::new, |(value, _)| format!(", uint({value})"));
-                let sample = format!(
-                    "tex{texture_index}.sample(samp{sampler_index}, float2({u}, {v}){layer_argument}, level(0.0f))"
-                );
-                let (kind, expression) = match types.textures[texture_index as usize] {
-                    GraphicsSampleType::Float | GraphicsSampleType::FloatArray => {
-                        ("f32", format!("{sample}.{channel}"))
-                    }
-                    GraphicsSampleType::Uint | GraphicsSampleType::UintArray => {
-                        ("u32.bits", format!("as_type<float>({sample}.{channel})"))
-                    }
-                    GraphicsSampleType::StorageFloat | GraphicsSampleType::StorageUint => {
-                        unreachable!("validated storage/sample exclusion")
-                    }
-                    GraphicsSampleType::Depth => (
-                        "depth",
-                        match component {
-                            0 => sample,
-                            3 => "1.0f".into(),
-                            _ => "0.0f".into(),
-                        },
-                    ),
-                };
                 let dimension = if layer.is_some() { "2d_array" } else { "2d" };
                 let layer_ir = layer.map_or_else(String::new, |(value, _)| format!(", {value}"));
                 (

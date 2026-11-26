@@ -11,7 +11,7 @@ pub(super) struct StorageDrawValidation<'a> {
     pub viewport: (usize, usize),
     pub state: GraphicsDrawState,
     pub depth_active: bool,
-    pub sampled: &'a [Option<GraphicsHandle>; 2],
+    pub sampled: &'a [Option<GraphicsHandle>],
     pub states: &'a HashMap<GraphicsHandle, ResourceStates>,
     pub colors: &'a [GraphicsHandle],
 }
@@ -147,7 +147,11 @@ impl GraphicsContext {
             || draw.colors.contains(&selected.root)
             || draw.sampled[0].is_some()
             || draw.sampled.iter().flatten().any(|h| *h == selected.root)
-            || pipeline.is_some_and(|p| p.sampled_pairs & 3 != 0)
+            || pipeline.is_some_and(|p| {
+                p.descriptor_requirements
+                    .as_ref()
+                    .map_or(p.sampled_pairs & 3 != 0, |r| r.sampled_pairs & 15 != 0)
+            })
         {
             return Err(GraphicsError::InvalidDescriptor);
         }

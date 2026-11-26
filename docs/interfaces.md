@@ -634,15 +634,17 @@ This mapping is synthetic, not a general console resource-descriptor contract.
 
 `submit_multi_binding_triangle_targets_rgba8(shaders, pass, bindings, depth,
 color_loads)` takes one `TriangleShader` and one `Vec<BoundSampledTexture>` per
-draw and returns `PendingRender`. Each vector contains 0–4 pairs using slots 0/1.
-The native layer normalizes independent two-entry texture and sampler tables.
+draw and returns `PendingRender`. Each vector contains 0–16 pairs using slots 0–3.
+The native layer normalizes independent four-entry texture and sampler tables.
+The additive [descriptor-table ABI](descriptor-tables.md) uses these extra slots;
+the legacy shader compiler retains its original two-slot mapping.
 Repeated slots must name the same native object (clones are accepted); different
 objects conflict even if their descriptors or contents match. Every supplied pair
 is checked for LOD compatibility and texture/sampler/render-device registry identity
 before compilation. The trusted native caller supplies the pairs its shader uses;
 loader metadata enforces required bindings before reaching this API.
 
-Each draw binds or clears both texture slots and both sampler slots, including
+Each draw binds or clears all four texture slots and all four sampler slots, including
 when programs change. `PendingRender` owns clones of all pair resources through
 completion or draining Drop; input arrays and shader source need not outlive
 submission. No new unsafe Send/Sync declarations are used. The older

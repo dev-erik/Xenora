@@ -16,6 +16,46 @@ run ends with `PASS`. Quick mode also rejects filters that select no passing tes
 Use `--help` for prerequisites. These tests render offscreen and compare pixels;
 they do not open an application window. Avoid other GPU test runs at the same time.
 
+## S2.5 completion: descriptor tables and runtime indexing
+
+27 November 2026. The [descriptor contract](../descriptor-tables.md) adds immutable
+recorded revisions, atomic typed updates, four texture/sampler slots and bounded GPU
+selection by integer uniforms. Resource contents resolve at submission; exact
+produced versions, complete-root ownership and dependency-retained revisions survive
+public-handle destruction, command reset and completion until final retirement.
+
+The focused acceptance set has **41 tests**: 16 compiler, 11 loader, seven original
+guest, three native binding, two native lifetime and two worker preflight tests.
+Literal GPU checks cover independent selectors, one-sided/diagonal selection,
+branches, float/uint array layers, depth, A/B/A revisions and pending slot3 inputs.
+Array tests cover both layers across all textures, not every texture/mip/layer
+combination. Invalid producer identities, layouts and missing uniforms reject before
+attachment imports; retries retain the original producer and queue usability.
+
+All nine repository gates passed in `artifacts/validation-full.b2j9aG`:
+**987 workspace tests passed, zero failed, 137 ignored**; the native suite reported
+**444 passed, zero failed, one ignored**. These suites overlap; totals must not be
+added as unique tests. Ignored tests are not GPU evidence. The full GPU script now
+explicitly includes descriptor worker preflight. Two earlier runs found stale
+negative-test boundaries (unknown opcode70 and five binding pairs), corrected to
+opcode75 and seventeen pairs without weakening rejection/depth assertions.
+
+Six isolated faults failed meaningful assertions: missing slot3 wait (consumer GPU
+marker ran early), missing full-root lease (272 versus392 bytes after pruning),
+upper-slot collapse (wrong literal pixels), retroactive revision replacement (valid
+submission rejected), unchecked selector4 (invalid submission accepted), and dropped
+receipt revisions (budget refunded before release). Every mutation was restored
+exactly; an independent reviewer checked the source hashes and failure reasons.
+Logs remain under ignored `artifacts/s25-mutations`.
+
+Independent component and global reviewers accepted the finite contract and evidence;
+authors did not certify their own components.
+
+The [completed checklist](../superpowers/plans/2026-11-27-descriptor-tables.md)
+defines the bounded milestone. General descriptor heaps, arbitrary/divergent
+indexing, broader guest coherence and general queue graphs are not established.
+S2.6, S2.7 and final Stage2 integrated acceptance remain open.
+
 ## S2.4 completion: selected shader storage
 
 S2.4 is complete within the documented synthetic resource-view contracts. Earlier

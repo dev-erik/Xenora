@@ -124,8 +124,8 @@ type MultiPipelineInputs<'a> = (&'a [TriangleShader<'a>], &'a [Vec<NativeSampled
 
 #[derive(Default)]
 struct DrawBindings<'a> {
-    textures: [Option<&'a NativeSampledTexture>; 2],
-    samplers: [Option<&'a crate::MetalSampler>; 2],
+    textures: [Option<&'a NativeSampledTexture>; 4],
+    samplers: [Option<&'a crate::MetalSampler>; 4],
 }
 
 impl<'a> DrawBindings<'a> {
@@ -133,10 +133,10 @@ impl<'a> DrawBindings<'a> {
         pairs: &'a [NativeSampledBinding],
         device: &ProtocolObject<dyn MTLDevice>,
     ) -> Result<Self, MetalError> {
-        if pairs.len() > 4 {
+        if pairs.len() > 16 {
             return Err(MetalError::new(
                 "render bindings",
-                "expected at most four sampled pairs per draw",
+                "expected at most sixteen sampled pairs per draw",
             ));
         }
         let mut result = Self::default();
@@ -146,10 +146,10 @@ impl<'a> DrawBindings<'a> {
                 pair.texture_slot().index as usize,
                 pair.sampler_slot().index as usize,
             );
-            if t >= 2 || s >= 2 {
+            if t >= 4 || s >= 4 {
                 return Err(MetalError::new(
                     "render bindings",
-                    "expected texture/sampler slots zero or one",
+                    "expected texture/sampler slots zero through three",
                 ));
             }
             if result.textures[t].is_some_and(|old| !old.same_object(pair.texture()))
@@ -624,7 +624,7 @@ impl NativeCompute {
     }
 
     /// Submit independently indexed texture/sampler bindings for each draw.
-    /// Each collection contains at most four pairs using slots 0 and 1. Repeated
+    /// Each collection contains at most sixteen pairs using slots 0 through 3. Repeated
     /// slots must refer to the same native object; clones are accepted. All slots
     /// are rebound or cleared per draw, and the ticket owns every supplied object.
     pub fn submit_multi_binding_triangle_targets_rgba8<'a>(
@@ -637,7 +637,7 @@ impl NativeCompute {
     ) -> Result<PendingRender<'a>, MetalError> {
         if bindings.len() != pass.draws.len()
             || bindings.len() > MAX_RENDER_DRAWS
-            || bindings.iter().any(|b| b.len() > 4)
+            || bindings.iter().any(|b| b.len() > 16)
         {
             return Err(MetalError::new("render bindings", "invalid binding count"));
         }
@@ -714,7 +714,7 @@ impl NativeCompute {
         validate_uniforms(pass.draws.len(), Some(uniforms))?;
         if bindings.len() != pass.draws.len()
             || bindings.len() > MAX_RENDER_DRAWS
-            || bindings.iter().any(|b| b.len() > 4)
+            || bindings.iter().any(|b| b.len() > 16)
         {
             return Err(MetalError::new(
                 "render bindings",
@@ -1567,7 +1567,7 @@ impl NativeCompute {
                         0,
                         2,
                     );
-                    for slot in 0..2 {
+                    for slot in 0..4 {
                         encoder.setFragmentTexture_atIndex(
                             draw_bindings[index].textures[slot].map(|texture| texture.raw()),
                             slot,

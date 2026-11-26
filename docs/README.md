@@ -16,6 +16,8 @@ either path. The [changelog](../CHANGELOG.md) records notable changes.
 
 ## Native Metal graphics
 
+- [Descriptor tables and runtime indexing](descriptor-tables.md) — Immutable recorded revisions, four-slot bindings, selector rules and validation commands.
+
 - [Selected shader storage](graphics-call-v1.md#bounded-shader-storage-views) — Ordered pixel-address stores, exact prior contents and atomic full-root publication.
 
 - [Writable attachment transactions](graphics-call-v1.md#writable-attachment-views-and-complete-root-transactions) — Selected color/depth rendering, complete-root publication and admission limits.

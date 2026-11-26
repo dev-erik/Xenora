@@ -189,7 +189,8 @@ fn validate(request: &GraphicsAttachmentTransactionRequest) -> Result<usize, Gra
             return Err(GraphicsError::InvalidDescriptor);
         }
         let draw = &request.draws[0];
-        if draw
+        let inputs = sampled_inputs(draw)?;
+        if inputs
             .textures
             .iter()
             .flatten()
@@ -217,7 +218,7 @@ fn validate(request: &GraphicsAttachmentTransactionRequest) -> Result<usize, Gra
             TextureFormat::R32Uint => xenora_shader::GraphicsStorageType::Uint,
             _ => return Err(GraphicsError::InvalidDescriptor),
         };
-        if pipeline.storage != Some(expected) || pipeline.sampled_pairs & 3 != 0 {
+        if pipeline.storage != Some(expected) || inputs.needs_texture(0) {
             return Err(GraphicsError::InvalidDescriptor);
         }
         if draw
@@ -229,7 +230,7 @@ fn validate(request: &GraphicsAttachmentTransactionRequest) -> Result<usize, Gra
             || draw.state.viewport_origin != [0, 0]
             || draw.state.depth_compare.is_some()
             || draw.state.depth_write
-            || draw.textures[0].is_some()
+            || inputs.textures[0].is_some()
         {
             return Err(GraphicsError::InvalidDescriptor);
         }
@@ -241,6 +242,21 @@ fn validate(request: &GraphicsAttachmentTransactionRequest) -> Result<usize, Gra
             .any(|d| d.pipeline.as_ref().is_some_and(|p| p.storage.is_some()))
     {
         return Err(GraphicsError::InvalidDescriptor);
+    }
+    let color_formats = request
+        .colors
+        .iter()
+        .map(|c| c.attachment.format)
+        .collect::<Vec<_>>();
+    for draw in &request.draws {
+        if draw.descriptor_bindings.is_some()
+            || draw
+                .pipeline
+                .as_ref()
+                .is_some_and(|p| p.descriptor_requirements.is_some())
+        {
+            validate_descriptor_draw(draw, &color_formats)?;
+        }
     }
     if used.len() != request.roots.len() {
         return Err(GraphicsError::InvalidDescriptor);
@@ -306,6 +322,11 @@ impl State {
                     .ok_or(GraphicsError::InvalidResourceHandle)
             })
             .collect::<Result<Vec<_>, _>>()?;
+        for draw in &request.draws {
+            if draw.descriptor_bindings.is_some() {
+                descriptors::validate_descriptor_producers(draw, &request.waits, &self.entries)?;
+            }
+        }
         // Resolve every produced capability before committing any host import.
         let resolved = request
             .roots
@@ -613,6 +634,10 @@ pub(super) fn collect(cohort: &mut RenderCohort, transaction: &Transaction) -> C
 }
 
 #[cfg(all(test, feature = "gpu-tests"))]
+#[path = "queued_descriptor_tests.rs"]
+mod descriptor_tests;
+
+#[cfg(all(test, feature = "gpu-tests"))]
 mod tests {
     use super::*;
     use xenora_loader::graphics::{
@@ -661,6 +686,7 @@ mod tests {
             }],
             draws: if invalid_draw {
                 vec![GraphicsQueuedDraw {
+                    descriptor_bindings: None,
                     sampled_ranges: [None; 2],
                     array_views: [None; 2],
                     geometry: None,
@@ -973,6 +999,7 @@ mod tests {
         types.textures[0] = xenora_shader::GraphicsSampleType::StorageFloat;
         let draw = &mut r.draws[0];
         draw.pipeline = Some(Arc::new(GraphicsPipeline {
+            descriptor_requirements: None,
             storage: Some(xenora_shader::GraphicsStorageType::Float),
             array_layers: Default::default(),
             types,
@@ -1067,6 +1094,7 @@ mod tests {
         )
         .unwrap();
         r.draws[0].pipeline = Some(Arc::new(GraphicsPipeline {
+            descriptor_requirements: None,
             storage: c.storage,
             array_layers: c.array_layers,
             types,
