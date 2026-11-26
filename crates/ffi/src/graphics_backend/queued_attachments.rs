@@ -546,6 +546,7 @@ mod tests {
             }],
             draws: if invalid_draw {
                 vec![GraphicsQueuedDraw {
+                    sampled_ranges: [None; 2],
                     array_views: [None; 2],
                     geometry: None,
                     uniforms: None,

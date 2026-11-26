@@ -23,9 +23,9 @@ BC roles require runtime BC capability. Other roles require explicit backend
 registration; copy capability does not imply sampling or attachment capability.
 Invalid format/role combinations reject before dispatch. These requirements cover
 full mip chains, explicit arrays including one-layer arrays, selected slice/mip
-read-only views, and exact GPU-produced versions. Writable subresource views and
-shader-selected array indexing remain separate workstreams. Attachments use ordinary
-single-mip 2D surfaces, matching the existing attachment contract.
+read-only views and exact GPU-produced versions. Writable attachment selections
+compose into full roots. Shader-indexed float/unsigned arrays use opcode66; depth
+arrays remain excluded. Attachment rendering uses selected single-mip 2D surfaces.
 
 ## Representation and transfers
 
@@ -93,7 +93,7 @@ They are not an atomic compound submission or direct mutation of the original vi
 
 This native building block is also used by the guest attachment transaction
 described below. Its own tests use original trusted Metal shaders; guest integration
-is checked separately. Shader-indexed array ranges and shader storage writes remain open.
+is checked separately. Shader-indexed array ranges use opcode66; shader storage writes remain open.
 Explicit range-aware composition is described in the guest call reference.
 
 Metal views share their source allocation; fresh destinations preserve Xenora's
@@ -113,8 +113,8 @@ explicit submissions; callers retain and collect both. The operation retains the
 original producer and complete root allocation, including roots produced by typed
 copies rather than earlier render passes.
 
-The guest transaction below owns both rendering and copy-back. Shader-indexed
-arrays and storage-write views remain open. See the
+The guest transaction below owns both rendering and copy-back. Shader storage-write
+views remain open. See the
 [completion plan](superpowers/plans/2026-11-26-view-completion.md).
 
 ## Guest selected attachment transactions

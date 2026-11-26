@@ -29,11 +29,12 @@ pub use sampler::MetalSampler;
 
 #[cfg(all(target_arch = "aarch64", target_os = "macos"))]
 pub use texture_pipeline::{
-    ArraySliceViewDesc, BcMipUpload, BcTextureDesc, BindingSlot, BoundSampledTexture,
-    MAX_BC_TEXTURE_BYTES, MAX_R8_TEXTURE_BYTES, MetalBcTexture, MetalR8Texture,
-    MetalRgba8ArrayTexture, MetalRgba8Texture, MetalTextureView, MetalTypedTexture, R8MipUpload,
-    R8TextureDesc, Rgba8ArrayMipUpload, Rgba8ArrayTextureDesc, Rgba8MipLevel,
-    Rgba8TextureDesc as MetalRgba8TextureDesc, SampledBinding, TextureViewDesc, TextureViewFormat,
+    ArraySliceViewDesc, ArrayTextureViewDesc, BcMipUpload, BcTextureDesc, BindingSlot,
+    BoundSampledTexture, MAX_BC_TEXTURE_BYTES, MAX_R8_TEXTURE_BYTES, MetalBcTexture,
+    MetalR8Texture, MetalRgba8ArrayTexture, MetalRgba8Texture, MetalTextureArrayView,
+    MetalTextureView, MetalTypedTexture, R8MipUpload, R8TextureDesc, Rgba8ArrayMipUpload,
+    Rgba8ArrayTextureDesc, Rgba8MipLevel, Rgba8TextureDesc as MetalRgba8TextureDesc,
+    SampledBinding, TextureViewDesc, TextureViewFormat,
 };
 
 /// Full immutable texture identity. `Some(1)` is an array, never ordinary 2D.
@@ -50,6 +51,13 @@ pub struct TypedTextureDesc {
 pub struct RenderTypedTextureView {
     pub(crate) output: RenderTypedTextureOutput,
     pub(crate) view: MetalTextureView,
+}
+
+/// Exact produced array range, retaining the complete immutable output and lease.
+#[derive(Clone)]
+pub struct RenderTypedTextureArrayView {
+    pub(crate) output: RenderTypedTextureOutput,
+    pub(crate) view: MetalTextureArrayView,
 }
 
 pub enum TypedCopyInput<'a> {

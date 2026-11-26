@@ -22,7 +22,7 @@ no claim about console execution.
   sampling observes the requested produced ancestor, independent of collection order.
 - [x] Range-aware access checks distinguish slice/mip overlaps. Independent writes
   cannot lose each other's changes through whole-root snapshot replacement.
-- [ ] Shader-indexed array sampling carries array type, coordinate/index semantics,
+- [x] Shader-indexed array sampling carries array type, coordinate/index semantics,
   range bounds and exact producer ownership through decoder/compiler/guest/native APIs.
 - [ ] Writable storage views have an explicit implemented shader instruction and
   resource contract, independent expected results and rejection of unsupported forms.

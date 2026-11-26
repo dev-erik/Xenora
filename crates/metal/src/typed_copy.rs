@@ -12,6 +12,23 @@ pub struct RenderTypedTextureOutput {
     pub(super) lease: Rc<ColorLease>,
 }
 impl RenderTypedTextureOutput {
+    pub fn array_range_view(
+        &self,
+        desc: crate::ArrayTextureViewDesc,
+    ) -> Result<crate::RenderTypedTextureArrayView, MetalError> {
+        if self.desc.array_layers.is_none() || self.point.inner.generation.poisoned.get() {
+            return Err(error("invalid typed array view backing"));
+        }
+        Ok(crate::RenderTypedTextureArrayView {
+            output: self.clone(),
+            view: crate::texture_pipeline::typed_texture_array_view(
+                self.texture.clone(),
+                self.desc,
+                desc,
+            )?,
+        })
+    }
+
     pub fn desc(&self) -> TypedTextureDesc {
         self.desc
     }
@@ -895,5 +912,17 @@ impl RenderColorOutput {
             },
             lease: self._lease.clone(),
         })
+    }
+}
+
+impl crate::RenderTypedTextureArrayView {
+    pub fn desc(&self) -> crate::ArrayTextureViewDesc {
+        self.view.desc()
+    }
+    pub fn extent(&self) -> [usize; 2] {
+        self.view.extent()
+    }
+    pub fn producer(&self) -> RenderPoint {
+        self.output.producer()
     }
 }

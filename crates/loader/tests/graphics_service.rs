@@ -90,7 +90,7 @@ fn cpu_invalid_envelopes_and_reserved_words_preserve_result() {
         (0, 0),
         (0, 2),
         (1, 0),
-        (1, 66), // First unassigned opcode after explicit attachment composition.
+        (1, 67), // First unassigned opcode after shader array bindings.
         (1, u64::MAX),
         (2, 1),
         (15, 1),

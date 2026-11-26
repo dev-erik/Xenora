@@ -296,6 +296,17 @@ pub enum Instruction {
         /// First SGPR of the four-word sampler descriptor s[sampler..sampler+3].
         sampler: u8,
     },
+    /// MIMG image_sample_lz 2D-array RGBA texture sample with level of detail zero.
+    ImageSampleLzArray {
+        /// Four contiguous destination VGPRs [dst..dst+3] receiving RGBA.
+        dst: u8,
+        /// Three contiguous coordinate VGPRs [coord..coord+2] containing float (u, v, layer).
+        coord: u8,
+        /// First SGPR of the eight-word resource descriptor s[resource..resource+7].
+        resource: u8,
+        /// First SGPR of the four-word sampler descriptor s[sampler..sampler+3].
+        sampler: u8,
+    },
     /// Terminates the wave and waits for outstanding memory operations.
     EndProgram,
 }
@@ -352,7 +363,7 @@ impl Instruction {
                 phase: InterpolationPhase::Second,
                 ..
             } => "v_interp_p2_f32_e32",
-            Self::ImageSampleLz { .. } => "image_sample_lz",
+            Self::ImageSampleLz { .. } | Self::ImageSampleLzArray { .. } => "image_sample_lz",
             Self::EndProgram => "s_endpgm",
         }
     }
@@ -460,6 +471,21 @@ impl fmt::Display for Instruction {
                 write!(
                     formatter,
                     " v[{dst}:{last_dst}], v[{coord}:{last_coord}], s[{resource}:{last_res}], s[{sampler}:{last_samp}] dmask:0xf dim:SQ_RSRC_IMG_2D"
+                )
+            }
+            Self::ImageSampleLzArray {
+                dst,
+                coord,
+                resource,
+                sampler,
+            } => {
+                let last_dst = dst + 3;
+                let last_coord = coord + 2;
+                let last_res = resource + 7;
+                let last_samp = sampler + 3;
+                write!(
+                    formatter,
+                    " v[{dst}:{last_dst}], v[{coord}:{last_coord}], s[{resource}:{last_res}], s[{sampler}:{last_samp}] dmask:0xf dim:SQ_RSRC_IMG_2D_ARRAY"
                 )
             }
             Self::EndProgram => Ok(()),

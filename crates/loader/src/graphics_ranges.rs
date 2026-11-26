@@ -136,6 +136,22 @@ impl GraphicsContext {
         let mut non_sample_reads = HashSet::new();
         for command in &self.command_lists[&list].commands {
             match command {
+                GraphicsCommand::SetSampledArrayRanges { ranges, .. } => {
+                    sampled = ranges.map(|h| {
+                        h.map(|h| {
+                            let v = &self.array_range_views[&h];
+                            (
+                                v.backing,
+                                AccessRange::Texture {
+                                    slice: v.desc.base_slice,
+                                    slices: v.desc.slice_count,
+                                    mip: v.desc.base_mip,
+                                    mips: v.desc.mip_count,
+                                },
+                            )
+                        })
+                    });
+                }
                 GraphicsCommand::SetSampledViews { views, .. } => {
                     sampled = views.map(|h| {
                         h.map(|h| {

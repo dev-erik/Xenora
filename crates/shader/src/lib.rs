@@ -6,9 +6,9 @@ use std::fmt::{self, Write};
 
 mod graphics;
 pub use graphics::{
-    CompiledGraphics, GraphicsExportType, GraphicsPipelineTypes, GraphicsSampleType,
-    PIXEL_ENTRY_POINT, VERTEX_ENTRY_POINT, compile_graphics, compile_graphics_pipeline,
-    compile_graphics_pipeline_typed,
+    CompiledGraphics, GraphicsArrayLayer, GraphicsExportType, GraphicsPipelineTypes,
+    GraphicsSampleType, PIXEL_ENTRY_POINT, VERTEX_ENTRY_POINT, compile_graphics,
+    compile_graphics_pipeline, compile_graphics_pipeline_typed,
 };
 
 pub use xenora_decoder::Architecture;
@@ -615,7 +615,8 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
             } if (index, resource) != (0, 4) => "unsupported resource or buffer index",
             Instruction::Export { .. }
             | Instruction::Interpolate { .. }
-            | Instruction::ImageSampleLz { .. } => {
+            | Instruction::ImageSampleLz { .. }
+            | Instruction::ImageSampleLzArray { .. } => {
                 "graphics instruction is unsupported in a compute fixture"
             }
             Instruction::EndProgram if index + 1 != decoded.len() => {
@@ -1043,7 +1044,8 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
             ),
             Instruction::Export { .. }
             | Instruction::Interpolate { .. }
-            | Instruction::ImageSampleLz { .. } => {
+            | Instruction::ImageSampleLz { .. }
+            | Instruction::ImageSampleLzArray { .. } => {
                 return Err(error(
                     "graphics instruction is unsupported in a compute fixture",
                 ));

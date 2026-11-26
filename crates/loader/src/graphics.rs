@@ -333,6 +333,10 @@ pub enum GraphicsCommand {
         texture: Option<GraphicsHandle>,
         sampler: xenora_texture::SamplerDesc,
     },
+    SetSampledArrayRanges {
+        ranges: [Option<GraphicsHandle>; 2],
+        samplers: [Option<xenora_texture::SamplerDesc>; 2],
+    },
     SetSampledViews {
         views: [Option<GraphicsHandle>; 2],
         samplers: [Option<xenora_texture::SamplerDesc>; 2],
@@ -478,6 +482,7 @@ impl Default for GraphicsDrawState {
 /// Validated positions and viewport for one ordered draw.
 #[derive(Debug)]
 pub struct GraphicsPipeline {
+    pub array_layers: [Vec<xenora_shader::GraphicsArrayLayer>; 2],
     pub types: xenora_shader::GraphicsPipelineTypes,
     pub required_uniform_mask: u8,
     pub msl: String,
@@ -578,6 +583,7 @@ pub struct GraphicsTextureSnapshot {
 
 #[derive(Clone, Debug, Default)]
 pub struct GraphicsSampledBindings {
+    pub sampled_ranges: [Option<GraphicsArrayRangeViewDesc>; 2],
     pub array_views: [Option<GraphicsArraySliceViewDesc>; 2],
     pub views: [Option<GraphicsTextureViewDesc>; 2],
     pub textures: [Option<GraphicsTextureSnapshot>; 2],
@@ -601,6 +607,7 @@ type RecordedSampledBindings = (
     [Option<xenora_texture::SamplerDesc>; 2],
     [Option<GraphicsTextureViewDesc>; 2],
     [Option<GraphicsArraySliceViewDesc>; 2],
+    [Option<GraphicsArrayRangeViewDesc>; 2],
     Option<[u32; 8]>,
 );
 
@@ -767,6 +774,7 @@ impl GraphicsGeometryInput {
 
 #[derive(Clone, Debug)]
 pub struct GraphicsQueuedDraw {
+    pub sampled_ranges: [Option<GraphicsArrayRangeViewDesc>; 2],
     pub array_views: [Option<GraphicsArraySliceViewDesc>; 2],
     /// Some selects GPU gather and requires empty expanded vertices/colors.
     pub geometry: Option<GraphicsGeometryInput>,
@@ -1294,6 +1302,7 @@ pub struct GraphicsContext {
     multislot_backend: bool,
     view_backend: bool,
     array_view_backend: bool,
+    shader_array_views: bool,
     texture_capabilities: GraphicsTextureCapabilities,
     uniform_backend: bool,
     produced_color_backend: bool,
@@ -1315,6 +1324,7 @@ pub struct GraphicsContext {
     array_range_views: HashMap<GraphicsHandle, GraphicsArrayRangeView>,
     samplers: HashMap<GraphicsHandle, xenora_texture::SamplerDesc>,
     retired_views: HashMap<GraphicsHandle, GraphicsTextureView>,
+    retired_array_ranges: HashMap<GraphicsHandle, GraphicsArrayRangeView>,
     queued_backend: Option<Arc<QueuedRenderer>>,
     queued: HashMap<GraphicsHandle, QueuedReceipt>,
     queue_values: HashMap<GraphicsHandle, u64>,
@@ -1384,6 +1394,7 @@ impl GraphicsContext {
             multislot_backend: false,
             view_backend: false,
             array_view_backend: false,
+            shader_array_views: false,
             texture_capabilities: GraphicsTextureCapabilities::default(),
             uniform_backend: false,
             produced_color_backend: false,
@@ -1405,6 +1416,7 @@ impl GraphicsContext {
             array_range_views: HashMap::new(),
             samplers: HashMap::new(),
             retired_views: HashMap::new(),
+            retired_array_ranges: HashMap::new(),
             queued_backend: None,
             queued: HashMap::new(),
             queue_values: HashMap::new(),
@@ -1448,6 +1460,7 @@ impl GraphicsContext {
         self.geometry_backend = false;
         self.view_backend = false;
         self.array_view_backend = false;
+        self.shader_array_views = false;
         self.backend = None;
         self.pass_backend = None;
         self.async_backend = None;
@@ -1924,6 +1937,7 @@ impl GraphicsContext {
                 geometry,
                 uniforms: draw.uniforms,
                 array_views: draw.sampled_bindings.array_views,
+                sampled_ranges: draw.sampled_bindings.sampled_ranges,
                 views: draw.sampled_bindings.views,
                 vertices: draw.vertices,
                 colors: draw.colors,
@@ -2717,6 +2731,11 @@ impl GraphicsContext {
         let mut draws = Vec::new();
         for command in &self.command_lists[&list].commands {
             let indexed = match command {
+                GraphicsCommand::SetSampledArrayRanges { ranges, .. } => {
+                    sampled =
+                        ranges.map(|handle| handle.map(|h| self.array_range_views[&h].backing));
+                    continue;
+                }
                 GraphicsCommand::SetSampledViews { views, .. } => {
                     sampled = views.map(|handle| handle.map(|h| self.texture_views[&h].backing));
                     continue;
@@ -2909,6 +2928,8 @@ impl GraphicsContext {
         self.retired_pipelines
             .retain(|handle, _| pinned.contains(handle));
         self.retired_views
+            .retain(|handle, _| pinned.contains(handle));
+        self.retired_array_ranges
             .retain(|handle, _| pinned.contains(handle));
         self.retired_writable_views
             .retain(|handle, _| pinned.contains(handle));
@@ -3524,6 +3545,7 @@ impl GraphicsContext {
         self.geometry_backend = false;
         self.view_backend = false;
         self.array_view_backend = false;
+        self.shader_array_views = false;
         self.multislot_backend = false;
         self.backend = None;
         self.pass_backend = None;
@@ -3644,6 +3666,12 @@ impl GraphicsContext {
                 } => {
                     references.insert(*handle);
                     references.insert(self.writable_views[handle].root);
+                }
+                GraphicsCommand::SetSampledArrayRanges { ranges, .. } => {
+                    for handle in ranges.iter().flatten() {
+                        references.insert(*handle);
+                        references.insert(self.array_range_views[handle].backing);
+                    }
                 }
                 GraphicsCommand::SetSampledViews { views, .. } => {
                     for handle in views.iter().flatten() {
@@ -3797,6 +3825,7 @@ impl GraphicsContext {
         self.retired_depth.clear();
         self.retired_pipelines.clear();
         self.retired_views.clear();
+        self.retired_array_ranges.clear();
         Ok(receipt.status)
     }
 
@@ -3847,6 +3876,7 @@ impl GraphicsContext {
         self.geometry_backend = false;
         self.view_backend = false;
         self.array_view_backend = false;
+        self.shader_array_views = false;
         self.multislot_backend = false;
         self.async_backend = None;
         self.pass_backend = None;
@@ -3970,6 +4000,7 @@ impl GraphicsContext {
         self.geometry_backend = false;
         self.view_backend = false;
         self.array_view_backend = false;
+        self.shader_array_views = false;
         self.multislot_backend = false;
         self.backend = None;
         self.async_backend = None;
@@ -3998,6 +4029,7 @@ impl GraphicsContext {
         self.geometry_backend = false;
         self.view_backend = false;
         self.array_view_backend = false;
+        self.shader_array_views = false;
         self.multislot_backend = false;
         self.backend = None;
         self.async_backend = None;
@@ -4044,6 +4076,7 @@ impl GraphicsContext {
             + self.writable_views.len()
             + self.retired_writable_views.len()
             + self.retired_views.len()
+            + self.retired_array_ranges.len()
     }
 
     pub(crate) fn guest_command_count(&self, list: GraphicsHandle) -> Option<usize> {
@@ -4376,10 +4409,20 @@ impl GraphicsContext {
         if compiled.shader.msl.len() > 65536 {
             return Err(GraphicsError::InvalidDescriptor);
         }
+        let mut required_uniform_mask = compiled.required_uniform_mask;
+        for layer in compiled.array_layers.iter().flatten() {
+            if let xenora_shader::GraphicsArrayLayer::Uniform(index) = layer {
+                if *index >= 8 {
+                    return Err(GraphicsError::InvalidDescriptor);
+                }
+                required_uniform_mask |= 1 << index;
+            }
+        }
         let pipeline = Arc::new(GraphicsPipeline {
+            array_layers: compiled.array_layers,
             types: compiled.types,
             msl: compiled.shader.msl,
-            required_uniform_mask: compiled.required_uniform_mask,
+            required_uniform_mask,
             color_targets: compiled.color_targets,
             uses_texture: compiled.uses_texture,
             sampled_pairs: compiled.sampled_pairs,
@@ -4598,15 +4641,64 @@ impl GraphicsContext {
         self.create_array_slice_view(device, parent.backing, desc)
     }
 
-    /// Ranges are never recorded by commands. Children independently retain the
-    /// root, so destroying a range does not require retiring or traversing children.
+    /// Children independently retain the root. Recorded range bindings retain the
+    /// descriptor until reset; submitted bindings retain it through retirement.
     pub fn destroy_array_range_view(
         &mut self,
         handle: GraphicsHandle,
     ) -> Result<(), GraphicsError> {
-        self.array_range_views
+        if !self.array_range_views.contains_key(&handle) {
+            return Err(GraphicsError::InvalidResourceHandle);
+        }
+        if self.command_lists.values().any(|list| list.commands.iter().any(|cmd|
+            matches!(cmd, GraphicsCommand::SetSampledArrayRanges { ranges, .. } if ranges.contains(&Some(handle))))) {
+            return Err(GraphicsError::ResourceLifetimeViolation);
+        }
+        let range = self
+            .array_range_views
             .remove(&handle)
-            .ok_or(GraphicsError::InvalidResourceHandle)?;
+            .expect("validated range");
+        if self.is_pinned(handle) {
+            self.retired_array_ranges.insert(handle, range);
+        }
+        Ok(())
+    }
+
+    /// Opt in after installing a queued backend with actual shader array support.
+    pub fn enable_shader_array_views(&mut self) -> Result<(), GraphicsError> {
+        if self.queued_backend.is_none() || !self.array_view_backend {
+            return Err(GraphicsError::NativeMetalRequired);
+        }
+        self.shader_array_views = true;
+        Ok(())
+    }
+
+    /// Atomically replace independent texture and sampler slots with array ranges.
+    pub fn cmd_set_sampled_array_ranges(
+        &mut self,
+        list: GraphicsHandle,
+        ranges: [Option<GraphicsHandle>; 2],
+        samplers: [Option<xenora_texture::SamplerDesc>; 2],
+    ) -> Result<(), GraphicsError> {
+        for handle in ranges.iter().flatten() {
+            if !self.array_range_views.contains_key(handle) {
+                return Err(GraphicsError::InvalidResourceHandle);
+            }
+        }
+        for sampler in samplers.iter().flatten() {
+            sampler
+                .validate()
+                .map_err(|_| GraphicsError::InvalidDescriptor)?;
+        }
+        let list = self
+            .command_lists
+            .get_mut(&list)
+            .ok_or(GraphicsError::InvalidCommandListHandle)?;
+        if !list.is_recording {
+            return Err(GraphicsError::CommandListNotRecording);
+        }
+        list.commands
+            .push(GraphicsCommand::SetSampledArrayRanges { ranges, samplers });
         Ok(())
     }
 
@@ -5026,6 +5118,10 @@ impl GraphicsContext {
                 | GraphicsCommand::SetIndexBuffer {
                     resource: handle, ..
                 } => *handle == resource,
+                GraphicsCommand::SetSampledArrayRanges { ranges, .. } => ranges
+                    .iter()
+                    .flatten()
+                    .any(|handle| self.array_range_views[handle].backing == resource),
                 GraphicsCommand::SetSampledViews { views, .. } => views
                     .iter()
                     .flatten()
@@ -6159,6 +6255,7 @@ impl GraphicsContext {
         let mut sampled_textures = [None; 2];
         let mut sampled_views = [None; 2];
         let mut sampled_array_views = [None; 2];
+        let mut sampled_ranges = [None; 2];
         let mut sampled_samplers = [None; 2];
         let mut vertex_colors = None;
         let mut texture_snapshots = HashMap::new();
@@ -6185,7 +6282,19 @@ impl GraphicsContext {
                 GraphicsCommand::SetShaderUniforms(values) => {
                     uniforms = *values;
                 }
+                GraphicsCommand::SetSampledArrayRanges { ranges, samplers } => {
+                    if queued.is_none() || !self.shader_array_views {
+                        return Err(GraphicsError::NativeMetalRequired);
+                    }
+                    sampled_textures =
+                        ranges.map(|h| h.map(|h| self.array_range_views[&h].backing));
+                    sampled_ranges = ranges.map(|h| h.map(|h| self.array_range_views[&h].desc));
+                    sampled_views = [None; 2];
+                    sampled_array_views = [None; 2];
+                    sampled_samplers = *samplers;
+                }
                 GraphicsCommand::SetSampledViews { views, samplers } => {
+                    sampled_ranges = [None; 2];
                     sampled_textures =
                         views.map(|handle| handle.map(|h| self.texture_views[&h].backing));
                     sampled_views = views.map(|handle| {
@@ -6208,12 +6317,14 @@ impl GraphicsContext {
                     sampled_samplers = *samplers;
                 }
                 GraphicsCommand::SetSampledTexture { texture, sampler } => {
+                    sampled_ranges[0] = None;
                     sampled_views[0] = None;
                     sampled_array_views[0] = None;
                     sampled_textures[0] = *texture;
                     sampled_samplers[0] = texture.map(|_| *sampler);
                 }
                 GraphicsCommand::SetSampledBindings { textures, samplers } => {
+                    sampled_ranges = [None; 2];
                     sampled_views = [None; 2];
                     sampled_array_views = [None; 2];
                     sampled_textures = *textures;
@@ -6526,6 +6637,7 @@ impl GraphicsContext {
                                 sampled_samplers,
                                 sampled_views,
                                 sampled_array_views,
+                                sampled_ranges,
                                 uniforms,
                             ),
                             &pending_states,
@@ -6705,6 +6817,7 @@ impl GraphicsContext {
                                 sampled_samplers,
                                 sampled_views,
                                 sampled_array_views,
+                                sampled_ranges,
                                 uniforms,
                             ),
                             &pending_states,
@@ -7179,7 +7292,21 @@ impl GraphicsContext {
         queued: Option<&QueuedPreparation>,
     ) -> Result<DrawBindings, GraphicsError> {
         let outputs = color_loads.len();
-        let (textures, samplers, views, array_views, uniforms) = sampled;
+        let (textures, samplers, views, array_views, sampled_ranges, uniforms) = sampled;
+        if sampled_ranges.iter().any(Option::is_some)
+            && (queued.is_none() || !self.shader_array_views)
+        {
+            return Err(GraphicsError::NativeMetalRequired);
+        }
+        for slot in 0..2 {
+            if usize::from(views[slot].is_some())
+                + usize::from(array_views[slot].is_some())
+                + usize::from(sampled_ranges[slot].is_some())
+                > 1
+            {
+                return Err(GraphicsError::InvalidDescriptor);
+            }
+        }
         if array_views.iter().any(Option::is_some) && !self.array_view_backend {
             return Err(GraphicsError::InvalidDescriptor);
         }
@@ -7231,6 +7358,7 @@ impl GraphicsContext {
             }
         }
         let mut bindings = GraphicsSampledBindings {
+            sampled_ranges,
             array_views,
             views,
             samplers,
@@ -7246,8 +7374,14 @@ impl GraphicsContext {
                     return Err(GraphicsError::InvalidDescriptor);
                 }
                 let expected = match format {
+                    TextureFormat::R32Uint if sampled_ranges[slot].is_some() => {
+                        xenora_shader::GraphicsSampleType::UintArray
+                    }
                     TextureFormat::R32Uint => xenora_shader::GraphicsSampleType::Uint,
                     TextureFormat::Depth32Float => xenora_shader::GraphicsSampleType::Depth,
+                    _ if sampled_ranges[slot].is_some() => {
+                        xenora_shader::GraphicsSampleType::FloatArray
+                    }
                     _ => xenora_shader::GraphicsSampleType::Float,
                 };
                 if pipeline
@@ -7267,11 +7401,44 @@ impl GraphicsContext {
                 {
                     return Err(GraphicsError::ResourceLifetimeViolation);
                 }
-                if texture.array_layers.is_some() != array_views[slot].is_some() {
+                if texture.array_layers.is_some()
+                    != (array_views[slot].is_some() || sampled_ranges[slot].is_some())
+                {
                     return Err(GraphicsError::InvalidDescriptor);
                 }
-                let effective_view =
-                    views[slot].or(array_views[slot].map(|v| GraphicsTextureViewDesc {
+                if let Some(range) = sampled_ranges[slot] {
+                    if format == TextureFormat::Depth32Float {
+                        return Err(GraphicsError::InvalidDescriptor);
+                    }
+                    let pipeline = pipeline.as_ref().ok_or(GraphicsError::InvalidDescriptor)?;
+                    for layer in &pipeline.array_layers[slot] {
+                        let valid = match *layer {
+                            xenora_shader::GraphicsArrayLayer::Constant(value) => {
+                                value < range.slice_count
+                            }
+                            xenora_shader::GraphicsArrayLayer::Uniform(index) => {
+                                let bits = uniforms
+                                    .and_then(|values| values.get(usize::from(index)).copied())
+                                    .ok_or(GraphicsError::InvalidDescriptor)?;
+                                let value = f32::from_bits(bits);
+                                value.is_finite()
+                                    && value >= 0.0
+                                    && value.fract() == 0.0
+                                    && f64::from(value) < f64::from(range.slice_count)
+                            }
+                        };
+                        if !valid {
+                            return Err(GraphicsError::InvalidDescriptor);
+                        }
+                    }
+                }
+                let effective_view = views[slot]
+                    .or(sampled_ranges[slot].map(|v| GraphicsTextureViewDesc {
+                        base_mip: v.base_mip,
+                        mip_count: v.mip_count,
+                        format: v.format,
+                    }))
+                    .or(array_views[slot].map(|v| GraphicsTextureViewDesc {
                         base_mip: v.base_mip,
                         mip_count: v.mip_count,
                         format: v.format,
@@ -7318,6 +7485,7 @@ impl GraphicsContext {
         let sampled = if pairs == 1
             && views[0].is_none()
             && array_views[0].is_none()
+            && sampled_ranges[0].is_none()
             && bindings.textures[0]
                 .as_ref()
                 .is_some_and(|t| t.format == TextureFormat::Rgba8Unorm)

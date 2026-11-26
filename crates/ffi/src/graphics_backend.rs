@@ -487,6 +487,14 @@ fn render_pipeline_request(
                 .iter()
                 .map(|c| c.typed.map_or(TextureFormat::Rgba8Unorm, |t| t.format))
                 .collect();
+            if draw
+                .sampled_bindings
+                .sampled_ranges
+                .iter()
+                .any(Option::is_some)
+            {
+                return Err(GraphicsError::NativeMetalRequired);
+            }
             validate_pipeline_formats(
                 pipeline,
                 &color_formats,
@@ -495,6 +503,7 @@ fn render_pipeline_request(
                         .as_ref()
                         .map(|t| t.format)
                 }),
+                [false; 2],
             )?;
             if pipeline.color_targets != clears.len()
                 || draw.colors.len() != draw.vertices.len()
@@ -1259,6 +1268,7 @@ fn validate_pipeline_formats(
     pipeline: &xenora_loader::graphics::GraphicsPipeline,
     colors: &[TextureFormat],
     textures: [Option<TextureFormat>; 2],
+    arrays: [bool; 2],
 ) -> Result<(), GraphicsError> {
     use xenora_shader::{GraphicsExportType, GraphicsSampleType};
     if colors.len() != pipeline.color_targets
@@ -1275,10 +1285,15 @@ fn validate_pipeline_formats(
     }
     for (slot, format) in textures.into_iter().enumerate() {
         if let Some(f) = format {
-            let expected = match f {
-                TextureFormat::R32Uint => GraphicsSampleType::Uint,
-                TextureFormat::Depth32Float => GraphicsSampleType::Depth,
-                _ => GraphicsSampleType::Float,
+            let expected = match (f, arrays[slot]) {
+                (TextureFormat::R32Uint, true) => GraphicsSampleType::UintArray,
+                (TextureFormat::Depth32Float, true) => {
+                    return Err(GraphicsError::InvalidDescriptor);
+                }
+                (_, true) => GraphicsSampleType::FloatArray,
+                (TextureFormat::R32Uint, false) => GraphicsSampleType::Uint,
+                (TextureFormat::Depth32Float, false) => GraphicsSampleType::Depth,
+                (_, false) => GraphicsSampleType::Float,
             };
             if pipeline.types.textures[slot] != expected {
                 return Err(GraphicsError::InvalidDescriptor);

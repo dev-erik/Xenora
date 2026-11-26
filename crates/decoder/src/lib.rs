@@ -318,11 +318,20 @@ fn decode_gfx1030(bytes: &[u8], offset: usize) -> Result<(Instruction, u8), Deco
         let (dst, coord, resource, sampler) =
             image_sample_operands(first, second, "image_sample_lz")?;
         return Ok((
-            Instruction::ImageSampleLz {
-                dst,
-                coord,
-                resource,
-                sampler,
+            if (first >> 3) & 7 == 5 {
+                Instruction::ImageSampleLzArray {
+                    dst,
+                    coord,
+                    resource,
+                    sampler,
+                }
+            } else {
+                Instruction::ImageSampleLz {
+                    dst,
+                    coord,
+                    resource,
+                    sampler,
+                }
             },
             len,
         ));
@@ -623,7 +632,7 @@ fn image_sample_operands(
 ) -> Result<(u8, u8, u8, u8), DecodeErrorKind> {
     // In word 0:
     // Bits 1..2: NSA (must be 0 for contiguous VADDR)
-    // Bits 3..5: DIM (1 = SQ_RSRC_IMG_2D)
+    // Bits 3..5: DIM (1 = 2D, 5 = 2D-array; RDNA2 Table 41)
     // Bit 7: DLC (0)
     // Bits 8..11: DMASK (0xf for RGBA 4-component return)
     // Bit 12: UNORM (0)
@@ -641,10 +650,14 @@ fn image_sample_operands(
     const MODIFIER_MASK: u32 = 0x0203_fffe;
     const EXPECTED_2D_RGBA: u32 = 0x0000_0f08;
 
-    if first & MODIFIER_MASK != EXPECTED_2D_RGBA {
+    const EXPECTED_ARRAY_RGBA: u32 = 0x0000_0f28;
+    if !matches!(
+        first & MODIFIER_MASK,
+        EXPECTED_2D_RGBA | EXPECTED_ARRAY_RGBA
+    ) {
         return Err(unsupported(
             mnemonic,
-            "expected dim:SQ_RSRC_IMG_2D and dmask:0xf with zero modifier flags",
+            "expected DIM 1 or 5 and dmask:0xf with zero modifier flags",
         ));
     }
 
@@ -667,6 +680,13 @@ fn image_sample_operands(
     let dst = ((second >> 8) & 0xff) as u8;
     let resource = (((second >> 16) & 0x1f) * 4) as u8;
     let sampler = (((second >> 21) & 0x1f) * 4) as u8;
+
+    if (first >> 3) & 7 == 5 && (coord > 253 || dst > 252) {
+        return Err(unsupported(
+            mnemonic,
+            "array coordinate/data spans exceed v255",
+        ));
+    }
 
     // RDNA 2 resource descriptor (T#) requires 8 SGPRs; sampler (S#) requires 4 SGPRs.
     // SGPR range is 0..=105 for normal allocatable registers.

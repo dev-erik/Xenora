@@ -6471,3 +6471,6 @@ mod attachment_transactions;
 
 #[path = "guest_graphics/attachment_composition.rs"]
 mod attachment_composition;
+
+#[path = "guest_graphics/array_sampling.rs"]
+mod array_sampling;

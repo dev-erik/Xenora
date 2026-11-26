@@ -90,6 +90,12 @@ run_tests() {
 }
 printf 'Running %s validation. Logs: %s\n' "$mode" "$log_dir"
 if [[ "$mode" == quick ]]; then
+    run_tests shader-array-decoder cargo test --locked -p xenora-decoder --test graphics_arrays
+    run_tests shader-array-compiler cargo test --locked -p xenora-shader --test graphics_arrays
+    run_tests shader-array-loader cargo test --locked -p xenora-loader --test array_sampling
+    run_tests shader-array-native cargo test --locked -p xenora-metal --features gpu-tests --test native_compute shader_array_views:: -- --nocapture --test-threads=1
+    run_tests shader-array-budget cargo test --locked -p xenora-metal --features gpu-tests --lib native_shader_array_views_ -- --nocapture --test-threads=1
+    run_tests shader-array-guest cargo test --locked -p xenora-ffi --features gpu-tests --test guest_graphics original_guest_array_sampling_ -- --nocapture --test-threads=1
     run_tests attachment-composition-loader cargo test --locked -p xenora-loader --test attachment_composition -- --nocapture
     run_tests attachment-composition-boundaries cargo test --locked -p xenora-loader --test attachment_composition_boundaries -- --nocapture
     run_tests attachment-composition-guest cargo test --locked -p xenora-ffi --features gpu-tests --test guest_graphics original_guest_attachment_composition_ -- --nocapture --test-threads=1

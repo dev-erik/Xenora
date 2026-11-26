@@ -18,6 +18,10 @@ remains unsupported.
 - Extended the read-only RDNA2 planning CLI (`python3 -m qa rdna2`) with family/status filters, compact summaries, Codex-ready manifests under `artifacts/`, active-claim exclusion (family claims exclude those families; path-only claims block overlapping permitted files), coverage reconcile against `semantic_coverage` without inflating counts, and inventory diffs. Covered by `tests/qa/test_rdna2_plan.py`; planning only, no GPU production edits.
 
 ### Added
+- Shader-indexed float and unsigned-integer array views through opcode66 and
+  explicit pipeline dimension flags. DIM5 IMAGE_SAMPLE_LZ accepts constant or
+  validated uniform layers; unsupported layer expressions reject. Nested ranges,
+  exact pending versions and complete-root ownership extend through native Metal.
 - Explicit selected-root composition through opcode65 separates exact shader/Load
   ancestry from the newer backing used for copy-back. Slice/mip access checks reject
   overlap and unknown lineage. Published-version tracking survives receipt release,

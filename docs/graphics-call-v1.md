@@ -109,6 +109,7 @@ loader ResourceStates bits. Unsupported formats and layouts fail.
 | 58 | CreateChildArrayRangeView | device, parent range, relative base slice u32, slice count u32, relative base mip u32, mip count u32, view format | range handle |
 | 59 | CreateArrayRangeSliceView | device, parent range, relative slice u32, relative base mip u32, mip count u32, view format | 2D view handle |
 | 60 | DestroyArrayRangeView | range handle | 0 |
+| 66 | SampledArrayRanges | list, address of 80-byte range-binding payload | 0 |
 
 
 CreatePipeline reads nonempty, four-byte-aligned shader blobs of at most 1024 bytes
@@ -461,8 +462,7 @@ not free that producer's versions or their remaining budget charges.
 
 The two-slot, two-queue, sampled mip-view and persistent BC1/BC3 contracts are bounded
 Stage 2 increments.
-General descriptor heaps, shader-indexed arrays, writable/subresource-overlap views,
-formats beyond the explicit matrix, additional filter/address modes, arbitrary queue
+General descriptor heaps, overlapping writable views, formats beyond the explicit matrix, additional filter/address modes, arbitrary queue
 graphs, future waits and general concurrent copy/render scheduling remain open.
 Array storage and selected-slice read-only views are available. Graphics Stage 3 supports
 [bounded countdowns and innermost early exits](interfaces.md#bounded-countdown-loops-in-original-graphics-stages).
@@ -752,7 +752,9 @@ BC1 and BC3 support optional sRGB interpretation. They remain read-only.
 
 Opcode55's type word uses two bits for texture slot0 (bits0–1) and slot1 (bits2–3):
 0=float, 1=unsigned integer, 2=raw depth; 3 rejects. Bits8–15 select unsigned integer
-exports for color slots0–7; zero selects float. All other bits must be zero.
+exports for color slots0–7; zero selects float. Bits4/5 select array dimensionality
+for texture slots0/1 respectively. Array float and unsigned types are supported;
+raw-depth arrays reject. All other bits must be zero.
 Nondefault types on unused shader inputs/exports reject. Bindings and attachment
 formats must match the compiled types at every draw. Unsigned samples preserve
 bits through moves and control-flow joins; implicit floating arithmetic, coordinates
@@ -789,10 +791,9 @@ Children may select a compatible linear or sRGB interpretation independently.
 For example, a root range starting at slice1/mip1, a child starting at relative
 slice1/mip1, and a selected view at relative slice1/mip1 address root slice3/mip3.
 
-Range handles are descriptor objects, not shader-bindable array textures or writable
-attachments. Passing a range directly as a sampled 2D view rejects. Shader-selected
-array indexing remains unimplemented; writable attachments use the explicit handles
-described below.
+Range handles bind as shader arrays through opcode66 below; passing a range as a
+sampled 2D view still rejects. Writable attachments use the separate explicit
+selection handles described below.
 
 Opcode60 destroys only a range handle. Children retain root identity independently
 and survive parent destruction. A live range prevents backing destruction; after
@@ -841,8 +842,8 @@ number of guest receipts is below16. Normal successful submission does not wait 
 the CPU between render and copy-back.
 
 Ordinary submissions retain their existing dependency rules. Explicit range-aware
-composition is described below. Shader-indexed arrays and shader storage-write
-views remain separate S2.4 work.
+composition is described below. Shader-indexed arrays use opcode66; shader
+storage-write views remain separate S2.4 work.
 
 
 ## Explicit selected-root composition
@@ -873,3 +874,34 @@ select one slice/mip. Legacy whole-resource accesses and barriers remain conserv
 Disjoint write composition is serialized on the native queue, retains both inputs,
 and publishes a complete root atomically. It does not provide concurrent subresource
 execution or shader storage-write support.
+
+
+## Shader-indexed array sampling
+
+Opcode66 binds a list's two sampled array-range handles using the same ten-word
+inline sampler table as opcode39. Zero unbinds a slot. Each handle must be a live
+opcode57/58 range; 2D selected-slice handles reject. Pipeline opcode55 array flags
+must match the bound dimension and float/unsigned storage interpretation. Binding
+is atomic: invalid handles, samplers or result spans preserve the previous table.
+This requires the queued backend's separate shader-array capability; installing an
+older backend revokes it. Synchronous/older adapters reject array draws.
+
+The translated instruction is the contiguous 32-bit DIM5 IMAGE_SAMPLE_LZ form with
+RGBA DMASK and no optional modifiers. Its three coordinates are float u, v and a
+view-relative layer. The bounded compiler accepts a constant integer-valued float
+or a direct uniform from s24–s31 (possibly copied through VGPRs). Uniform words
+hold IEEE754 FP32 bits, not numeric u32 indices. Before every draw, every reachable
+layer requirement must be finite, integral, nonnegative and below the range's
+slice count. Invalid values reject before submission; the shader does not clamp,
+wrap or silently truncate them. Computed/interpolated/ambiguous layer expressions,
+array depth, NSA/A16/D16 and fault/coherency extensions reject. Existing 2D forms
+retain their previous contract.
+
+Native Type2DArray views rebase mip and slice ranges while retaining the complete
+root. One-layer views remain arrays. Nested guest descriptors normalize to the root;
+recorded and pending commands retain their ranges after public descriptor destruction.
+Host uploads preserve full layouts. Produced arrays sample their exact GPU version,
+including pending copies and retained ancestors, without reconstructing host bytes.
+Integer sampling preserves bit patterns through an unsigned output. The native
+trusted-MSL API requires its caller to respect the documented layer precondition;
+it does not infer arbitrary shader behavior from source text.

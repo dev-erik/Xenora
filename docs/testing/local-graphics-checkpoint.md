@@ -16,6 +16,30 @@ run ends with `PASS`. Quick mode also rejects filters that select no passing tes
 Use `--help` for prerequisites. These tests render offscreen and compare pixels;
 they do not open an application window. Avoid other GPU test runs at the same time.
 
+## Shader-indexed array sampling checkpoint
+
+Shader arrays now retain their type and complete backing through decoding, shader
+translation, guest descriptors and native Metal views. Float and unsigned integer
+sampling support constant or direct-uniform integral layers relative to a checked
+slice/mip range, including one-layer arrays and either texture/sampler slot.
+All reachable branch requirements are validated before dispatch; depth arrays,
+computed/interpolated layers and invalid float layer values are rejected.
+
+All nine repository gates passed: workspace **939 passed, zero failed, 122 ignored**;
+GPU script **424 passed, zero failed, one manual case ignored**. Totals overlap and
+are not unique GPU counts. Focused tests passed: decoder3, compiler11, loader4,
+native2, private native2 and original guest3. Native tests use an explicit producer
+gate and a complete-root lease differential; guest fixtures compare literal float
+pixels and exact integer bits, pending versions and nested selections.
+
+Three production mutations failed their intended assertions: forced layer zero,
+omitted producer wait and omitted full-root lease. Exact SHA-256 restoration and
+restored compiler11/native2/private2/guest3 passes were recorded. Two independent
+reviews accepted the bounded increment. Evidence is under
+`artifacts/validation-full.PB3NoD`, `artifacts/shader-arrays-*` and
+`artifacts/shader-array-mutation-*`. Shader storage-write views remain open in S2.4.
+These are original synthetic tests on native Metal, not console execution evidence.
+
 ## Explicit range-composition checkpoint
 
 Opcode65 separates semantic inputs from the destination used to preserve newer,
@@ -44,7 +68,8 @@ Logs: `artifacts/validation-full.mWnUdr`, `artifacts/range-composition-*`, and
 `artifacts/range-mutation-*`. CPU failure injection is not GPU fault evidence, and
 naturally ordered descendant waits do not establish independent producer gating.
 
-Shader-indexed array sampling and shader storage-write views remain open in S2.4.
+At this checkpoint, shader-indexed array sampling and storage-write views remained open;
+the newer array checkpoint above records subsequent acceptance.
 Composition is serialized; independent subresource concurrency remains S2.7 work.
 
 ## Guest selected attachment transaction checkpoint

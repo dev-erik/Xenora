@@ -45,11 +45,13 @@ enum Op {
     ScalarFlag(ScalarAluOp, ScalarValue, ScalarValue, Condition, Value),
     Phi(ValueType),
     Constant(u32),
+    UniformFloat(u8),
     Interpolate(u8),
     Binary(Binary, Value, Value),
     SampleLodZero {
         u: Value,
         v: Value,
+        layer: Option<(Value, GraphicsArrayLayer)>,
         component: u8,
         texture_index: u8,
         sampler_index: u8,
@@ -179,6 +181,22 @@ pub enum GraphicsSampleType {
     Float,
     Uint,
     Depth,
+    FloatArray,
+    UintArray,
+}
+
+/// A view-relative array layer requirement, validated before every draw.
+/// Uniform indices name FP32 bit patterns in uniform words 0..7 (s24..s31).
+/// The loader, or a trusted caller using generated MSL directly, must validate
+/// every requirement against the actual bound array view before dispatch. Uniform
+/// values must be finite, integral, nonnegative, representable as u32 and smaller
+/// than the view layer count. Constants must also be smaller than that count.
+/// Compilation alone does not validate runtime bindings; the shader's uint cast
+/// relies on this precondition and must not be used to truncate arbitrary floats.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GraphicsArrayLayer {
+    Constant(u32),
+    Uniform(u8),
 }
 
 /// Fragment export representation; Uint preserves the source VGPR bits.
@@ -208,6 +226,9 @@ pub struct CompiledGraphics {
     pub uses_texture: bool,
     /// Required pairs: bit (texture_slot * 2 + sampler_slot), for slots 0 and 1.
     pub sampled_pairs: u8,
+    /// Deduplicated layer requirements per texture across all reachable samples.
+    /// See [`GraphicsArrayLayer`] for mandatory per-draw binding validation.
+    pub array_layers: [Vec<GraphicsArrayLayer>; 2],
     /// Uniform words read by the vertex stage; bit zero denotes s24.
     pub vertex_uniform_mask: u8,
     /// Uniform words read by the pixel stage; bit zero denotes s24.
@@ -258,6 +279,11 @@ pub fn compile_graphics_pipeline(
 /// Integer sampling uses nearest samplers supplied by the backend. Values travel
 /// as VGPR bit patterns; floating arithmetic on sampled integer data is rejected.
 /// Raw depth maps to (depth, 0, 0, 1) in the synthetic descriptor contract.
+/// Array sampling requires matching FloatArray/UintArray types and emits binding
+/// requirements in [`CompiledGraphics::array_layers`]. The loader and trusted
+/// direct native callers must validate these before every draw, including all
+/// reachable branch arms, before the generated shader converts FP32 layers to uint.
+/// Depth arrays and unproven computed/interpolated layers are unsupported.
 pub fn compile_graphics_pipeline_typed(
     architecture: Architecture,
     vertex: &[u8],
@@ -314,6 +340,20 @@ pub fn compile_graphics_pipeline_typed(
         }
     });
     validate_resource_types(&pixel, types, sampled_pairs, color_count)?;
+    let mut array_layers: [Vec<GraphicsArrayLayer>; 2] = Default::default();
+    for (_, op) in &pixel.values {
+        if let Op::SampleLodZero {
+            texture_index,
+            layer: Some((_, layer)),
+            ..
+        } = op
+        {
+            let requirements = &mut array_layers[usize::from(*texture_index)];
+            if !requirements.contains(layer) {
+                requirements.push(*layer);
+            }
+        }
+    }
     let has_sampling = sampled_pairs != 0;
 
     let mut disassembly = String::new();
@@ -329,6 +369,9 @@ pub fn compile_graphics_pipeline_typed(
         "#include <metal_stdlib>\nusing namespace metal;\n\n\
          struct VertexOutput {\n    float4 position [[position]];\n",
     );
+    if array_layers.iter().any(|layers| !layers.is_empty()) {
+        msl.insert_str(0, "// Host precondition: validate CompiledGraphics.array_layers for every draw.\n// Uniform layer bits must be finite nonnegative integers within the bound array view.\n");
+    }
     if parameter.is_some() {
         msl.push_str("    float4 parameter [[user(locn0), center_perspective]];\n");
     }
@@ -370,6 +413,8 @@ pub fn compile_graphics_pipeline_typed(
                 GraphicsSampleType::Float => "texture2d<float, access::sample>",
                 GraphicsSampleType::Uint => "texture2d<uint, access::sample>",
                 GraphicsSampleType::Depth => "depth2d<float, access::sample>",
+                GraphicsSampleType::FloatArray => "texture2d_array<float, access::sample>",
+                GraphicsSampleType::UintArray => "texture2d_array<uint, access::sample>",
             };
             params.push(format!("{kind} tex{slot} [[texture({slot})]]"));
         }
@@ -428,6 +473,7 @@ pub fn compile_graphics_pipeline_typed(
         color_targets: color_count,
         uses_texture: has_sampling,
         sampled_pairs,
+        array_layers,
         vertex_uniform_mask: vertex.uniform_mask,
         pixel_uniform_mask: pixel.uniform_mask,
         required_uniform_mask: vertex.uniform_mask | pixel.uniform_mask,
@@ -662,8 +708,15 @@ fn lift(
                     VectorSource::Immediate(_) => {
                         return Err(error("graphics move requires finite FP32 bits"));
                     }
+                    VectorSource::Scalar(register @ 24..=31) if stage == Stage::Pixel => {
+                        let slot = register - 24;
+                        ir.uniform_mask |= 1 << slot;
+                        ir.push(Some(offset), Op::UniformFloat(slot))
+                    }
                     VectorSource::Scalar(_) => {
-                        return Err(error("graphics move from an SGPR is unsupported"));
+                        return Err(error(
+                            "graphics move requires a direct pixel uniform s24..s31",
+                        ));
                     }
                 };
                 registers[usize::from(dst)] = Some(value);
@@ -716,7 +769,17 @@ fn lift(
                 coord,
                 resource,
                 sampler,
+            }
+            | Instruction::ImageSampleLzArray {
+                dst,
+                coord,
+                resource,
+                sampler,
             } if stage == Stage::Pixel && dst >= 2 && !exporting => {
+                let array = matches!(instruction, Instruction::ImageSampleLzArray { .. });
+                if dst > 252 || coord > if array { 253 } else { 254 } {
+                    return Err(error("sample coordinate/data span exceeds v255"));
+                }
                 // Original synthetic ABI, not guest descriptor decoding. AMD RDNA2
                 // Table41 defines four-SGPR alignment for both base operands.
                 // Texture ranges0..7/12..19 and sampler ranges8..11/20..23 do not overlap.
@@ -732,12 +795,40 @@ fn lift(
                 };
                 let u = read(coord)?;
                 let v = read(coord + 1)?;
+                let layer = if array {
+                    let value = read(coord + 2)?;
+                    let requirement = match ir.values[value.0].1 {
+                        Op::Constant(bits) => {
+                            let f = f32::from_bits(bits);
+                            if !f.is_finite()
+                                || f < 0.0
+                                || f.fract() != 0.0
+                                || f64::from(f) >= 4294967296.0
+                            {
+                                return Err(error(
+                                    "array layer constant must be a finite nonnegative u32 integer",
+                                ));
+                            }
+                            GraphicsArrayLayer::Constant(f as u32)
+                        }
+                        Op::UniformFloat(slot) => GraphicsArrayLayer::Uniform(slot),
+                        _ => {
+                            return Err(error(
+                                "array layer requires constant or direct uniform provenance; computed, interpolated and phi layers are unsupported",
+                            ));
+                        }
+                    };
+                    Some((value, requirement))
+                } else {
+                    None
+                };
                 for component in 0..4 {
                     let val = ir.push(
                         Some(offset),
                         Op::SampleLodZero {
                             u,
                             v,
+                            layer,
                             component,
                             texture_index,
                             sampler_index,
@@ -1110,8 +1201,49 @@ fn validate_resource_types(
             reason: "nondefault type for an unused resource slot",
         });
     }
+    // Layer uniforms originate only from direct s24..s31 moves, so all indices
+    // fit this eight-bit set. Scan reachable sample requirements once.
+    let layer_uniform_mask = pixel.values.iter().fold(0u8, |mask, (_, op)| {
+        if let Op::SampleLodZero {
+            layer: Some((_, GraphicsArrayLayer::Uniform(slot))),
+            ..
+        } = op
+        {
+            mask | (1u8 << slot)
+        } else {
+            mask
+        }
+    });
+    for (offset, op) in &pixel.values {
+        if let Op::SampleLodZero {
+            texture_index,
+            layer,
+            ..
+        } = op
+        {
+            let array_type = matches!(
+                types.textures[usize::from(*texture_index)],
+                GraphicsSampleType::FloatArray | GraphicsSampleType::UintArray
+            );
+            if array_type != layer.is_some() {
+                return Err(CompileError::Verify {
+                    offset: offset.unwrap_or(0),
+                    reason: "sample dimension does not match texture type; depth arrays are unsupported",
+                });
+            }
+        }
+        if let Op::UniformFloat(slot) = op
+            && layer_uniform_mask & (1u8 << slot) == 0
+        {
+            return Err(CompileError::Verify {
+                offset: offset.unwrap_or(0),
+                reason: "uniform float move requires matching array layer validation metadata",
+            });
+        }
+    }
     let mut integer_bits: Vec<bool> = pixel.values.iter().map(|(_, op)| matches!(op,
-        Op::SampleLodZero {texture_index, ..} if types.textures[*texture_index as usize] == GraphicsSampleType::Uint
+        Op::SampleLodZero {texture_index, ..} if matches!(types.textures[*texture_index as usize],
+            GraphicsSampleType::Uint | GraphicsSampleType::UintArray)
     )).collect();
     let mut dependents = vec![Vec::new(); pixel.values.len()];
     for block in pixel.blocks.iter().flatten() {
@@ -1136,6 +1268,39 @@ fn validate_resource_types(
             }
         }
     }
+    // The new SGPR->VGPR bit move is deliberately limited to validated layer
+    // transport. Propagate through copies/phis to reject other observable uses.
+    let mut uniform_floats: Vec<bool> = pixel
+        .values
+        .iter()
+        .map(|(_, op)| matches!(op, Op::UniformFloat(_)))
+        .collect();
+    let mut work: Vec<usize> = uniform_floats
+        .iter()
+        .enumerate()
+        .filter_map(|(index, used)| used.then_some(index))
+        .collect();
+    while let Some(source) = work.pop() {
+        for &destination in &dependents[source] {
+            if !uniform_floats[destination] {
+                uniform_floats[destination] = true;
+                work.push(destination);
+            }
+        }
+    }
+    for (offset, op) in &pixel.values {
+        let invalid_use = match op {
+            Op::SampleLodZero { u, v, .. } => uniform_floats[u.0] || uniform_floats[v.0],
+            Op::Binary(_, a, b) => uniform_floats[a.0] || uniform_floats[b.0],
+            _ => false,
+        };
+        if invalid_use {
+            return Err(CompileError::Verify {
+                offset: offset.unwrap_or(0),
+                reason: "uniform float moves are supported only as validated array layers",
+            });
+        }
+    }
     for (offset, op) in &pixel.values {
         if let Op::SampleLodZero { u, v, .. } = op
             && (integer_bits[u.0] || integer_bits[v.0])
@@ -1156,6 +1321,12 @@ fn validate_resource_types(
     }
     for (slot, export) in pixel.colors[..colors].iter().enumerate() {
         let export = export.as_ref().expect("validated contiguous exports");
+        if export.values.iter().any(|v| uniform_floats[v.0]) {
+            return Err(CompileError::Verify {
+                offset: export.offset,
+                reason: "uniform float moves are supported only as validated array layers",
+            });
+        }
         if types.colors[slot] == GraphicsExportType::Float
             && export.values.iter().any(|v| integer_bits[v.0])
         {
@@ -1291,6 +1462,10 @@ fn emit_range(
                     format!("{buffer}[vertex_id][{component}]"),
                 )
             }
+            Op::UniformFloat(slot) => (
+                format!("uniform.bits.f32 [{slot}]"),
+                format!("as_type<float>(uniforms[{slot}])"),
+            ),
             Op::Constant(bits) => (
                 format!("const.f32 0x{bits:08x}"),
                 format!("as_type<float>(0x{bits:08x}u)"),
@@ -1309,17 +1484,22 @@ fn emit_range(
             Op::SampleLodZero {
                 u,
                 v,
+                layer,
                 component,
                 texture_index,
                 sampler_index,
             } => {
                 let channel = ["r", "g", "b", "a"][usize::from(component)];
+                let layer_argument =
+                    layer.map_or_else(String::new, |(value, _)| format!(", uint({value})"));
                 let sample = format!(
-                    "tex{texture_index}.sample(samp{sampler_index}, float2({u}, {v}), level(0.0f))"
+                    "tex{texture_index}.sample(samp{sampler_index}, float2({u}, {v}){layer_argument}, level(0.0f))"
                 );
                 let (kind, expression) = match types.textures[texture_index as usize] {
-                    GraphicsSampleType::Float => ("f32", format!("{sample}.{channel}")),
-                    GraphicsSampleType::Uint => {
+                    GraphicsSampleType::Float | GraphicsSampleType::FloatArray => {
+                        ("f32", format!("{sample}.{channel}"))
+                    }
+                    GraphicsSampleType::Uint | GraphicsSampleType::UintArray => {
                         ("u32.bits", format!("as_type<float>({sample}.{channel})"))
                     }
                     GraphicsSampleType::Depth => (
@@ -1331,9 +1511,11 @@ fn emit_range(
                         },
                     ),
                 };
+                let dimension = if layer.is_some() { "2d_array" } else { "2d" };
+                let layer_ir = layer.map_or_else(String::new, |(value, _)| format!(", {value}"));
                 (
                     format!(
-                        "sample_lz.2d.{kind} tex{texture_index}, samp{sampler_index}, ({u}, {v})[{channel}]"
+                        "sample_lz.{dimension}.{kind} tex{texture_index}, samp{sampler_index}, ({u}, {v}{layer_ir})[{channel}]"
                     ),
                     expression,
                 )

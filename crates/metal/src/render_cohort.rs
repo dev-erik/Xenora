@@ -201,6 +201,18 @@ impl RenderColorOutput {
 }
 #[derive(Clone)]
 pub enum QueuedSampledBinding {
+    ArrayViewed {
+        view: crate::MetalTextureArrayView,
+        sampler: crate::MetalSampler,
+        texture_slot: crate::BindingSlot,
+        sampler_slot: crate::BindingSlot,
+    },
+    ProducedTypedArrayView {
+        view: crate::RenderTypedTextureArrayView,
+        sampler: crate::MetalSampler,
+        texture_slot: crate::BindingSlot,
+        sampler_slot: crate::BindingSlot,
+    },
     ProducedTypedView {
         view: crate::RenderTypedTextureView,
         sampler: crate::MetalSampler,
@@ -2248,6 +2260,22 @@ impl RenderCohort {
             let mut pairs = Vec::with_capacity(draw.len());
             for binding in draw {
                 pairs.push(match binding {
+                    QueuedSampledBinding::ArrayViewed {
+                        view,
+                        sampler,
+                        texture_slot,
+                        sampler_slot,
+                    } => view.bind(sampler.clone(), *texture_slot, *sampler_slot)?,
+                    QueuedSampledBinding::ProducedTypedArrayView {
+                        view,
+                        sampler,
+                        texture_slot,
+                        sampler_slot,
+                    } => {
+                        add(&view.output.point)?;
+                        view.view
+                            .bind(sampler.clone(), *texture_slot, *sampler_slot)?
+                    }
                     QueuedSampledBinding::Uploaded(pair) => NativeSampledBinding::from_whole(pair),
                     QueuedSampledBinding::Viewed {
                         view,
@@ -2358,10 +2386,17 @@ impl RenderCohort {
             }
         }
         for binding in bindings.iter().flatten() {
-            if let QueuedSampledBinding::ProducedTypedView { view, .. } = binding
-                && !leases.iter().any(|old| Rc::ptr_eq(old, &view.output.lease))
+            let lease = match binding {
+                QueuedSampledBinding::ProducedTypedView { view, .. } => Some(&view.output.lease),
+                QueuedSampledBinding::ProducedTypedArrayView { view, .. } => {
+                    Some(&view.output.lease)
+                }
+                _ => None,
+            };
+            if let Some(lease) = lease
+                && !leases.iter().any(|old| Rc::ptr_eq(old, lease))
             {
-                leases.push(view.output.lease.clone());
+                leases.push(lease.clone());
             }
         }
         // Completed successful ancestors need no stored edge: the generation
@@ -4073,3 +4108,7 @@ mod typed_copy_budget_tests;
 #[cfg(test)]
 #[path = "attachment_view_budget_tests.rs"]
 mod attachment_view_budget_tests;
+
+#[cfg(test)]
+#[path = "shader_array_budget_tests.rs"]
+mod shader_array_budget_tests;

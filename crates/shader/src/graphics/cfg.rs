@@ -162,7 +162,8 @@ pub(super) fn analyze(decoded: &[DecodedInstruction]) -> Result<Vec<CountedLoop>
                 | Instruction::VectorAddF32 { dst, .. }
                 | Instruction::VectorMulF32 { dst, .. }
                 | Instruction::Interpolate { dst, .. } => vector_writes[usize::from(dst)] = true,
-                Instruction::ImageSampleLz { dst, .. } => {
+                Instruction::ImageSampleLz { dst, .. }
+                | Instruction::ImageSampleLzArray { dst, .. } => {
                     for written in vector_writes.iter_mut().skip(usize::from(dst)).take(4) {
                         *written = true;
                     }

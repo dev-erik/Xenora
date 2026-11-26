@@ -142,6 +142,40 @@ pub struct ArraySliceViewDesc {
     pub format: TextureViewFormat,
 }
 
+/// A nonempty mip/slice range of an explicit array, including one-layer arrays.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct ArrayTextureViewDesc {
+    pub base_slice: u32,
+    pub slice_count: u32,
+    pub base_mip: u32,
+    pub mip_count: u32,
+    pub format: TextureViewFormat,
+}
+
+/// Immutable array view sharing and retaining its complete backing allocation.
+/// It exposes neither uploads nor raw texture access. Depth arrays are unsupported.
+#[derive(Clone, Debug)]
+pub struct MetalTextureArrayView {
+    texture: NativeSampledTexture,
+    desc: ArrayTextureViewDesc,
+}
+impl MetalTextureArrayView {
+    pub fn desc(&self) -> ArrayTextureViewDesc {
+        self.desc
+    }
+    pub fn extent(&self) -> [usize; 2] {
+        [self.texture.width, self.texture.height]
+    }
+    pub(crate) fn bind(
+        &self,
+        sampler: MetalSampler,
+        texture_slot: BindingSlot,
+        sampler_slot: BindingSlot,
+    ) -> Result<NativeSampledBinding, MetalError> {
+        NativeSampledBinding::bind(self.texture.clone(), sampler, texture_slot, sampler_slot)
+    }
+}
+
 /// Immutable native shared-storage view. No upload, raw texture or public
 /// conversion to the upload-capable whole-texture binding is available.
 /// The owner of the original uploaded texture must still serialize its uploads.
@@ -191,6 +225,12 @@ impl MetalTextureView {
 /// Additive immutable-view binding interface; normalization is crate-private.
 #[derive(Clone, Debug)]
 pub enum SampledBinding {
+    ArrayView {
+        view: MetalTextureArrayView,
+        sampler: MetalSampler,
+        texture_slot: BindingSlot,
+        sampler_slot: BindingSlot,
+    },
     Whole(BoundSampledTexture),
     View {
         view: MetalTextureView,
@@ -202,6 +242,12 @@ pub enum SampledBinding {
 impl SampledBinding {
     pub(crate) fn normalize(&self) -> Result<NativeSampledBinding, MetalError> {
         match self {
+            Self::ArrayView {
+                view,
+                sampler,
+                texture_slot,
+                sampler_slot,
+            } => view.bind(sampler.clone(), *texture_slot, *sampler_slot),
             Self::Whole(pair) => Ok(NativeSampledBinding::from_whole(pair)),
             Self::View {
                 view,
@@ -211,6 +257,44 @@ impl SampledBinding {
             } => view.bind(sampler.clone(), *texture_slot, *sampler_slot),
         }
     }
+}
+
+fn view_pixel_format(
+    storage: TextureFormat,
+    view: TextureViewFormat,
+) -> Result<MTLPixelFormat, MetalError> {
+    Ok(match (storage, view) {
+        (TextureFormat::R8Unorm, TextureViewFormat::R8Unorm) => MTLPixelFormat::R8Unorm,
+        (TextureFormat::Rg8Unorm, TextureViewFormat::Rg8Unorm) => MTLPixelFormat::RG8Unorm,
+        (TextureFormat::Bgra8Unorm, TextureViewFormat::Bgra8Unorm) => MTLPixelFormat::BGRA8Unorm,
+        (TextureFormat::Bgra8Unorm, TextureViewFormat::Bgra8UnormSrgb) => {
+            MTLPixelFormat::BGRA8Unorm_sRGB
+        }
+        (TextureFormat::Rgba16Float, TextureViewFormat::Rgba16Float) => MTLPixelFormat::RGBA16Float,
+        (TextureFormat::R32Float, TextureViewFormat::R32Float) => MTLPixelFormat::R32Float,
+        (TextureFormat::R32Uint, TextureViewFormat::R32Uint) => MTLPixelFormat::R32Uint,
+        (TextureFormat::Depth32Float, TextureViewFormat::Depth32Float) => {
+            MTLPixelFormat::Depth32Float
+        }
+        (TextureFormat::Rgba8Unorm, TextureViewFormat::Rgba8Unorm) => MTLPixelFormat::RGBA8Unorm,
+        (TextureFormat::Rgba8Unorm, TextureViewFormat::Rgba8UnormSrgb) => {
+            MTLPixelFormat::RGBA8Unorm_sRGB
+        }
+        (TextureFormat::Bc1RgbaUnorm, TextureViewFormat::Bc1RgbaUnorm) => MTLPixelFormat::BC1_RGBA,
+        (TextureFormat::Bc1RgbaUnorm, TextureViewFormat::Bc1RgbaUnormSrgb) => {
+            MTLPixelFormat::BC1_RGBA_sRGB
+        }
+        (TextureFormat::Bc3RgbaUnorm, TextureViewFormat::Bc3RgbaUnorm) => MTLPixelFormat::BC3_RGBA,
+        (TextureFormat::Bc3RgbaUnorm, TextureViewFormat::Bc3RgbaUnormSrgb) => {
+            MTLPixelFormat::BC3_RGBA_sRGB
+        }
+        _ => {
+            return Err(MetalError::new(
+                "texture view",
+                "incompatible storage/view format",
+            ));
+        }
+    })
 }
 
 /// Private format-aware sampled storage. Compressed data never enters the RGBA8 owner.
@@ -267,6 +351,55 @@ impl NativeSampledTexture {
             Some(desc.slice),
         )
     }
+    fn array_range_view(
+        &self,
+        desc: ArrayTextureViewDesc,
+    ) -> Result<MetalTextureArrayView, MetalError> {
+        let end_slice = desc
+            .base_slice
+            .checked_add(desc.slice_count)
+            .ok_or_else(|| MetalError::new("array view", "slice range overflow"))?;
+        let end_mip = desc
+            .base_mip
+            .checked_add(desc.mip_count)
+            .ok_or_else(|| MetalError::new("array view", "mip range overflow"))?;
+        if self.texture.textureType() != MTLTextureType::Type2DArray
+            || self.format == TextureFormat::Depth32Float
+            || desc.slice_count == 0
+            || desc.mip_count == 0
+            || end_slice as usize > self.texture.arrayLength()
+            || end_mip > self.mips
+        {
+            return Err(MetalError::new(
+                "array view",
+                "invalid array range or depth format",
+            ));
+        }
+        let pixel_format = view_pixel_format(self.format, desc.format)?;
+        // SAFETY: Both nonempty ranges are within the immutable array root;
+        // the shared format-family validator permits only supported interpretations.
+        let texture = unsafe {
+            self.texture
+                .newTextureViewWithPixelFormat_textureType_levels_slices(
+                    pixel_format,
+                    MTLTextureType::Type2DArray,
+                    NSRange::new(desc.base_mip as usize, desc.mip_count as usize),
+                    NSRange::new(desc.base_slice as usize, desc.slice_count as usize),
+                )
+        }
+        .ok_or_else(|| MetalError::new("array view", "native view creation failed"))?;
+        Ok(MetalTextureArrayView {
+            texture: Self {
+                texture,
+                _parent: Some(self.texture.clone()),
+                width: (self.width >> desc.base_mip).max(1),
+                height: (self.height >> desc.base_mip).max(1),
+                mips: desc.mip_count,
+                format: self.format,
+            },
+            desc,
+        })
+    }
     fn view_internal(
         &self,
         desc: TextureViewDesc,
@@ -282,48 +415,7 @@ impl NativeSampledTexture {
                 "empty or out-of-bounds mip range",
             ));
         }
-        let pixel_format = match (self.format, desc.format) {
-            (TextureFormat::R8Unorm, TextureViewFormat::R8Unorm) => MTLPixelFormat::R8Unorm,
-            (TextureFormat::Rg8Unorm, TextureViewFormat::Rg8Unorm) => MTLPixelFormat::RG8Unorm,
-            (TextureFormat::Bgra8Unorm, TextureViewFormat::Bgra8Unorm) => {
-                MTLPixelFormat::BGRA8Unorm
-            }
-            (TextureFormat::Bgra8Unorm, TextureViewFormat::Bgra8UnormSrgb) => {
-                MTLPixelFormat::BGRA8Unorm_sRGB
-            }
-            (TextureFormat::Rgba16Float, TextureViewFormat::Rgba16Float) => {
-                MTLPixelFormat::RGBA16Float
-            }
-            (TextureFormat::R32Float, TextureViewFormat::R32Float) => MTLPixelFormat::R32Float,
-            (TextureFormat::R32Uint, TextureViewFormat::R32Uint) => MTLPixelFormat::R32Uint,
-            (TextureFormat::Depth32Float, TextureViewFormat::Depth32Float) => {
-                MTLPixelFormat::Depth32Float
-            }
-            (TextureFormat::Rgba8Unorm, TextureViewFormat::Rgba8Unorm) => {
-                MTLPixelFormat::RGBA8Unorm
-            }
-            (TextureFormat::Rgba8Unorm, TextureViewFormat::Rgba8UnormSrgb) => {
-                MTLPixelFormat::RGBA8Unorm_sRGB
-            }
-            (TextureFormat::Bc1RgbaUnorm, TextureViewFormat::Bc1RgbaUnorm) => {
-                MTLPixelFormat::BC1_RGBA
-            }
-            (TextureFormat::Bc1RgbaUnorm, TextureViewFormat::Bc1RgbaUnormSrgb) => {
-                MTLPixelFormat::BC1_RGBA_sRGB
-            }
-            (TextureFormat::Bc3RgbaUnorm, TextureViewFormat::Bc3RgbaUnorm) => {
-                MTLPixelFormat::BC3_RGBA
-            }
-            (TextureFormat::Bc3RgbaUnorm, TextureViewFormat::Bc3RgbaUnormSrgb) => {
-                MTLPixelFormat::BC3_RGBA_sRGB
-            }
-            _ => {
-                return Err(MetalError::new(
-                    "texture view",
-                    "incompatible storage/view format",
-                ));
-            }
-        };
+        let pixel_format = view_pixel_format(self.format, desc.format)?;
         // SAFETY: Checked nonempty mip range and selected root slice; only same-family
         // linear/sRGB casts are accepted. These do not require PixelFormatView.
         let texture = unsafe {
@@ -719,6 +811,13 @@ pub struct MetalTypedTexture {
     desc: crate::TypedTextureDesc,
 }
 impl MetalTypedTexture {
+    pub fn array_range_view(
+        &self,
+        desc: ArrayTextureViewDesc,
+    ) -> Result<MetalTextureArrayView, MetalError> {
+        self.texture.array_range_view(desc)
+    }
+
     pub fn upload(
         gpu: &crate::NativeCompute,
         desc: crate::TypedTextureDesc,
@@ -773,6 +872,15 @@ fn typed_sampled_storage(
         mips: desc.mip_levels,
         format: desc.format,
     })
+}
+
+/// Internal only: the produced wrapper retains exact provenance and the full root lease.
+pub(crate) fn typed_texture_array_view(
+    texture: Retained<ProtocolObject<dyn MTLTexture>>,
+    desc: crate::TypedTextureDesc,
+    view: ArrayTextureViewDesc,
+) -> Result<MetalTextureArrayView, MetalError> {
+    typed_sampled_storage(texture, desc)?.array_range_view(view)
 }
 
 /// Internal only: callers retain the exact Produced owner alongside this view.
@@ -830,6 +938,13 @@ pub struct MetalRgba8ArrayTexture {
     desc: Rgba8ArrayTextureDesc,
 }
 impl MetalRgba8ArrayTexture {
+    pub fn array_range_view(
+        &self,
+        desc: ArrayTextureViewDesc,
+    ) -> Result<MetalTextureArrayView, MetalError> {
+        self.texture.array_range_view(desc)
+    }
+
     pub fn desc(&self) -> Rgba8ArrayTextureDesc {
         self.desc
     }

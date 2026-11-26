@@ -447,7 +447,8 @@ fn reference_op(instruction: Instruction) -> Op {
         }
         Instruction::Export { .. }
         | Instruction::Interpolate { .. }
-        | Instruction::ImageSampleLz { .. } => {
+        | Instruction::ImageSampleLz { .. }
+        | Instruction::ImageSampleLzArray { .. } => {
             panic!("compute reference matrix received a graphics/image instruction")
         }
 

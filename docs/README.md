@@ -76,3 +76,6 @@ either path. The [changelog](../CHANGELOG.md) records notable changes.
 - [Infrastructure QA tooling](testing/infrastructure/README.md) — Advisory orchestration, PR validation, benchmark analysis and release checks.
 
 - [Resource-view completion plan](superpowers/plans/2026-11-26-view-completion.md) — remaining S2.4 integration and acceptance criteria.
+
+Shader-indexed array bindings and their validated layer contract are documented in the
+[guest graphics call reference](graphics-call-v1.md#shader-indexed-array-sampling).

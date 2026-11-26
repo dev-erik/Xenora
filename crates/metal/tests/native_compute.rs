@@ -477,3 +477,6 @@ mod attachment_views;
 
 #[path = "native/depth_attachment_views.rs"]
 mod depth_attachment_views;
+
+#[path = "native/shader_array_views.rs"]
+mod shader_array_views;

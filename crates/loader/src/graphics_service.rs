@@ -104,7 +104,7 @@ pub fn graphics_call_v1(
     let used = match opcode {
         1 => 0,
         2 | 3 | 12 | 26 | 27 | 31 | 32 | 33 | 36 | 38 | 47 | 60 | 62 => 1,
-        4 | 11 | 14 | 25 | 28 | 30 | 34 | 39 | 48 => 2,
+        4 | 11 | 14 | 25 | 28 | 30 | 34 | 39 | 48 | 66 => 2,
         5 | 7 | 15 | 17 | 29 | 41 | 42 | 56 | 63 => 3,
         9 | 10 | 13 | 16 | 18 | 19 | 20 | 35 | 46 | 49 | 64 => 4,
         6 | 8 | 21 | 23 | 37 | 45 | 61 => 5,
@@ -152,7 +152,8 @@ pub fn graphics_call_v1(
         || opcode == 54
         || opcode == 56
         || opcode == 63
-        || opcode == 64)
+        || opcode == 64
+        || opcode == 66)
         && graphics
             .guest_command_count(args.handle(0))
             .is_some_and(|count| count >= MAX_GUEST_COMMANDS)
@@ -304,7 +305,7 @@ pub fn graphics_call_v1(
                     [handles[2], handles[3]],
                 )?;
             }
-            34 | 39 => {
+            34 | 39 | 66 => {
                 let mut bytes = [0u8; 80];
                 memory.read_bytes(args.0[1], &mut bytes)?;
                 let words: [u64; 10] = std::array::from_fn(|i| {
@@ -335,7 +336,9 @@ pub fn graphics_call_v1(
                         _ => return Err(GraphicsError::InvalidDescriptor),
                     }
                 }
-                if opcode == 39 {
+                if opcode == 66 {
+                    graphics.cmd_set_sampled_array_ranges(args.handle(0), textures, samplers)?;
+                } else if opcode == 39 {
                     graphics.cmd_set_sampled_views(args.handle(0), textures, samplers)?;
                 } else {
                     graphics.cmd_set_sampled_bindings(args.handle(0), textures, samplers)?;
@@ -346,7 +349,7 @@ pub fn graphics_call_v1(
                     GraphicsExportType, GraphicsPipelineTypes, GraphicsSampleType,
                 };
                 let bits = args.0[5];
-                if bits & !0xff0f != 0 {
+                if bits & !0xff3f != 0 {
                     return Err(GraphicsError::InvalidDescriptor);
                 }
                 let mut types = GraphicsPipelineTypes::default();
@@ -357,6 +360,13 @@ pub fn graphics_call_v1(
                         2 => GraphicsSampleType::Depth,
                         _ => return Err(GraphicsError::InvalidDescriptor),
                     };
+                    if bits & (1 << (4 + slot)) != 0 {
+                        *sample_type = match *sample_type {
+                            GraphicsSampleType::Float => GraphicsSampleType::FloatArray,
+                            GraphicsSampleType::Uint => GraphicsSampleType::UintArray,
+                            _ => return Err(GraphicsError::InvalidDescriptor),
+                        };
+                    }
                 }
                 for (slot, export_type) in types.colors.iter_mut().enumerate() {
                     if bits & (1 << (8 + slot)) != 0 {

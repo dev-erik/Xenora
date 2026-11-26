@@ -1155,7 +1155,13 @@ fn submit_native_inputs(
                     _ => TextureFormat::Rgba8Unorm,
                 })
             });
-            validate_pipeline_formats(pipeline, &color_formats, texture_formats)?;
+            validate_pipeline_formats(
+                pipeline,
+                &color_formats,
+                texture_formats,
+                draw.sampled_ranges.map(|r| r.is_some()),
+            )?;
+            validate_shader_array_layers(draw)?;
             if pipeline.color_targets != request.colors.len()
                 || pipeline.sampled_pairs & !15 != 0
                 || pipeline.uses_texture != (pipeline.sampled_pairs != 0)
@@ -1197,7 +1203,10 @@ fn submit_native_inputs(
             .sampled_pairs;
         for (texture_slot, texture) in draw.textures.iter().enumerate() {
             let Some(texture) = texture else {
-                if draw.array_views[texture_slot].is_some() || draw.views[texture_slot].is_some() {
+                if draw.array_views[texture_slot].is_some()
+                    || draw.views[texture_slot].is_some()
+                    || draw.sampled_ranges[texture_slot].is_some()
+                {
                     return Err(GraphicsError::InvalidDescriptor);
                 }
                 continue;
@@ -1209,6 +1218,94 @@ fn submit_native_inputs(
                 GraphicsTextureInput::ProducedTyped { desc, .. } => desc.array_layers.is_some(),
                 _ => false,
             };
+            if let Some(range) = draw.sampled_ranges[texture_slot] {
+                if !is_array || array_desc.is_some() || draw.views[texture_slot].is_some() {
+                    return Err(GraphicsError::InvalidDescriptor);
+                }
+                let native = native_array_range_desc(range);
+                let (host, produced) = match texture {
+                    GraphicsTextureInput::Host(snapshot) => {
+                        let uploaded = upload_texture(gpu, snapshot, &mut cache)?;
+                        let view = match uploaded {
+                            UploadedStorage::Array(owner) => owner.array_range_view(native),
+                            UploadedStorage::Typed(owner) => owner.array_range_view(native),
+                            _ => return Err(GraphicsError::InvalidDescriptor),
+                        }
+                        .map_err(metal_error)?;
+                        (Some(view), None)
+                    }
+                    GraphicsTextureInput::ProducedTyped { version, desc } => {
+                        if !request.waits.contains(&version.point) {
+                            return Err(GraphicsError::InvalidDescriptor);
+                        }
+                        let output = produced_typed_output(entries, *version)?;
+                        if output.desc() != native_desc(*desc) {
+                            return Err(GraphicsError::InvalidDescriptor);
+                        }
+                        (
+                            None,
+                            Some(output.array_range_view(native).map_err(metal_error)?),
+                        )
+                    }
+                    GraphicsTextureInput::ProducedArray {
+                        version,
+                        width,
+                        height,
+                        mip_levels,
+                        array_layers,
+                    } => {
+                        if !request.waits.contains(&version.point) {
+                            return Err(GraphicsError::InvalidDescriptor);
+                        }
+                        let output = produced_typed_output(entries, *version)?;
+                        if output.desc()
+                            != (xenora_metal::TypedTextureDesc {
+                                format: TextureFormat::Rgba8Unorm,
+                                extent: [*width, *height],
+                                mip_levels: *mip_levels,
+                                array_layers: Some(*array_layers),
+                            })
+                        {
+                            return Err(GraphicsError::InvalidDescriptor);
+                        }
+                        (
+                            None,
+                            Some(output.array_range_view(native).map_err(metal_error)?),
+                        )
+                    }
+                    _ => return Err(GraphicsError::InvalidDescriptor),
+                };
+                for (sampler_slot, sampler) in samplers.iter().enumerate() {
+                    if mask & (1 << (texture_slot * 2 + sampler_slot)) == 0 {
+                        continue;
+                    }
+                    let sampler = sampler
+                        .as_ref()
+                        .ok_or(GraphicsError::InvalidDescriptor)?
+                        .clone();
+                    let texture_slot = BindingSlot::new(texture_slot as u32);
+                    let sampler_slot = BindingSlot::new(sampler_slot as u32);
+                    pairs.push(if let Some(view) = &host {
+                        QueuedSampledBinding::ArrayViewed {
+                            view: view.clone(),
+                            sampler,
+                            texture_slot,
+                            sampler_slot,
+                        }
+                    } else {
+                        QueuedSampledBinding::ProducedTypedArrayView {
+                            view: produced
+                                .as_ref()
+                                .ok_or(GraphicsError::InvalidDescriptor)?
+                                .clone(),
+                            sampler,
+                            texture_slot,
+                            sampler_slot,
+                        }
+                    });
+                }
+                continue;
+            }
             if is_array != array_desc.is_some()
                 || (array_desc.is_some() && draw.views[texture_slot].is_some())
             {
@@ -1657,6 +1754,7 @@ where
     });
     context.enable_resource_roles(roles)?;
     context.enable_attachment_transactions()?;
+    context.enable_shader_array_views()?;
     Ok(())
 }
 
@@ -2838,4 +2936,97 @@ fn typed_native_view_format(format: TextureFormat) -> TextureViewFormat {
         TextureFormat::Bc1RgbaUnorm => TextureViewFormat::Bc1RgbaUnorm,
         TextureFormat::Bc3RgbaUnorm => TextureViewFormat::Bc3RgbaUnorm,
     }
+}
+
+fn native_array_range_desc(
+    desc: xenora_loader::graphics::GraphicsArrayRangeViewDesc,
+) -> xenora_metal::ArrayTextureViewDesc {
+    xenora_metal::ArrayTextureViewDesc {
+        base_slice: desc.base_slice,
+        slice_count: desc.slice_count,
+        base_mip: desc.base_mip,
+        mip_count: desc.mip_count,
+        format: native_view_desc(xenora_loader::graphics::GraphicsTextureViewDesc {
+            base_mip: desc.base_mip,
+            mip_count: desc.mip_count,
+            format: desc.format,
+        })
+        .format,
+    }
+}
+fn validate_shader_array_layers(
+    draw: &xenora_loader::graphics::GraphicsQueuedDraw,
+) -> Result<(), GraphicsError> {
+    use xenora_shader::{GraphicsArrayLayer, GraphicsSampleType};
+    let pipeline = draw
+        .pipeline
+        .as_ref()
+        .ok_or(GraphicsError::InvalidDescriptor)?;
+    for slot in 0..2 {
+        let is_array = matches!(
+            pipeline.types.textures[slot],
+            GraphicsSampleType::FloatArray | GraphicsSampleType::UintArray
+        );
+        if is_array != draw.sampled_ranges[slot].is_some() {
+            return Err(GraphicsError::InvalidDescriptor);
+        }
+        let Some(range) = draw.sampled_ranges[slot] else {
+            if !pipeline.array_layers[slot].is_empty() {
+                return Err(GraphicsError::InvalidDescriptor);
+            }
+            continue;
+        };
+        let (mips, layers) = match draw.textures[slot]
+            .as_ref()
+            .ok_or(GraphicsError::InvalidDescriptor)?
+        {
+            GraphicsTextureInput::Host(t) => (t.mip_levels, t.array_layers),
+            GraphicsTextureInput::ProducedArray {
+                mip_levels,
+                array_layers,
+                ..
+            } => (*mip_levels, Some(*array_layers)),
+            GraphicsTextureInput::ProducedTyped { desc, .. } => {
+                (desc.mip_levels, desc.array_layers)
+            }
+            _ => return Err(GraphicsError::InvalidDescriptor),
+        };
+        let layers = layers.ok_or(GraphicsError::InvalidDescriptor)?;
+        if range.slice_count == 0
+            || range.mip_count == 0
+            || range
+                .base_slice
+                .checked_add(range.slice_count)
+                .is_none_or(|end| end > layers)
+            || range
+                .base_mip
+                .checked_add(range.mip_count)
+                .is_none_or(|end| end > mips)
+            || pipeline.array_layers[slot].is_empty()
+        {
+            return Err(GraphicsError::InvalidDescriptor);
+        }
+        for source in &pipeline.array_layers[slot] {
+            match *source {
+                GraphicsArrayLayer::Constant(layer) if layer < range.slice_count => {}
+                GraphicsArrayLayer::Uniform(index) => {
+                    let bits = draw
+                        .uniforms
+                        .as_ref()
+                        .and_then(|u| u.get(index as usize))
+                        .ok_or(GraphicsError::InvalidDescriptor)?;
+                    let layer = f32::from_bits(*bits);
+                    if !layer.is_finite()
+                        || layer < 0.
+                        || layer.fract() != 0.
+                        || layer >= range.slice_count as f32
+                    {
+                        return Err(GraphicsError::InvalidDescriptor);
+                    }
+                }
+                _ => return Err(GraphicsError::InvalidDescriptor),
+            }
+        }
+    }
+    Ok(())
 }
