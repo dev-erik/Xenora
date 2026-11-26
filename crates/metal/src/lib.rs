@@ -265,6 +265,8 @@ pub enum QueuedDepthInput {
     Clear(f32),
     Host(DepthSnapshot),
     Produced(RenderDepthOutput),
+    /// Load one selected Depth32Float mip while retaining its complete produced root.
+    ProducedTypedView(RenderTypedTextureView),
 }
 
 /// Buffer-only input for guarded GPU geometry gathering. Produced storage stays on GPU.

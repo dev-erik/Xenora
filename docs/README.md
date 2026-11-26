@@ -72,3 +72,5 @@ either path. The [changelog](../CHANGELOG.md) records notable changes.
 - [Infrastructure QA ownership](coordination/infrastructure-qa-ownership.md) — Non-overlapping paths for infrastructure and QA tooling.
 - [Agent queue smoke evidence](coordination/agent-queue-smoke.md) — Live Actions results from the disposable smoke repository.
 - [Infrastructure QA tooling](testing/infrastructure/README.md) — Advisory orchestration, PR validation, benchmark analysis and release checks.
+
+- [Resource-view completion plan](superpowers/plans/2026-11-26-view-completion.md) — remaining S2.4 integration and acceptance criteria.

@@ -474,3 +474,6 @@ mod typed_attachments;
 
 #[path = "native/attachment_views.rs"]
 mod attachment_views;
+
+#[path = "native/depth_attachment_views.rs"]
+mod depth_attachment_views;

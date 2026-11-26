@@ -16,6 +16,39 @@ run ends with `PASS`. Quick mode also rejects filters that select no passing tes
 Use `--help` for prerequisites. These tests render offscreen and compare pixels;
 they do not open an application window. Avoid other GPU test runs at the same time.
 
+## Native selected-view depth Load checkpoint
+
+The native queue now loads one selected Depth32Float mip/slice into a fresh depth
+surface. Read-only comparisons, writes and explicit full-root copy-back preserve
+exact produced versions. Guest writable-view transactions remain unimplemented;
+S2.4 is open. See the [contract](../resource-formats.md#native-selected-depth-view-load)
+and [completion checklist](../superpowers/plans/2026-11-26-view-completion.md).
+
+Four added tests cover literal .25/.75 depth values, .5 writes and .625 comparisons,
+selected zero-draw Load, full-root immutability, copy-back preservation, producer
+ordering, invalid inputs, root ownership and controlled terminal-failure propagation.
+The ownership check compares equivalent output/scratch charges and requires the
+additional complete80-byte root. This measures logical accounting, not driver RAM.
+
+All nine gates passed: workspace **907 passed, zero failed, 113 ignored**; GPU script
+**413 passed, zero failed, one manual case ignored**. After strengthening the budget
+test and adding the direct selected zero-draw case, quick validation passed **178
+check executions across48 steps**, zero failed/ignored, and formatting/lint passed.
+Two native depth checks also match the older broad attachment-view filter, so this
+quick total includes repeat executions. GPU-script totals also include CPU overlap.
+The native test executable is ARM64 and links system Metal; API/shader validation
+were enabled for the quick suite.
+
+Three deliberate faults compiled and failed decisive assertions: forcing retained
+depth Load to Clear produced wrong literal pixels; omitting the selected producer
+wait released a GPU marker too early; omitting the root lease lost exactly80 bytes
+from the differential ownership check. The first lease mutation survived the earlier
+absolute threshold because scratch allocations masked the missing charge. That
+result is retained separately; the strengthened test catches it. Every mutation's
+source restoration was checked by SHA256. Logs use `artifacts/depth-attachment-*`.
+These are original trusted native shaders, not translated guest storage operations
+or GPU hardware-fault recovery evidence.
+
 ## Native selected-view color Load checkpoint
 
 The native queued renderer accepts an exact GPU-produced, one-mip linear color

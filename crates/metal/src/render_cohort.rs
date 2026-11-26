@@ -2115,6 +2115,39 @@ impl RenderCohort {
                 }
             }
         }
+        // Selected views keep the full root's charge, including typed-copy roots
+        // whose point does not carry an ordinary render-depth lease.
+        let mut depth_view_lease = None;
+        let depth = match depth {
+            Some(DepthInput::Queued(QueuedDepthInput::ProducedTypedView(view))) => {
+                self.validate_point(&view.output.point)?;
+                let texture = view.view.retained_texture();
+                if view.output.desc.format != TextureFormat::Depth32Float
+                    || view.desc().format != crate::TextureViewFormat::Depth32Float
+                    || view.desc().mip_count != 1
+                    || view.extent() != pass.extent
+                    || texture.textureType() != MTLTextureType::Type2D
+                    || texture.mipmapLevelCount() != 1
+                    || texture.width() != pass.extent[0]
+                    || texture.height() != pass.extent[1]
+                    || texture.pixelFormat() != DEPTH_FORMAT
+                    || texture.device().registryID() != self.queues[index].device.registryID()
+                    || view.output.texture.device().registryID()
+                        != self.queues[index].device.registryID()
+                {
+                    return Err(error("typed depth view Load backing mismatch"));
+                }
+                depth_view_lease = Some(view.output.lease.clone());
+                Some(DepthInput::Queued(QueuedDepthInput::Produced(
+                    RenderDepthOutput {
+                        point: view.output.point.clone(),
+                        texture,
+                        extent: pass.extent,
+                    },
+                )))
+            }
+            other => other,
+        };
         let export_depth = depth.is_some();
         let depth_source_owner = match &depth {
             Some(DepthInput::Queued(QueuedDepthInput::Produced(output))) => {
@@ -2295,12 +2328,10 @@ impl RenderCohort {
         }
         if let Some(source) = &depth_source_owner {
             leases.push(
-                source
-                    .point
-                    .inner
-                    .depth_lease
+                depth_view_lease
                     .as_ref()
-                    .expect("owned depth lease")
+                    .or(source.point.inner.depth_lease.as_ref())
+                    .expect("validated depth source lease")
                     .clone(),
             );
         }
@@ -2369,8 +2400,10 @@ impl RenderCohort {
                     DepthLoad::Load,
                 ))
             }
-            Some(DepthInput::Queued(QueuedDepthInput::Host(_))) => {
-                unreachable!("normalized host depth")
+            Some(DepthInput::Queued(
+                QueuedDepthInput::Host(_) | QueuedDepthInput::ProducedTypedView(_),
+            )) => {
+                unreachable!("normalized queued depth")
             }
             None => None,
             Some(DepthInput::Legacy(input)) => {

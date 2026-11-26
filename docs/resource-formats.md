@@ -98,3 +98,21 @@ they do not establish guest ABI support for this operation.
 
 Metal views share their source allocation; fresh destinations preserve Xenora's
 immutable produced-version contract. See [Apple's texture-view documentation](https://developer.apple.com/documentation/metal/mtltexture).
+
+## Native selected depth-view Load
+
+`QueuedDepthInput::ProducedTypedView` loads one Depth32Float mip from a produced
+2D or selected-array-slice view. The native selected texture must match the pass
+extent, depth format and device. Foreign cohorts, stale generations, non-depth
+formats and multi-mip ranges reject before a new point is published.
+
+The root stays immutable. The pass produces a fresh ordinary depth surface with
+normal depth comparisons and write control. Its typed output can be copied back
+into a fresh complete root using the existing typed-copy API. These remain two
+explicit submissions; callers retain and collect both. The operation retains the
+original producer and complete root allocation, including roots produced by typed
+copies rather than earlier render passes.
+
+This does not implement guest writable depth binding, composite guest publication,
+shader-indexed arrays, storage-write views or subresource concurrency. See the
+[completion plan](superpowers/plans/2026-11-26-view-completion.md).

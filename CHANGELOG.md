@@ -18,6 +18,11 @@ remains unsupported.
 - Extended the read-only RDNA2 planning CLI (`python3 -m qa rdna2`) with family/status filters, compact summaries, Codex-ready manifests under `artifacts/`, active-claim exclusion (family claims exclude those families; path-only claims block overlapping permitted files), coverage reconcile against `semantic_coverage` without inflating counts, and inventory diffs. Covered by `tests/qa/test_rdna2_plan.py`; planning only, no GPU production edits.
 
 ### Added
+- Native queued depth Load from a selected one-mip Depth32Float view. Depth
+  comparisons and writes operate on a fresh selected surface; explicit typed
+  copy-back preserves the rest of the backing. Exact producer ownership and
+  full-root budget charges survive collection. This is a native prerequisite;
+  guest writable views and S2.4 completion remain open.
 - Native queued color Load from a selected one-mip, linear GPU-produced texture
   view. The source remains immutable and retains its exact producer and full-backing
   budget. The rendered surface can be copied into a fresh full-backing version using
