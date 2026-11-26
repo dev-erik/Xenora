@@ -16,11 +16,41 @@ run ends with `PASS`. Quick mode also rejects filters that select no passing tes
 Use `--help` for prerequisites. These tests render offscreen and compare pixels;
 they do not open an application window. Avoid other GPU test runs at the same time.
 
+## Guest selected attachment transaction checkpoint
+
+Writable guest color/depth selections now compose into complete immutable texture
+versions, with all roots validated before atomic publication. Original guest tests
+check same-root MRT slices, pending Load, both collection orders, lifetime changes,
+fresh depth Clear and selected read-only/write-enabled depth comparisons. Four
+private native tests cover failure after each copy-back, partial admission drainage,
+internal-node capacity/refund and opaque depth shape validation.
+
+All nine repository gates passed before the final budget-test addition: workspace
+**912 passed, zero failed, 116 ignored**; GPU script **416 passed, zero failed,
+one manual case ignored**. These suite totals overlap and are not unique GPU counts.
+The final focused loader suite passed **6 tests**, including a real 140 MiB + 64 byte
+reservation that rejects a second transaction before dispatch, retains the charge
+after completion and refunds it on receipt release. This is CPU mock accounting
+evidence. The separate private native suite passed **4 tests**, and the original
+guest suite passed **3**, with Metal API and shader validation on the local M4 Max.
+Final Clippy and formatting checks passed after the test addition.
+
+Two production mutations compiled and failed full-root byte assertions: composing
+from a stale root lost an earlier slice update, and forcing copy-back slice zero
+wrote the wrong location. The restored original guest suite passed all three tests.
+Raw logs are under `artifacts/attachment-transaction-*`, `artifacts/attachment-mutation-*`
+and `artifacts/validation-full.f7wnlw`. Receipt publication is atomic; native admission
+is incremental and failures drain the cohort rather than roll back its timeline.
+
+S2.4 remains open for range-aware composition, shader-indexed array views and
+shader storage-write views. Cross-submission hazards remain whole-root.
+
 ## Native selected-view depth Load checkpoint
 
 The native queue now loads one selected Depth32Float mip/slice into a fresh depth
 surface. Read-only comparisons, writes and explicit full-root copy-back preserve
-exact produced versions. Guest writable-view transactions remain unimplemented;
+exact produced versions. At this native checkpoint, guest writable-view
+transactions were still unimplemented (see the subsequent checkpoint above);
 S2.4 is open. See the [contract](../resource-formats.md#native-selected-depth-view-load)
 and [completion checklist](../superpowers/plans/2026-11-26-view-completion.md).
 

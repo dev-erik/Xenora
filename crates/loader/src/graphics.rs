@@ -19,6 +19,11 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use xenora_texture::{PackedTextureArrayLayout, PackedTextureLayout, TextureFormat};
 
+#[path = "graphics_attachments.rs"]
+mod attachments;
+pub use attachments::*;
+use attachments::{AttachmentCommit, AttachmentPlan};
+
 #[path = "graphics_resource_roles.rs"]
 mod resource_roles;
 #[path = "graphics_typed_copy.rs"]
@@ -292,6 +297,14 @@ impl IndexFormat {
 /// Primitive Draw Command recorded in a Command List.
 #[derive(Clone, Debug)]
 pub enum GraphicsCommand {
+    SetWritableColorTargets {
+        views: Vec<GraphicsHandle>,
+        loads: Vec<GraphicsColorLoad>,
+    },
+    SetWritableDepthTarget {
+        view: Option<GraphicsHandle>,
+        load: GraphicsDepthLoad,
+    },
     CopyImage {
         destination: GraphicsHandle,
         destination_location: GraphicsImageCopyLocation,
@@ -672,6 +685,7 @@ pub struct GraphicsQueuePoint {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum GraphicsProducedOutput {
+    AttachmentRoot(u8),
     Color(u8),
     Depth,
     Copy(u8),
@@ -1059,6 +1073,7 @@ pub struct GraphicsQueuedImageCopyRequest {
 }
 
 pub enum GraphicsQueuedWorkRequest {
+    AttachmentTransaction(GraphicsAttachmentTransactionRequest),
     Render(GraphicsQueuedSubmissionRequest),
     Copy(GraphicsQueuedCopyRequest),
     BufferRegion(GraphicsQueuedBufferRegionRequest),
@@ -1066,6 +1081,7 @@ pub enum GraphicsQueuedWorkRequest {
 }
 
 pub enum GraphicsQueuedWorkOutput {
+    AttachmentTransaction(Vec<GraphicsAttachmentRootResult>),
     Render(GraphicsPassOutput),
     Copy {
         layout: GraphicsCopyLayout,
@@ -1124,6 +1140,7 @@ struct CopyCommit {
     states: HashMap<GraphicsHandle, ResourceStates>,
 }
 enum QueuedCommit {
+    Attachment(AttachmentCommit),
     Render(SubmissionCommit),
     Copy(CopyCommit),
 }
@@ -1202,6 +1219,7 @@ struct SubmissionCommit {
 }
 
 struct PreparedSubmission {
+    attachments: Option<AttachmentPlan>,
     geometry: Vec<Option<GraphicsGeometryInput>>,
     queued_depth: Option<GraphicsQueuedDepthInput>,
     queued_colors: Vec<GraphicsQueuedColorInput>,
@@ -1277,6 +1295,9 @@ pub struct GraphicsContext {
     array_copy_backend: bool,
     typed_copy_capabilities: GraphicsTypedCopyCapabilities,
     resource_roles: GraphicsResourceRoleCapabilities,
+    attachment_transactions: bool,
+    writable_views: HashMap<GraphicsHandle, GraphicsWritableSelection>,
+    retired_writable_views: HashMap<GraphicsHandle, GraphicsWritableSelection>,
     unaligned_buffer_region_backend: bool,
     graph_backend: bool,
     geometry_backend: bool,
@@ -1363,6 +1384,9 @@ impl GraphicsContext {
             array_copy_backend: false,
             typed_copy_capabilities: GraphicsTypedCopyCapabilities::default(),
             resource_roles: GraphicsResourceRoleCapabilities::default(),
+            attachment_transactions: false,
+            writable_views: HashMap::new(),
+            retired_writable_views: HashMap::new(),
             unaligned_buffer_region_backend: false,
             graph_backend: false,
             geometry_backend: false,
@@ -1406,6 +1430,7 @@ impl GraphicsContext {
         self.array_copy_backend = false;
         self.typed_copy_capabilities = GraphicsTypedCopyCapabilities::default();
         self.resource_roles = GraphicsResourceRoleCapabilities::default();
+        self.attachment_transactions = false;
         self.unaligned_buffer_region_backend = false;
         self.graph_backend = false;
         self.geometry_backend = false;
@@ -1551,6 +1576,9 @@ impl GraphicsContext {
             {
                 writes.insert(depth);
             }
+        }
+        if let Some(plan) = &prepared.attachments {
+            writes.extend(plan.roots.iter().map(|r| r.root));
         }
         for (handle, node) in &self.queued {
             if node.receipt.status != GraphicsSubmissionStatus::Pending {
@@ -1751,6 +1779,7 @@ impl GraphicsContext {
                                 || !matches!(
                                     version.output,
                                     GraphicsProducedOutput::Color(_)
+                                        | GraphicsProducedOutput::AttachmentRoot(_)
                                         | GraphicsProducedOutput::Copy(0)
                                         | GraphicsProducedOutput::Depth
                                 )
@@ -1760,7 +1789,12 @@ impl GraphicsContext {
                             {
                                 return Err(GraphicsError::InvalidDescriptor);
                             }
-                            if snapshot.format != TextureFormat::Rgba8Unorm {
+                            if snapshot.format != TextureFormat::Rgba8Unorm
+                                || matches!(
+                                    version.output,
+                                    GraphicsProducedOutput::AttachmentRoot(_)
+                                )
+                            {
                                 GraphicsTextureInput::ProducedTyped {
                                     version: *version,
                                     desc,
@@ -1800,6 +1834,23 @@ impl GraphicsContext {
                 viewport: draw.viewport,
                 state: draw.state,
             });
+        }
+        if let Some(plan) = prepared.attachments.take() {
+            return self.admit_attachment_transaction(
+                plan,
+                prepared.commit,
+                draws,
+                generation,
+                point,
+                serial,
+                dependencies,
+                closure,
+                preparation,
+                reads,
+                writes,
+                state_definitions,
+                color_allocation_bytes + depth_allocation_bytes,
+            );
         }
         let request = GraphicsQueuedSubmissionRequest {
             color_types: prepared.request.colors.iter().map(|c| c.typed).collect(),
@@ -2202,9 +2253,12 @@ impl GraphicsContext {
                         version.output == GraphicsProducedOutput::Copy(0)
                     }
                     GraphicsCopyLayout::TypedTexture(desc) => {
-                        matches!(version.output, GraphicsProducedOutput::Copy(0))
-                            || (desc.format == TextureFormat::Depth32Float
-                                && version.output == GraphicsProducedOutput::Depth)
+                        matches!(
+                            version.output,
+                            GraphicsProducedOutput::Copy(0)
+                                | GraphicsProducedOutput::AttachmentRoot(_)
+                        ) || (desc.format == TextureFormat::Depth32Float
+                            && version.output == GraphicsProducedOutput::Depth)
                             || (desc.format == TextureFormat::Rgba8Unorm
                                 && matches!(version.output, GraphicsProducedOutput::Color(_)))
                     }
@@ -2213,7 +2267,9 @@ impl GraphicsContext {
                     | GraphicsCopyLayout::Rgba8Array { .. } => {
                         matches!(
                             version.output,
-                            GraphicsProducedOutput::Color(_) | GraphicsProducedOutput::Copy(0)
+                            GraphicsProducedOutput::Color(_)
+                                | GraphicsProducedOutput::Copy(0)
+                                | GraphicsProducedOutput::AttachmentRoot(_)
                         )
                     }
                 })
@@ -2227,9 +2283,12 @@ impl GraphicsContext {
                         version.output == GraphicsProducedOutput::Copy(0)
                     }
                     GraphicsCopyLayout::TypedTexture(desc) => {
-                        matches!(version.output, GraphicsProducedOutput::Copy(0))
-                            || (desc.format == TextureFormat::Depth32Float
-                                && version.output == GraphicsProducedOutput::Depth)
+                        matches!(
+                            version.output,
+                            GraphicsProducedOutput::Copy(0)
+                                | GraphicsProducedOutput::AttachmentRoot(_)
+                        ) || (desc.format == TextureFormat::Depth32Float
+                            && version.output == GraphicsProducedOutput::Depth)
                             || (desc.format == TextureFormat::Rgba8Unorm
                                 && matches!(version.output, GraphicsProducedOutput::Color(_)))
                     }
@@ -2238,7 +2297,9 @@ impl GraphicsContext {
                     | GraphicsCopyLayout::Rgba8Array { .. } => {
                         matches!(
                             version.output,
-                            GraphicsProducedOutput::Color(_) | GraphicsProducedOutput::Copy(0)
+                            GraphicsProducedOutput::Color(_)
+                                | GraphicsProducedOutput::Copy(0)
+                                | GraphicsProducedOutput::AttachmentRoot(_)
                         )
                     }
                 })
@@ -2650,6 +2711,12 @@ impl GraphicsContext {
             ))
         } else {
             result.and_then(|output| match (commit, output) {
+                (
+                    QueuedCommit::Attachment(commit),
+                    GraphicsQueuedWorkOutput::AttachmentTransaction(output),
+                ) => self
+                    .commit_attachment_transaction(commit, output)
+                    .map(QueuedOutcome::Render),
                 (QueuedCommit::Render(commit), GraphicsQueuedWorkOutput::Render(output)) => self
                     .commit_submission(commit, output)
                     .map(QueuedOutcome::Render),
@@ -2719,6 +2786,8 @@ impl GraphicsContext {
         self.retired_pipelines
             .retain(|handle, _| pinned.contains(handle));
         self.retired_views
+            .retain(|handle, _| pinned.contains(handle));
+        self.retired_writable_views
             .retain(|handle, _| pinned.contains(handle));
     }
 
@@ -3293,6 +3362,7 @@ impl GraphicsContext {
         self.array_copy_backend = false;
         self.typed_copy_capabilities = GraphicsTypedCopyCapabilities::default();
         self.resource_roles = GraphicsResourceRoleCapabilities::default();
+        self.attachment_transactions = false;
         self.unaligned_buffer_region_backend = false;
         self.graph_backend = false;
         self.geometry_backend = false;
@@ -3406,6 +3476,18 @@ impl GraphicsContext {
                     ..
                 } => {
                     references.extend(handle.iter().copied());
+                }
+                GraphicsCommand::SetWritableColorTargets { views, .. } => {
+                    for handle in views {
+                        references.insert(*handle);
+                        references.insert(self.writable_views[handle].root);
+                    }
+                }
+                GraphicsCommand::SetWritableDepthTarget {
+                    view: Some(handle), ..
+                } => {
+                    references.insert(*handle);
+                    references.insert(self.writable_views[handle].root);
                 }
                 GraphicsCommand::SetSampledViews { views, .. } => {
                     for handle in views.iter().flatten() {
@@ -3603,6 +3685,7 @@ impl GraphicsContext {
         self.array_copy_backend = false;
         self.typed_copy_capabilities = GraphicsTypedCopyCapabilities::default();
         self.resource_roles = GraphicsResourceRoleCapabilities::default();
+        self.attachment_transactions = false;
         self.unaligned_buffer_region_backend = false;
         self.graph_backend = false;
         self.geometry_backend = false;
@@ -3725,6 +3808,7 @@ impl GraphicsContext {
         self.array_copy_backend = false;
         self.typed_copy_capabilities = GraphicsTypedCopyCapabilities::default();
         self.resource_roles = GraphicsResourceRoleCapabilities::default();
+        self.attachment_transactions = false;
         self.unaligned_buffer_region_backend = false;
         self.graph_backend = false;
         self.geometry_backend = false;
@@ -3752,6 +3836,7 @@ impl GraphicsContext {
         self.array_copy_backend = false;
         self.typed_copy_capabilities = GraphicsTypedCopyCapabilities::default();
         self.resource_roles = GraphicsResourceRoleCapabilities::default();
+        self.attachment_transactions = false;
         self.unaligned_buffer_region_backend = false;
         self.graph_backend = false;
         self.geometry_backend = false;
@@ -3800,6 +3885,8 @@ impl GraphicsContext {
             + self.samplers.len()
             + self.texture_views.len()
             + self.array_range_views.len()
+            + self.writable_views.len()
+            + self.retired_writable_views.len()
             + self.retired_views.len()
     }
 
@@ -4737,6 +4824,9 @@ impl GraphicsContext {
 
     /// Destroy a color, buffer or depth resource after all recorded references are released.
     pub fn destroy_resource(&mut self, resource: GraphicsHandle) -> Result<(), GraphicsError> {
+        if self.writable_views.values().any(|v| v.root == resource) {
+            return Err(GraphicsError::ResourceLifetimeViolation);
+        }
         if self
             .texture_views
             .values()
@@ -4790,6 +4880,12 @@ impl GraphicsContext {
                 }
                 GraphicsCommand::SetGraphicsPipeline(_) | GraphicsCommand::SetShaderUniforms(_) => {
                     false
+                }
+                GraphicsCommand::SetWritableColorTargets { views, .. } => views
+                    .iter()
+                    .any(|v| self.writable_views[v].root == resource),
+                GraphicsCommand::SetWritableDepthTarget { view, .. } => {
+                    view.is_some_and(|v| self.writable_views[&v].root == resource)
                 }
                 GraphicsCommand::SetDepthTarget { target, .. } => *target == Some(resource),
                 GraphicsCommand::SetColorTargets { targets, .. } => targets.contains(&resource),
@@ -5854,6 +5950,16 @@ impl GraphicsContext {
             MAX_SOFTWARE_RENDER_PIXELS
         };
 
+        let attachments = self.attachment_plan(&cmd_list.commands)?;
+        if attachments.is_some() && queued.is_none() {
+            return Err(GraphicsError::NativeMetalRequired);
+        }
+        if let Some(plan) = &attachments {
+            self.attachment_budget(plan, queued.expect("queued transaction"))?;
+        }
+        let commands = attachments
+            .as_ref()
+            .map_or(cmd_list.commands.as_slice(), |p| p.commands.as_slice());
         // State machine parsing recorded commands
         let mut viewport = (4usize, 3usize);
         let mut clear_color = [0u8, 0u8, 0u8, 255u8];
@@ -5893,8 +5999,12 @@ impl GraphicsContext {
             }
         }
 
-        for cmd in &cmd_list.commands {
+        for cmd in commands {
             match cmd {
+                GraphicsCommand::SetWritableColorTargets { .. }
+                | GraphicsCommand::SetWritableDepthTarget { .. } => {
+                    unreachable!("normalized attachment commands")
+                }
                 GraphicsCommand::CopyResource { .. }
                 | GraphicsCommand::CopyBufferRegion { .. }
                 | GraphicsCommand::CopyImage { .. } => {
@@ -5954,8 +6064,9 @@ impl GraphicsContext {
                             .depth_resources
                             .get(handle)
                             .ok_or(GraphicsError::InvalidResourceHandle)?;
-                        if depth.typed_desc.mip_levels != 1
-                            || depth.typed_desc.array_layers.is_some()
+                        if attachments.is_none()
+                            && (depth.typed_desc.mip_levels != 1
+                                || depth.typed_desc.array_layers.is_some())
                         {
                             return Err(GraphicsError::InvalidDescriptor);
                         }
@@ -5963,7 +6074,9 @@ impl GraphicsContext {
                         if produced.is_some_and(|version| {
                             !matches!(
                                 version.output,
-                                GraphicsProducedOutput::Depth | GraphicsProducedOutput::Copy(0)
+                                GraphicsProducedOutput::Depth
+                                    | GraphicsProducedOutput::Copy(0)
+                                    | GraphicsProducedOutput::AttachmentRoot(_)
                             )
                         }) {
                             return Err(GraphicsError::InvalidDescriptor);
@@ -5989,7 +6102,11 @@ impl GraphicsContext {
                     if draw_count != 0 && (color_targets != *targets || color_loads != *loads) {
                         return Err(GraphicsError::InvalidDescriptor);
                     }
-                    pass_extent = Some(self.color_target_extent(targets, loads)?);
+                    pass_extent = Some(if let Some(plan) = &attachments {
+                        plan.extent
+                    } else {
+                        self.color_target_extent(targets, loads)?
+                    });
                     // Validate at binding time, before later barriers transition to copy-source.
                     for handle in targets {
                         let resource = &self.resources[handle];
@@ -6211,10 +6328,12 @@ impl GraphicsContext {
                         {
                             return Err(GraphicsError::ResourceLifetimeViolation);
                         }
-                        if pass_extent.is_some_and(|extent| extent != depth.extent) {
+                        if pass_extent.is_some_and(|extent| {
+                            extent != attachments.as_ref().map_or(depth.extent, |p| p.extent)
+                        }) {
                             return Err(GraphicsError::InvalidDescriptor);
                         }
-                        pass_extent = Some(depth.extent);
+                        pass_extent = Some(attachments.as_ref().map_or(depth.extent, |p| p.extent));
                     }
                     pass_extent = Some(Self::draw_extent(viewport, draw_state, pass_extent)?);
                     if ordered {
@@ -6388,10 +6507,12 @@ impl GraphicsContext {
                         {
                             return Err(GraphicsError::ResourceLifetimeViolation);
                         }
-                        if pass_extent.is_some_and(|extent| extent != depth.extent) {
+                        if pass_extent.is_some_and(|extent| {
+                            extent != attachments.as_ref().map_or(depth.extent, |p| p.extent)
+                        }) {
                             return Err(GraphicsError::InvalidDescriptor);
                         }
-                        pass_extent = Some(depth.extent);
+                        pass_extent = Some(attachments.as_ref().map_or(depth.extent, |p| p.extent));
                     }
                     pass_extent = Some(Self::draw_extent(viewport, draw_state, pass_extent)?);
                     if ordered {
@@ -6467,7 +6588,9 @@ impl GraphicsContext {
             return Err(GraphicsError::InvalidDescriptor);
         }
         if let Some(handle) = depth_target {
-            let extent = self.depth_resources[&handle].extent;
+            let extent = attachments
+                .as_ref()
+                .map_or(self.depth_resources[&handle].extent, |p| p.extent);
             if pass_extent.is_some_and(|current| current != extent) {
                 return Err(GraphicsError::InvalidDescriptor);
             }
@@ -6512,7 +6635,7 @@ impl GraphicsContext {
                 GraphicsColorLoad::Typed { attachment, load } => (Some(*attachment), *load, [0; 4]),
             };
             let target = color_targets.get(slot).copied();
-            let (previous, input) = if !load {
+            let (previous, input) = if !load || attachments.is_some() {
                 (None, GraphicsQueuedColorInput::Clear(clear))
             } else if let Some(version) =
                 target.and_then(|t| queued.and_then(|q| q.produced.get(&t)))
@@ -6526,7 +6649,9 @@ impl GraphicsContext {
                 };
                 if !matches!(
                     version.output,
-                    GraphicsProducedOutput::Color(_) | GraphicsProducedOutput::Copy(0)
+                    GraphicsProducedOutput::Color(_)
+                        | GraphicsProducedOutput::Copy(0)
+                        | GraphicsProducedOutput::AttachmentRoot(_)
                 ) || (matches!(version.output, GraphicsProducedOutput::Copy(_))
                     && !self.copy_backend)
                     || self.resources[&target].desc.mip_levels != 1
@@ -6559,7 +6684,9 @@ impl GraphicsContext {
                 }
             }
         }
-        let queued_depth = if queued.is_some() {
+        let queued_depth = if attachments.is_some() {
+            depth_target.map(|_| GraphicsQueuedDepthInput::Clear(1.0))
+        } else if queued.is_some() {
             depth_target
                 .map(|handle| -> Result<_, GraphicsError> {
                     Ok(match depth_load {
@@ -6568,7 +6695,9 @@ impl GraphicsContext {
                             if let Some(version) = queued.and_then(|q| q.produced.get(&handle)) {
                                 if !matches!(
                                     version.output,
-                                    GraphicsProducedOutput::Depth | GraphicsProducedOutput::Copy(0)
+                                    GraphicsProducedOutput::Depth
+                                        | GraphicsProducedOutput::Copy(0)
+                                        | GraphicsProducedOutput::AttachmentRoot(_)
                                 ) || queued.unwrap().layouts.get(&handle)
                                     != Some(&GraphicsProducedLayout::Depth32Float {
                                         extent: viewport,
@@ -6593,6 +6722,7 @@ impl GraphicsContext {
             None
         };
         Ok(PreparedSubmission {
+            attachments,
             geometry,
             queued_depth,
             queued_colors,

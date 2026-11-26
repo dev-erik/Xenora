@@ -298,6 +298,10 @@ pub struct DepthSnapshot {
 }
 
 impl DepthSnapshot {
+    /// Exact logical shape; equal byte lengths do not imply compatible depth layouts.
+    pub fn extent(&self) -> [usize; 2] {
+        self.extent
+    }
     /// Preserve exact Depth32Float storage bits, without numeric conversion.
     pub fn from_packed_bytes(extent: [usize; 2], bytes: &[u8]) -> Result<Self, MetalError> {
         let pixels = translated_pixels(extent, "depth snapshot")?;

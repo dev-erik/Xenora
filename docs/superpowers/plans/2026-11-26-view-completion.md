@@ -14,11 +14,11 @@ no claim about console execution.
   explicit copy-back into a fresh full backing.
 - [x] Native selected depth Load preserves depth-test/write semantics, immutable
   ancestors, exact pending producers, full-root accounting and failure drainage.
-- [ ] Guest writable color/depth selections support recording, destruction,
+- [x] Guest writable color/depth selections support recording, destruction,
   pinning, capability rejection and result-buffer validation.
-- [ ] Guest submissions own every intermediate native point and publish all full
+- [x] Guest submissions own every intermediate native point and publish all full
   backing results atomically. Failed copy-back cannot publish a rendered fragment.
-- [ ] Multiple writable selections of one backing compose deterministically;
+- [x] Multiple writable selections of one backing compose deterministically;
   sampling observes the requested produced ancestor, independent of collection order.
 - [ ] Range-aware access checks distinguish slice/mip overlaps. Independent writes
   cannot lose each other's changes through whole-root snapshot replacement.

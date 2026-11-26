@@ -791,7 +791,8 @@ slice1/mip1, and a selected view at relative slice1/mip1 address root slice3/mip
 
 Range handles are descriptor objects, not shader-bindable array textures or writable
 attachments. Passing a range directly as a sampled 2D view rejects. Shader-selected
-array indexing and writable subresource views remain unimplemented.
+array indexing remains unimplemented; writable attachments use the explicit handles
+described below.
 
 Opcode60 destroys only a range handle. Children retain root identity independently
 and survive parent destruction. A live range prevents backing destruction; after
@@ -800,3 +801,44 @@ count against the shared4096-object cap, without separately charging backing byt
 Invalid descriptors and result spans reject before allocation or destruction.
 Whole-backing state and dependency rules remain unchanged: range selection does not
 yet permit concurrent overlapping or independent-subresource writes.
+
+## Writable attachment views and complete-root transactions
+
+| Opcode | Arguments | Result |
+| --- | --- | --- |
+| 61 | device, root, mip, slice, role (0 color / 1 depth) | Immutable writable view handle |
+| 62 | view | Destroy the writable handle |
+| 63 | list, count, records address | Bind writable color selections |
+| 64 | list, depth view (0 unbinds), load mode (0 Clear / 1 Load), clear FP32 bits | Bind writable depth selection |
+
+Each opcode63 record is eight little-endian u64 words: view, load flag, blend
+flag, clear kind, and four clear components. Clear kind0 uses FP64 bits; kind1
+uses unsigned components for R32Uint. Format comes from the selected root and
+must match its render role. Depth requires Depth32Float. Compressed attachments,
+invalid roles, incompatible clears and duplicate `(root,slice,mip)` selections
+reject. All bound selections share a selected extent; distinct slices of one root
+may occupy different color slots. These calls require the queued transaction backend.
+
+Views retain their root independently. Recorded commands retain all referenced
+handles until reset; pending submissions retain retired resources and allocation
+charges until release. Destruction never resurrects a retired guest handle.
+
+One guest receipt owns host imports, selected rendering and complete-root GPU
+copy-backs. Each copy-back preserves untouched subresources and uses the exact
+previous produced version; multiple selections of one root compose in slot order.
+Pending contents are never reconstructed from stale CPU resource bytes. Every
+internal operation uses the same native queue, so its final point fences all roots.
+All complete root identities, layouts and lengths are validated before any guest
+resource, state or presentation is published. Only RGBA8 slot0 updates presentation.
+
+Native admission is incremental. A failure after the first native command drains
+all committed cohort work, invalidates affected pending tickets and publishes no
+transaction result. Native timeline values are not rolled back. Recovery uses a
+new backend generation. A transaction consumes one native slot per host import,
+one for rendering and one per selected copy-back; the existing16-slot capacity and
+payload budgets remain enforced. This may reject a large transaction even when the
+number of guest receipts is below16. Normal successful submission does not wait on
+the CPU between render and copy-back.
+
+Whole-root cross-submission hazards still apply. Range-aware scheduling,
+shader-indexed arrays and shader storage-write views remain separate S2.4 work.

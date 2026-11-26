@@ -91,10 +91,10 @@ backing while preserving untouched bytes. These are separate explicit submission
 callers must collect each point and obey each operation's admission/error rules.
 They are not an atomic compound submission or direct mutation of the original view.
 
-This is a native building block. Guest writable-view descriptors, writable depth
-subresources, shader-indexed array ranges, shader storage writes and range-aware
-write conflicts remain open. The native tests use original trusted Metal shaders;
-they do not establish guest ABI support for this operation.
+This native building block is also used by the guest attachment transaction
+described below. Its own tests use original trusted Metal shaders; guest integration
+is checked separately. Shader-indexed array ranges, shader storage writes and
+range-aware write conflicts remain open.
 
 Metal views share their source allocation; fresh destinations preserve Xenora's
 immutable produced-version contract. See [Apple's texture-view documentation](https://developer.apple.com/documentation/metal/mtltexture).
@@ -113,6 +113,26 @@ explicit submissions; callers retain and collect both. The operation retains the
 original producer and complete root allocation, including roots produced by typed
 copies rather than earlier render passes.
 
-This does not implement guest writable depth binding, composite guest publication,
-shader-indexed arrays, storage-write views or subresource concurrency. See the
+The guest transaction below owns both rendering and copy-back. Shader-indexed
+arrays, storage-write views and range-aware composition remain open. See the
 [completion plan](superpowers/plans/2026-11-26-view-completion.md).
+
+## Guest selected attachment transactions
+
+Guest opcodes 61–64 create and bind writable color/depth selections of one mip
+and slice. Multiple disjoint selections of one root compose into a fresh full
+backing. Clear and Load operate on the selected extent; untouched bytes stay
+unchanged. Load reads the exact queued predecessor, including pending GPU output.
+Fresh ordinary depth supports full-surface Clear before its first Load.
+
+A transaction retains every native seed, render and copy-back point. All stages
+use one native queue, so the last point fences every output. The loader validates
+all root identities, layouts and lengths before publishing any root. A failure
+after partial native admission drains the cohort and rejects unpublished work;
+it does not roll back the native timeline. Node and cumulative byte limits apply
+to the complete operation. Cross-submission hazards remain whole-root.
+
+See the [guest call reference](graphics-call-v1.md) for records, lifetime rules
+and capability requirements. Run `scripts/validate-graphics.sh quick` for focused
+CPU, original guest and native failure checks. These are synthetic tests on the
+local Apple Silicon host, not console compatibility evidence.

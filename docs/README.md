@@ -16,6 +16,8 @@ either path. The [changelog](../CHANGELOG.md) records notable changes.
 
 ## Native Metal graphics
 
+- [Writable attachment transactions](graphics-call-v1.md#writable-attachment-views-and-complete-root-transactions) — Selected color/depth rendering, complete-root publication and admission limits.
+
 - [Array-range descriptors](graphics-call-v1.md#array-range-descriptors-and-selected-2d-children) — Nested layer/mip ranges and independently retained 2D children; [implementation plan](superpowers/plans/2026-11-26-array-range-views.md).
 
 - [Typed resource formats and roles](resource-formats.md) — Finite format matrix, native selected-view color Load, representation rules and exclusions.

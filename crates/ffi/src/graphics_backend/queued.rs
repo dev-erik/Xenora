@@ -18,6 +18,8 @@ use xenora_metal::{
 };
 use xenora_texture::PackedTextureArrayLayout;
 
+#[path = "queued_attachments.rs"]
+mod attachments;
 #[path = "queued_typed.rs"]
 mod typed;
 use typed::{loader_desc, native_desc};
@@ -98,6 +100,7 @@ impl Drop for Ticket {
     }
 }
 struct Entry {
+    transaction: Option<attachments::Transaction>,
     point: RenderPoint,
     outputs: Vec<RenderColorOutput>,
     typed_outputs: Vec<xenora_metal::RenderTypedTextureOutput>,
@@ -106,6 +109,8 @@ struct Entry {
     completed: Option<mpsc::Sender<Completion>>,
 }
 struct State {
+    #[cfg(test)]
+    fail_after_attachment_patch: Option<usize>,
     gpu: NativeCompute,
     cohort: RenderCohort,
     entries: HashMap<GraphicsQueuePoint, Entry>,
@@ -118,6 +123,8 @@ impl State {
         let gpu = NativeCompute::new().map_err(metal_error)?;
         let cohort = gpu.new_render_graph_cohort().map_err(metal_error)?;
         Ok(Self {
+            #[cfg(test)]
+            fail_after_attachment_patch: None,
             gpu,
             cohort,
             entries: HashMap::new(),
@@ -151,7 +158,9 @@ impl State {
                     return;
                 }
                 Ok(true) => {
-                    let result = if let Some((layout, _)) = &entry.copy_output {
+                    let result = if let Some(transaction) = &entry.transaction {
+                        attachments::collect(&mut self.cohort, transaction)
+                    } else if let Some((layout, _)) = &entry.copy_output {
                         let expected = *layout;
                         self.cohort
                             .collect_copy(&entry.point)
@@ -290,6 +299,9 @@ impl State {
         completed: mpsc::Sender<Completion>,
     ) -> Result<(), GraphicsError> {
         match request {
+            GraphicsQueuedWorkRequest::AttachmentTransaction(request) => {
+                self.submit_attachments(request, completed)
+            }
             GraphicsQueuedWorkRequest::Render(request) => self.submit_render(request, completed),
             GraphicsQueuedWorkRequest::ImageCopy(request) => {
                 self.submit_image_copy(request, completed)
@@ -434,6 +446,7 @@ impl State {
         self.entries.insert(
             request.point,
             Entry {
+                transaction: None,
                 point,
                 outputs: Vec::new(),
                 typed_outputs: Vec::new(),
@@ -557,6 +570,7 @@ impl State {
         self.entries.insert(
             request.point,
             Entry {
+                transaction: None,
                 point,
                 outputs: Vec::new(),
                 typed_outputs: Vec::new(),
@@ -822,6 +836,7 @@ impl State {
         self.entries.insert(
             request.point,
             Entry {
+                transaction: None,
                 point,
                 outputs: Vec::new(),
                 typed_outputs: Vec::new(),
@@ -940,6 +955,7 @@ impl State {
         self.entries.insert(
             request.point,
             Entry {
+                transaction: None,
                 point,
                 outputs,
                 typed_outputs,
@@ -960,6 +976,9 @@ fn produced_output(
         .get(&version.point)
         .ok_or(GraphicsError::InvalidResourceHandle)?;
     match version.output {
+        GraphicsProducedOutput::AttachmentRoot(_) => produced_typed_output(entries, version)?
+            .rgba8_output()
+            .map_err(metal_error),
         GraphicsProducedOutput::Color(slot) => entry
             .outputs
             .get(usize::from(slot))
@@ -1019,6 +1038,11 @@ fn produced_depth(
     entries: &HashMap<GraphicsQueuePoint, Entry>,
     version: GraphicsProducedVersion,
 ) -> Result<RenderDepthOutput, GraphicsError> {
+    if matches!(version.output, GraphicsProducedOutput::AttachmentRoot(_)) {
+        return produced_typed_output(entries, version)?
+            .depth_output()
+            .map_err(metal_error);
+    }
     if version.output == GraphicsProducedOutput::Copy(0) {
         if let Some((
             GraphicsCopyLayout::TypedTexture(desc),
@@ -1092,6 +1116,21 @@ fn submit_native(
     request: &GraphicsQueuedSubmissionRequest,
     entries: &HashMap<GraphicsQueuePoint, Entry>,
     dependencies: &[RenderPoint],
+) -> Result<RenderPoint, GraphicsError> {
+    submit_native_inputs(gpu, cohort, queue, request, entries, dependencies, None)
+}
+struct AttachmentInputs<'a> {
+    colors: Vec<QueuedColorLoad<'a>>,
+    depth: Option<QueuedDepthInput>,
+}
+fn submit_native_inputs(
+    gpu: &NativeCompute,
+    cohort: &mut RenderCohort,
+    queue: RenderQueue,
+    request: &GraphicsQueuedSubmissionRequest,
+    entries: &HashMap<GraphicsQueuePoint, Entry>,
+    dependencies: &[RenderPoint],
+    overrides: Option<AttachmentInputs<'_>>,
 ) -> Result<RenderPoint, GraphicsError> {
     if request.color_types.len() != request.colors.len() {
         return Err(GraphicsError::InvalidDescriptor);
@@ -1497,6 +1536,11 @@ fn submit_native(
             values: draw.uniforms,
         })
         .collect();
+    let (loads, depth) = if let Some(inputs) = overrides {
+        (inputs.colors, inputs.depth)
+    } else {
+        (loads, depth)
+    };
     cohort
         .submit_with_typed_attachments(
             queue,
@@ -1585,6 +1629,7 @@ where
     let (capabilities, typed_capabilities, roles) = ready.recv().map_err(|_| disconnected())??;
     context.set_metal_typed_copy_queued_backend(capabilities, typed_capabilities, move |request| {
         let point = match &request {
+            GraphicsQueuedWorkRequest::AttachmentTransaction(request) => request.point,
             GraphicsQueuedWorkRequest::Render(request) => request.point,
             GraphicsQueuedWorkRequest::ImageCopy(request) => request.point,
             GraphicsQueuedWorkRequest::Copy(request) => request.point,
@@ -1611,6 +1656,7 @@ where
         }))
     });
     context.enable_resource_roles(roles)?;
+    context.enable_attachment_transactions()?;
     Ok(())
 }
 
@@ -2419,8 +2465,9 @@ mod tests {
                     assert_eq!(layout, GraphicsCopyLayout::Buffer { byte_len: 8 });
                     assert_eq!(bytes, literal);
                 }
-                GraphicsQueuedWorkOutput::Render(_) => {
-                    panic!("buffer work produced a rendered frame")
+                GraphicsQueuedWorkOutput::Render(_)
+                | GraphicsQueuedWorkOutput::AttachmentTransaction(_) => {
+                    panic!("buffer work produced a rendered frame or attachment transaction")
                 }
             }
         }
@@ -2740,6 +2787,12 @@ fn produced_typed_output(
         .get(&version.point)
         .ok_or(GraphicsError::InvalidResourceHandle)?;
     match version.output {
+        GraphicsProducedOutput::AttachmentRoot(slot) => entry
+            .transaction
+            .as_ref()
+            .and_then(|t| t.roots.get(slot as usize))
+            .cloned()
+            .ok_or(GraphicsError::InvalidResourceHandle),
         GraphicsProducedOutput::Color(slot) => entry
             .typed_outputs
             .get(slot as usize)

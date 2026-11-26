@@ -103,11 +103,11 @@ pub fn graphics_call_v1(
     let opcode = words[1];
     let used = match opcode {
         1 => 0,
-        2 | 3 | 12 | 26 | 27 | 31 | 32 | 33 | 36 | 38 | 47 | 60 => 1,
+        2 | 3 | 12 | 26 | 27 | 31 | 32 | 33 | 36 | 38 | 47 | 60 | 62 => 1,
         4 | 11 | 14 | 25 | 28 | 30 | 34 | 39 | 48 => 2,
-        5 | 7 | 15 | 17 | 29 | 41 | 42 | 56 => 3,
-        9 | 10 | 13 | 16 | 18 | 19 | 20 | 35 | 46 | 49 => 4,
-        6 | 8 | 21 | 23 | 37 | 45 => 5,
+        5 | 7 | 15 | 17 | 29 | 41 | 42 | 56 | 63 => 3,
+        9 | 10 | 13 | 16 | 18 | 19 | 20 | 35 | 46 | 49 | 64 => 4,
+        6 | 8 | 21 | 23 | 37 | 45 | 61 => 5,
         24 | 40 | 43 | 51 | 52 | 55 | 59 => 6,
         44 => 11,
         50 | 54 => 13,
@@ -131,7 +131,8 @@ pub fn graphics_call_v1(
         || opcode == 52
         || opcode == 53
         || opcode == 55
-        || (57..=59).contains(&opcode))
+        || (57..=59).contains(&opcode)
+        || opcode == 61)
         && graphics.guest_object_count() >= MAX_GUEST_OBJECTS
     {
         return Ok(STATUS_GRAPHICS_ERROR);
@@ -149,7 +150,9 @@ pub fn graphics_call_v1(
         || opcode == 48
         || opcode == 50
         || opcode == 54
-        || opcode == 56)
+        || opcode == 56
+        || opcode == 63
+        || opcode == 64)
         && graphics
             .guest_command_count(args.handle(0))
             .is_some_and(|count| count >= MAX_GUEST_COMMANDS)
@@ -366,7 +369,7 @@ pub fn graphics_call_v1(
                     .create_typed_graphics_pipeline(args.handle(0), &vertex, &pixel, types)?
                     .to_u64();
             }
-            56 => {
+            56 | 63 => {
                 let count = args.size(1)?;
                 if !(1..=8).contains(&count) {
                     return Err(GraphicsError::InvalidDescriptor);
@@ -397,7 +400,11 @@ pub fn graphics_call_v1(
                         }
                         _ => return Err(GraphicsError::InvalidDescriptor),
                     };
-                    let format = graphics.sampled_resource_desc(target)?.format;
+                    let format = if opcode == 63 {
+                        graphics.writable_selection(target)?.desc.format
+                    } else {
+                        graphics.sampled_resource_desc(target)?.format
+                    };
                     targets.push(target);
                     loads.push(GraphicsColorLoad::Typed {
                         attachment: GraphicsTypedColorAttachment {
@@ -408,7 +415,11 @@ pub fn graphics_call_v1(
                         load: words[1] != 0,
                     });
                 }
-                graphics.cmd_set_color_targets_with_loads(args.handle(0), &targets, &loads)?;
+                if opcode == 63 {
+                    graphics.cmd_set_writable_color_targets(args.handle(0), &targets, &loads)?;
+                } else {
+                    graphics.cmd_set_color_targets_with_loads(args.handle(0), &targets, &loads)?;
+                }
             }
             53 => {
                 let format = match args.u32(5)? {
@@ -455,6 +466,34 @@ pub fn graphics_call_v1(
                     args.handle(6),
                     location(7)?,
                     (args.size(11)?, args.size(12)?),
+                )?;
+            }
+            61 => {
+                let role = args.u32(4)?;
+                if role > 1 {
+                    return Err(GraphicsError::InvalidDescriptor);
+                }
+                value = graphics
+                    .create_writable_attachment_view(
+                        args.handle(0),
+                        args.handle(1),
+                        args.u32(2)?,
+                        args.u32(3)?,
+                        role == 1,
+                    )?
+                    .to_u64();
+            }
+            62 => graphics.destroy_writable_attachment_view(args.handle(0))?,
+            64 => {
+                let load = match args.0[2] {
+                    0 => GraphicsDepthLoad::Clear(f32::from_bits(args.u32(3)?)),
+                    1 if args.0[3] == 0 => GraphicsDepthLoad::Load,
+                    _ => return Err(GraphicsError::InvalidDescriptor),
+                };
+                graphics.cmd_set_writable_depth_target(
+                    args.handle(0),
+                    (args.0[1] != 0).then(|| args.handle(1)),
+                    load,
                 )?;
             }
             57 | 58 => {
