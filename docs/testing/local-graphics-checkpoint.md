@@ -16,6 +16,39 @@ run ends with `PASS`. Quick mode also rejects filters that select no passing tes
 Use `--help` for prerequisites. These tests render offscreen and compare pixels;
 they do not open an application window. Avoid other GPU test runs at the same time.
 
+## Native selected-view color Load checkpoint
+
+The native queued renderer accepts an exact GPU-produced, one-mip linear color
+view as Load input. It renders into a fresh ordinary surface; an explicit typed-copy
+submission can then patch the selected mip/slice into a fresh full backing. This is
+not an atomic compound operation, a guest writable-view interface, or S2.4 closure.
+See the [native contract](../resource-formats.md#native-selected-view-color-load).
+
+Quick validation passed **172 tests across46 steps**, with zero failures or ignored tests.
+
+Two original trusted-MSL integration tests cover seven color formats, partial writes
+and blending where supported, unchanged full-backing bytes, original-root immutability,
+zero-draw Load, invalid-copy-back recovery, and rejected multi-mip/sRGB/format/extent/
+cohort/generation inputs. Depth and runtime-supported BC views reject as color inputs.
+A real GPU gate tests automatic producer ordering and descendant-first collection.
+Two private native tests verify complete-root ownership, payload admission/refund
+across collection/reset, and rejection of a controlled failed-producer state. The
+failure injection follows actual GPU completion and is not a device-fault test.
+
+All nine gates passed: **907 passed, zero failed, 111 ignored** in the workspace;
+**409 passed, zero failed, one manual case ignored** in the GPU script. The GPU
+script includes overlapping CPU checks, so these totals are not additive unique GPU
+tests. Native binaries were verified as ARM64 linked to system Metal on the M4 Max
+host, with API and shader validation enabled.
+
+Both counted production mutations compiled and failed decisive assertions: forcing
+produced Load to Clear returned zero bytes instead of literal selected contents;
+omitting only the selected-view producer dependency triggered the explicit early-GPU
+marker assertion. Exact source restoration was verified. An earlier mutation harness
+attempt failed compilation on a private-field access and is excluded from the count.
+Local logs/manifests use `artifacts/attachment-views-*`. No guest integration or Xbox
+hardware equivalence is inferred from these trusted native shader tests.
+
 ## Array-range descriptor checkpoint
 
 [Array-range descriptors](../graphics-call-v1.md#array-range-descriptors-and-selected-2d-children)

@@ -239,6 +239,7 @@ pub enum QueuedColorLoad<'a> {
     Host(&'a [u8]),
     Produced(RenderColorOutput),
     ProducedTyped(RenderTypedTextureOutput),
+    ProducedTypedView(RenderTypedTextureView),
 }
 
 /// Immutable exact produced depth version; no raw, upload or sampled conversion.

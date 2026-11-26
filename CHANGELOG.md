@@ -18,6 +18,11 @@ remains unsupported.
 - Extended the read-only RDNA2 planning CLI (`python3 -m qa rdna2`) with family/status filters, compact summaries, Codex-ready manifests under `artifacts/`, active-claim exclusion (family claims exclude those families; path-only claims block overlapping permitted files), coverage reconcile against `semantic_coverage` without inflating counts, and inventory diffs. Covered by `tests/qa/test_rdna2_plan.py`; planning only, no GPU production edits.
 
 ### Added
+- Native queued color Load from a selected one-mip, linear GPU-produced texture
+  view. The source remains immutable and retains its exact producer and full-backing
+  budget. The rendered surface can be copied into a fresh full-backing version using
+  the existing typed-copy API. Guest writable-view bindings and range-aware write
+  hazards remain separate work; sRGB conversion and multi-mip attachment loads reject.
 - Immutable array-range descriptors and nested selections through guest opcodes57–60.
   Selected 2D children compose relative slice/mip offsets, retain the root backing
   independently of parent lifetime, and reuse exact queued-version sampling.

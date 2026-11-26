@@ -176,6 +176,9 @@ impl MetalTextureView {
     pub fn extent(&self) -> [usize; 2] {
         [self.texture.width, self.texture.height]
     }
+    pub(crate) fn retained_texture(&self) -> Retained<ProtocolObject<dyn MTLTexture>> {
+        self.texture.texture.clone()
+    }
     pub(crate) fn bind(
         &self,
         sampler: MetalSampler,

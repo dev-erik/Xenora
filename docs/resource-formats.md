@@ -73,3 +73,28 @@ cases remains part of shader numerical validation.
 - [Apple Metal feature tables](https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf).
 - [Metal Shading Language specification](https://developer.apple.com/metal/Metal-Shading-Language-Specification.pdf), texture types and sampling (§6.13).
 - [AMD RDNA2 ISA](https://docs.amd.com/api/khub/documents/Et~wpu9g~Ffl7d9q0QZ~Og/content), image instructions and descriptor interpretation.
+
+## Native selected-view color Load
+
+`QueuedColorLoad::ProducedTypedView` initializes a fresh color attachment from an
+exact GPU-produced selected view. It requires a single mip, matching dimensions,
+a supported color format and a linear view matching that storage format. sRGB
+reinterpretations reject: Load preserves packed values and does not decode colors.
+The original producer point and complete backing allocation stay retained, even
+when the public root/view handles are dropped. This uses a GPU-to-GPU copy before
+rendering; no pending texture is reconstructed from host bytes.
+
+The resulting ordinary 2D surface can be passed as a source to
+`submit_typed_image_copy`, with the original full texture version as destination
+input and the selected mip/slice as copy destination. This produces a fresh full
+backing while preserving untouched bytes. These are separate explicit submissions:
+callers must collect each point and obey each operation's admission/error rules.
+They are not an atomic compound submission or direct mutation of the original view.
+
+This is a native building block. Guest writable-view descriptors, writable depth
+subresources, shader-indexed array ranges, shader storage writes and range-aware
+write conflicts remain open. The native tests use original trusted Metal shaders;
+they do not establish guest ABI support for this operation.
+
+Metal views share their source allocation; fresh destinations preserve Xenora's
+immutable produced-version contract. See [Apple's texture-view documentation](https://developer.apple.com/documentation/metal/mtltexture).

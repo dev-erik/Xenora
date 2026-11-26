@@ -375,7 +375,7 @@ impl SubmissionSync {
         for (source, destination) in self.color_sources.iter().zip(destinations) {
             if let Some(source) = source {
                 let [width, height] = source.desc.extent;
-                // SAFETY: Preflight verifies matching device, RGBA8 format and extent.
+                // SAFETY: Preflight verifies matching device, exact linear color format and extent.
                 // Both fresh destination and immutable source stay owned until completion.
                 unsafe {
                     blit.copyFromTexture_sourceSlice_sourceLevel_sourceOrigin_sourceSize_toTexture_destinationSlice_destinationLevel_destinationOrigin(
@@ -2022,6 +2022,49 @@ impl RenderCohort {
                     }
                     host_loads.push(Some(*bytes));
                     color_sources.push(None);
+                }
+                QueuedColorLoad::ProducedTypedView(view) => {
+                    if typed_colors.is_none() {
+                        return Err(error("typed view Load requires typed pass"));
+                    }
+                    self.validate_point(&view.output.point)?;
+                    let texture = view.view.retained_texture();
+                    let format = formats[slot];
+                    if view.output.desc.format != format
+                        || view.desc().mip_count != 1
+                        || view.extent() != pass.extent
+                        || texture.textureType() != MTLTextureType::Type2D
+                        || texture.mipmapLevelCount() != 1
+                        || texture.width() != pass.extent[0]
+                        || texture.height() != pass.extent[1]
+                        || texture.device().registryID() != self.queues[index].device.registryID()
+                        || view.output.texture.device().registryID()
+                            != self.queues[index].device.registryID()
+                        || texture.pixelFormat()
+                            != crate::texture_pipeline::storage_pixel_format(format)
+                        || matches!(
+                            format,
+                            TextureFormat::Bc1RgbaUnorm
+                                | TextureFormat::Bc3RgbaUnorm
+                                | TextureFormat::Depth32Float
+                        )
+                    {
+                        return Err(error("typed view Load backing mismatch"));
+                    }
+                    host_loads.push(None);
+                    // The selected native view rebases its mip/slice to zero, but
+                    // dependency identity and accounting remain the full root's.
+                    color_sources.push(Some(RenderTypedTextureOutput {
+                        point: view.output.point.clone(),
+                        texture,
+                        desc: crate::TypedTextureDesc {
+                            format,
+                            extent: pass.extent,
+                            mip_levels: 1,
+                            array_layers: None,
+                        },
+                        lease: view.output.lease.clone(),
+                    }));
                 }
                 QueuedColorLoad::ProducedTyped(output) => {
                     if typed_colors.is_none() {
@@ -3993,3 +4036,7 @@ mod mip_array_budget_tests;
 #[cfg(test)]
 #[path = "typed_copy_budget_tests.rs"]
 mod typed_copy_budget_tests;
+
+#[cfg(test)]
+#[path = "attachment_view_budget_tests.rs"]
+mod attachment_view_budget_tests;
