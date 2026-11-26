@@ -11,12 +11,12 @@ mod rdna2_meta;
 #[rustfmt::skip]
 mod semantics_gen;
 pub use rdna2::{
-    BUFFER_LOAD_DWORD, BUFFER_STORE_DWORD, EXP, IMAGE_SAMPLE_LZ, S_BRANCH, S_CBRANCH_EXECZ,
-    S_CBRANCH_SCC0, S_CBRANCH_VCCZ, S_ENDPGM, S_MOV_B32, S_WAITCNT, S_WAITCNT_VSCNT, V_ADD_F32,
-    V_ADD_NC_U32, V_AND_B32, V_ASHRREV_I32, V_CMP_EQ_I32, V_CMP_EQ_U32, V_CMP_GE_I32, V_CMP_GE_U32,
-    V_CMP_GT_I32, V_CMP_GT_U32, V_CMP_LE_I32, V_CMP_LE_U32, V_CMP_LT_I32, V_CMP_LT_U32,
-    V_CMP_NE_I32, V_CMP_NE_U32, V_INTERP_P1_F32, V_INTERP_P2_F32, V_LSHLREV_B32, V_LSHRREV_B32,
-    V_MOV_B32, V_MUL_F32, V_OR_B32, V_XOR_B32,
+    BUFFER_LOAD_DWORD, BUFFER_STORE_DWORD, EXP, IMAGE_SAMPLE_LZ, IMAGE_STORE, S_BRANCH,
+    S_CBRANCH_EXECZ, S_CBRANCH_SCC0, S_CBRANCH_VCCZ, S_ENDPGM, S_MOV_B32, S_WAITCNT,
+    S_WAITCNT_VSCNT, V_ADD_F32, V_ADD_NC_U32, V_AND_B32, V_ASHRREV_I32, V_CMP_EQ_I32, V_CMP_EQ_U32,
+    V_CMP_GE_I32, V_CMP_GE_U32, V_CMP_GT_I32, V_CMP_GT_U32, V_CMP_LE_I32, V_CMP_LE_U32,
+    V_CMP_LT_I32, V_CMP_LT_U32, V_CMP_NE_I32, V_CMP_NE_U32, V_INTERP_P1_F32, V_INTERP_P2_F32,
+    V_LSHLREV_B32, V_LSHRREV_B32, V_MOV_B32, V_MUL_F32, V_OR_B32, V_XOR_B32,
 };
 pub use semantics_gen::{ScalarAluOp, ScalarCompareOp, ScalarUnaryOp, VectorAluOp};
 
@@ -307,6 +307,17 @@ pub enum Instruction {
         /// First SGPR of the four-word sampler descriptor s[sampler..sampler+3].
         sampler: u8,
     },
+    /// Plain DIM1 image store; coordinates and integer data retain their uint bits.
+    ImageStore2D {
+        /// First data source VGPR; four words for mask15, one for mask1.
+        data: u8,
+        /// Two contiguous uint coordinate VGPRs, x then y.
+        coord: u8,
+        /// Eight-word resource descriptor base SGPR.
+        resource: u8,
+        /// Supported component masks: 15 (RGBA) or 1 (R).
+        dmask: u8,
+    },
     /// Terminates the wave and waits for outstanding memory operations.
     EndProgram,
 }
@@ -364,6 +375,7 @@ impl Instruction {
                 ..
             } => "v_interp_p2_f32_e32",
             Self::ImageSampleLz { .. } | Self::ImageSampleLzArray { .. } => "image_sample_lz",
+            Self::ImageStore2D { .. } => "image_store",
             Self::EndProgram => "s_endpgm",
         }
     }
@@ -486,6 +498,20 @@ impl fmt::Display for Instruction {
                 write!(
                     formatter,
                     " v[{dst}:{last_dst}], v[{coord}:{last_coord}], s[{resource}:{last_res}], s[{sampler}:{last_samp}] dmask:0xf dim:SQ_RSRC_IMG_2D_ARRAY"
+                )
+            }
+            Self::ImageStore2D {
+                data,
+                coord,
+                resource,
+                dmask,
+            } => {
+                let last_data = u16::from(data) + if dmask == 15 { 3 } else { 0 };
+                let last_coord = u16::from(coord) + 1;
+                let last_resource = u16::from(resource) + 7;
+                write!(
+                    formatter,
+                    " v[{data}:{last_data}], v[{coord}:{last_coord}], s[{resource}:{last_resource}] dmask:0x{dmask:x} dim:SQ_RSRC_IMG_2D unorm"
                 )
             }
             Self::EndProgram => Ok(()),

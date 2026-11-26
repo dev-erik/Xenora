@@ -37,7 +37,14 @@ pub struct GraphicsSelectedDepth {
     pub slice: u32,
     pub load: GraphicsDepthLoad,
 }
+#[derive(Clone, Debug)]
+pub struct GraphicsSelectedStorage {
+    pub root_index: usize,
+    pub mip: u32,
+    pub slice: u32,
+}
 pub struct GraphicsAttachmentTransactionRequest {
+    pub storage: Option<GraphicsSelectedStorage>,
     pub generation: u64,
     pub point: GraphicsQueuePoint,
     pub waits: Vec<GraphicsQueuePoint>,
@@ -53,6 +60,7 @@ pub struct GraphicsAttachmentRootResult {
     pub bytes: Vec<u8>,
 }
 pub(super) struct AttachmentPlan {
+    pub storage: Option<GraphicsSelectedStorage>,
     pub commands: Vec<GraphicsCommand>,
     pub roots: Vec<GraphicsWritableSelection>,
     pub colors: Vec<GraphicsSelectedColor>,
@@ -66,7 +74,7 @@ pub(super) struct AttachmentCommit {
     pub colors: Vec<GraphicsSelectedColor>,
 }
 impl GraphicsWritableSelection {
-    fn extent(self) -> Result<(usize, usize), GraphicsError> {
+    pub(super) fn extent(self) -> Result<(usize, usize), GraphicsError> {
         let f = self
             .desc
             .packed()?
@@ -233,6 +241,7 @@ impl GraphicsContext {
                 c,
                 GraphicsCommand::SetWritableColorTargets { .. }
                     | GraphicsCommand::SetWritableDepthTarget { .. }
+                    | GraphicsCommand::SetStorageView(_)
             )
         }) {
             return Ok(None);
@@ -242,10 +251,18 @@ impl GraphicsContext {
         }
         let mut color_binding = None;
         let mut depth_binding = None;
+        let mut storage_binding = None;
         let mut drawn = false;
         let mut normalized = Vec::with_capacity(commands.len());
         for command in commands {
             match command {
+                GraphicsCommand::SetStorageView(view) => {
+                    if !self.shader_storage_views || (drawn && storage_binding != *view) {
+                        return Err(GraphicsError::InvalidDescriptor);
+                    }
+                    storage_binding = *view;
+                    normalized.push(command.clone());
+                }
                 GraphicsCommand::SetWritableColorTargets { views, loads } => {
                     if drawn && color_binding.as_ref() != Some(&(views.clone(), loads.clone())) {
                         return Err(GraphicsError::InvalidDescriptor);
@@ -348,7 +365,26 @@ impl GraphicsContext {
         } else {
             None
         };
+        let storage = if let Some(handle) = storage_binding {
+            let selected = self.storage_selection(handle)?;
+            if depth.is_some()
+                || Some(selected.extent()?) != extent
+                || roots.iter().any(|root| root.root == selected.root)
+            {
+                return Err(GraphicsError::InvalidDescriptor);
+            }
+            let root_index = roots.len();
+            roots.push(selected);
+            Some(GraphicsSelectedStorage {
+                root_index,
+                mip: selected.mip,
+                slice: selected.slice,
+            })
+        } else {
+            None
+        };
         Ok(Some(AttachmentPlan {
+            storage,
             commands: normalized,
             roots,
             colors,
@@ -366,12 +402,25 @@ impl GraphicsContext {
             .iter()
             .filter(|r| !preparation.produced.contains_key(&r.root))
             .count();
-        if host_count + 1 + plan.colors.len() + usize::from(plan.depth.is_some())
+        if host_count
+            + 1
+            + plan.colors.len()
+            + usize::from(plan.depth.is_some())
+            + usize::from(plan.storage.is_some())
             > MAX_QUEUED_GRAPH_NODES
         {
             return Err(GraphicsError::ResourceLifetimeViolation);
         }
-        let mut total = 0usize;
+        // Selected storage is a fresh persistent GPU surface, with no CPU readback.
+        let mut total = if plan.storage.is_some() {
+            plan.extent
+                .0
+                .checked_mul(plan.extent.1)
+                .and_then(|n| n.checked_mul(4))
+                .ok_or(GraphicsError::InvalidDescriptor)?
+        } else {
+            0
+        };
         for (index, root) in plan.roots.iter().enumerate() {
             if self.typed_copy_capabilities.formats
                 & (1 << typed_copy::format_code(root.desc.format))
@@ -400,7 +449,8 @@ impl GraphicsContext {
                 }
             }
             let patches = plan.colors.iter().filter(|c| c.root_index == index).count()
-                + usize::from(plan.depth.as_ref().is_some_and(|d| d.root_index == index));
+                + usize::from(plan.depth.as_ref().is_some_and(|d| d.root_index == index))
+                + usize::from(plan.storage.as_ref().is_some_and(|d| d.root_index == index));
             let per_patch = bytes
                 .checked_mul(2)
                 .and_then(|n| n.checked_add(staging))
@@ -469,7 +519,11 @@ impl GraphicsContext {
             .iter()
             .filter(|r| !preparation.produced.contains_key(&r.root))
             .count();
-        if host_count + 1 + plan.colors.len() + usize::from(plan.depth.is_some())
+        if host_count
+            + 1
+            + plan.colors.len()
+            + usize::from(plan.depth.is_some())
+            + usize::from(plan.storage.is_some())
             > MAX_QUEUED_GRAPH_NODES
         {
             return Err(GraphicsError::ResourceLifetimeViolation);
@@ -583,6 +637,7 @@ impl GraphicsContext {
             roots,
             colors: plan.colors.clone(),
             depth: plan.depth,
+            storage: plan.storage,
         };
         let ticket = self
             .queued_backend

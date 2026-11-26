@@ -7,12 +7,12 @@ pub use xenora_isa::{
     ScalarCompareOp, ScalarSource, ScalarUnaryOp, VectorAluOp, VectorCompareOp, VectorSource,
 };
 use xenora_isa::{
-    BUFFER_LOAD_DWORD, BUFFER_STORE_DWORD, EXP, IMAGE_SAMPLE_LZ, S_BRANCH, S_CBRANCH_EXECZ,
-    S_CBRANCH_SCC0, S_CBRANCH_VCCZ, S_ENDPGM, S_MOV_B32, S_WAITCNT, S_WAITCNT_VSCNT, V_ADD_F32,
-    V_ADD_NC_U32, V_AND_B32, V_ASHRREV_I32, V_CMP_EQ_I32, V_CMP_EQ_U32, V_CMP_GE_I32, V_CMP_GE_U32,
-    V_CMP_GT_I32, V_CMP_GT_U32, V_CMP_LE_I32, V_CMP_LE_U32, V_CMP_LT_I32, V_CMP_LT_U32,
-    V_CMP_NE_I32, V_CMP_NE_U32, V_INTERP_P1_F32, V_INTERP_P2_F32, V_LSHLREV_B32, V_LSHRREV_B32,
-    V_MOV_B32, V_MUL_F32, V_OR_B32, V_XOR_B32, VCC_LO,
+    BUFFER_LOAD_DWORD, BUFFER_STORE_DWORD, EXP, IMAGE_SAMPLE_LZ, IMAGE_STORE, S_BRANCH,
+    S_CBRANCH_EXECZ, S_CBRANCH_SCC0, S_CBRANCH_VCCZ, S_ENDPGM, S_MOV_B32, S_WAITCNT,
+    S_WAITCNT_VSCNT, V_ADD_F32, V_ADD_NC_U32, V_AND_B32, V_ASHRREV_I32, V_CMP_EQ_I32, V_CMP_EQ_U32,
+    V_CMP_GE_I32, V_CMP_GE_U32, V_CMP_GT_I32, V_CMP_GT_U32, V_CMP_LE_I32, V_CMP_LE_U32,
+    V_CMP_LT_I32, V_CMP_LT_U32, V_CMP_NE_I32, V_CMP_NE_U32, V_INTERP_P1_F32, V_INTERP_P2_F32,
+    V_LSHLREV_B32, V_LSHRREV_B32, V_MOV_B32, V_MUL_F32, V_OR_B32, V_XOR_B32, VCC_LO,
 };
 
 use xenora_isa::meta::EncodingFamily;
@@ -42,11 +42,12 @@ const fn concat_forms<const N: usize>() -> [(&'static str, EncodingFamily); N] {
 }
 
 /// Decoded forms not yet described by the semantic registry.
-const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 36] = [
+const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 37] = [
     ("BUFFER_LOAD_DWORD", EncodingFamily::Mubuf),
     ("BUFFER_STORE_DWORD", EncodingFamily::Mubuf),
     ("EXP", EncodingFamily::Exp),
     ("IMAGE_SAMPLE_LZ", EncodingFamily::Mimg),
+    ("IMAGE_STORE", EncodingFamily::Mimg),
     ("S_BRANCH", EncodingFamily::Sopp),
     ("S_CBRANCH_EXECZ", EncodingFamily::Sopp),
     ("S_CBRANCH_SCC0", EncodingFamily::Sopp),
@@ -308,6 +309,37 @@ fn decode_gfx1030(bytes: &[u8], offset: usize) -> Result<(Instruction, u8), Deco
                 target,
                 sources,
                 done: first & (1 << 11) != 0,
+            },
+            len,
+        ));
+    }
+    if IMAGE_STORE.matches(first) {
+        let len = IMAGE_STORE.byte_len();
+        let second = word(bytes, len)?;
+        // AMD RDNA2 Tables 41/42 and 100/101: DIM1, UNRM1, contiguous
+        // uint x/y. No sampler, NSA, A16/D16, coherency or fault extensions.
+        if !matches!(first & 0x0203_fffe, 0x0000_1f08 | 0x0000_1108) || second & 0xffe0_0000 != 0 {
+            return Err(unsupported(
+                "image_store",
+                "expected DIM1 UNRM1 DMASK15/1 with zero sampler and modifier bits",
+            ));
+        }
+        let coord = second as u8;
+        let data = (second >> 8) as u8;
+        let resource = (((second >> 16) & 31) * 4) as u8;
+        let dmask = ((first >> 8) & 15) as u8;
+        if coord > 254 || (dmask == 15 && data > 252) || resource > 98 {
+            return Err(unsupported(
+                "image_store",
+                "store source spans exceed normal registers",
+            ));
+        }
+        return Ok((
+            Instruction::ImageStore2D {
+                data,
+                coord,
+                resource,
+                dmask,
             },
             len,
         ));

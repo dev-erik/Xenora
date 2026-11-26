@@ -93,7 +93,7 @@ They are not an atomic compound submission or direct mutation of the original vi
 
 This native building block is also used by the guest attachment transaction
 described below. Its own tests use original trusted Metal shaders; guest integration
-is checked separately. Shader-indexed array ranges use opcode66; shader storage writes remain open.
+is checked separately. Shader-indexed array ranges use opcode66; bounded shader storage writes use opcodes67–69.
 Explicit range-aware composition is described in the guest call reference.
 
 Metal views share their source allocation; fresh destinations preserve Xenora's
@@ -113,8 +113,7 @@ explicit submissions; callers retain and collect both. The operation retains the
 original producer and complete root allocation, including roots produced by typed
 copies rather than earlier render passes.
 
-The guest transaction below owns both rendering and copy-back. Shader storage-write
-views remain open. See the
+The guest transaction below owns rendering, selected storage and copy-back. See the
 [completion plan](superpowers/plans/2026-11-26-view-completion.md).
 
 ## Guest selected attachment transactions
@@ -137,3 +136,14 @@ See the [guest call reference](graphics-call-v1.md) for records, lifetime rules
 and capability requirements. Run `scripts/validate-graphics.sh quick` for focused
 CPU, original guest and native failure checks. These are synthetic tests on the
 local Apple Silicon host, not console compatibility evidence.
+
+
+## Selected shader storage
+
+RGBA8Unorm and R32Uint support one selected mip/slice as an ordinary 2D shader
+storage surface. The fresh surface first loads its exact prior GPU contents, then
+receives ordered writes and is copied into a complete immutable backing. Other
+formats and array-dimension stores reject. The [storage contract](graphics-call-v1.md#bounded-shader-storage-views)
+defines the single-triangle pixel-address proof, supported IMAGE_STORE masks,
+feedback restrictions and ownership rules. This finite format/role increment does
+not imply arbitrary UAV operations, atomics or a complete D3D12 resource model.

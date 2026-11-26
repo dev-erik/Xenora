@@ -1122,6 +1122,8 @@ fn submit_native(
 struct AttachmentInputs<'a> {
     colors: Vec<QueuedColorLoad<'a>>,
     depth: Option<QueuedDepthInput>,
+    storage: Option<xenora_metal::QueuedStorageInput>,
+    storage_format: Option<TextureFormat>,
 }
 fn submit_native_inputs(
     gpu: &NativeCompute,
@@ -1135,6 +1137,7 @@ fn submit_native_inputs(
     if request.color_types.len() != request.colors.len() {
         return Err(GraphicsError::InvalidDescriptor);
     }
+    let storage_format = overrides.as_ref().and_then(|o| o.storage_format);
     let color_formats: Vec<_> = request
         .color_types
         .iter()
@@ -1161,6 +1164,14 @@ fn submit_native_inputs(
                 texture_formats,
                 draw.sampled_ranges.map(|r| r.is_some()),
             )?;
+            let expected_storage = match pipeline.storage {
+                Some(xenora_shader::GraphicsStorageType::Float) => Some(TextureFormat::Rgba8Unorm),
+                Some(xenora_shader::GraphicsStorageType::Uint) => Some(TextureFormat::R32Uint),
+                None => None,
+            };
+            if storage_format != expected_storage {
+                return Err(GraphicsError::InvalidDescriptor);
+            }
             validate_shader_array_layers(draw)?;
             if pipeline.color_targets != request.colors.len()
                 || pipeline.sampled_pairs & !15 != 0
@@ -1633,11 +1644,27 @@ fn submit_native_inputs(
             values: draw.uniforms,
         })
         .collect();
-    let (loads, depth) = if let Some(inputs) = overrides {
-        (inputs.colors, inputs.depth)
+    let (loads, depth, storage) = if let Some(inputs) = overrides {
+        (inputs.colors, inputs.depth, inputs.storage)
     } else {
-        (loads, depth)
+        (loads, depth, None)
     };
+    if let Some(storage) = storage {
+        return cohort
+            .submit_with_storage(
+                queue,
+                &shaders,
+                &pass,
+                &bindings,
+                depth,
+                &loads,
+                dependencies,
+                &uniforms,
+                &geometry,
+                storage,
+            )
+            .map_err(metal_error);
+    }
     cohort
         .submit_with_typed_attachments(
             queue,
@@ -1755,6 +1782,7 @@ where
     context.enable_resource_roles(roles)?;
     context.enable_attachment_transactions()?;
     context.enable_shader_array_views()?;
+    context.enable_shader_storage_views()?;
     Ok(())
 }
 

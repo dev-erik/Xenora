@@ -110,6 +110,9 @@ loader ResourceStates bits. Unsupported formats and layouts fail.
 | 59 | CreateArrayRangeSliceView | device, parent range, relative slice u32, relative base mip u32, mip count u32, view format | 2D view handle |
 | 60 | DestroyArrayRangeView | range handle | 0 |
 | 66 | SampledArrayRanges | list, address of 80-byte range-binding payload | 0 |
+| 67 | CreateStorageView | device, root, mip u32, slice u32 | storage view handle |
+| 68 | DestroyStorageView | storage view | 0 |
+| 69 | StorageView | list, storage view (0 unbinds) | 0 |
 
 
 CreatePipeline reads nonempty, four-byte-aligned shader blobs of at most 1024 bytes
@@ -905,3 +908,44 @@ including pending copies and retained ancestors, without reconstructing host byt
 Integer sampling preserves bit patterns through an unsigned output. The native
 trusted-MSL API requires its caller to respect the documented layer precondition;
 it does not infer arbitrary shader behavior from source text.
+
+
+## Bounded shader storage views
+
+Opcodes67–69 select one ordinary 2D mip/slice from a complete RGBA8Unorm or R32Uint
+backing. Pipeline55 bit6 marks texture0 as storage; its low type bits select float
+or uint as above. Array0 and depth0 cannot be combined with storage. Resource state
+must be UNORDERED_ACCESS at the draw. The queued backend must explicitly enable
+storage support; older backend installers revoke it. Writable color selections
+(opcodes61/63) are required, on distinct roots with the same selected extent.
+
+The original synthetic shader ABI accepts plain IMAGE_STORE (DIM1, UNRM1), RGBA
+mask15 or uint mask1, descriptor base0 and no sampler. It initializes v32/v33 with
+the bit-preserved unsigned integer pixel x/y obtained by numeric conversion of
+fragment position. Only these coordinates and direct copies can address stores.
+Swapped, computed, interpolated or ambiguous merged coordinates reject. Their bits
+cannot escape into ordinary arithmetic, sampling coordinates, exported colors or
+stored data. Uint data retains its bits; RGBA uses float components. Stores remain
+ordered through supported runtime branches and bounded loops.
+
+One effective three-vertex/index draw, one instance, no depth and a zero-origin
+viewport equal to the selected extent are required. Native passes use one sample,
+no amplification, layered rendering or rasterization-rate mapping. This gives each
+fragment its own pixel address; helper-fragment stores have no effect under MSL.
+Texture0 cannot also be sampled, and neither sampled nor color roots may alias the
+storage root. Slot1 sampling is supported. Raw trusted MSL callers must honor the
+pixel-address precondition; the native API does not reflect arbitrary shader code.
+The loader checks logical root identity; the worker also rejects identical produced
+capabilities and shared host snapshots visible across its boundary.
+
+A fresh selected GPU surface first loads the exact semantic prior after its producer
+wait, so false branches, zero-trip loops and uncovered pixels preserve prior data.
+Its GPU result is copied into the complete backing, using any separately authorized
+composition base solely to preserve other ranges. Every color/storage result is
+validated before publication. Storage descriptors, pending roots and their payload
+charges remain retained until their last owner is released. Selected storage adds
+one copy-back node and its persistent allocation to the existing transaction budget.
+
+Depth, BC, sRGB and array-dimension stores, atomics, arbitrary addresses and general
+fragment races are outside this finite contract. This is synthetic Metal validation,
+not Xbox hardware equivalence or commercial game execution support.

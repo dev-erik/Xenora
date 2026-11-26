@@ -7,7 +7,7 @@ usage() {
 Usage: scripts/validate-graphics.sh [quick|full]
 
 quick (default): focused CPU and native Metal checks for produced geometry,
-                 views, samplers, guest-backed copies, R8 sampling, mip/slice transfers, array-slice/range views, typed formats/roles and compute caching.
+                 views, samplers, guest-backed copies, R8 sampling, mip/slice transfers, array sampling, storage writes, typed formats/roles and compute caching.
 full:            all nine repository validation gates, including the GPU suite.
 
 Run on native Apple Silicon with the repository build dependencies installed.
@@ -90,6 +90,12 @@ run_tests() {
 }
 printf 'Running %s validation. Logs: %s\n' "$mode" "$log_dir"
 if [[ "$mode" == quick ]]; then
+    run_tests storage-decoder cargo test --locked -p xenora-decoder --test graphics_storage
+    run_tests storage-compiler cargo test --locked -p xenora-shader --test graphics_storage
+    run_tests storage-loader cargo test --locked -p xenora-loader --test storage_views
+    run_tests storage-native cargo test --locked -p xenora-metal --features gpu-tests --lib native_storage_ -- --nocapture --test-threads=1
+    run_tests storage-ffi cargo test --locked -p xenora-ffi --features gpu-tests --lib queued_storage_ -- --nocapture --test-threads=1
+    run_tests storage-guest cargo test --locked -p xenora-ffi --features gpu-tests --test guest_graphics original_guest_storage_views_ -- --nocapture --test-threads=1
     run_tests shader-array-decoder cargo test --locked -p xenora-decoder --test graphics_arrays
     run_tests shader-array-compiler cargo test --locked -p xenora-shader --test graphics_arrays
     run_tests shader-array-loader cargo test --locked -p xenora-loader --test array_sampling

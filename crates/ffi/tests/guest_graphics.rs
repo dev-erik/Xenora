@@ -6474,3 +6474,5 @@ mod attachment_composition;
 
 #[path = "guest_graphics/array_sampling.rs"]
 mod array_sampling;
+#[path = "guest_graphics/storage_views.rs"]
+mod storage_views;

@@ -25,8 +25,11 @@ use ranges::{RangeAccesses, RootPublication};
 
 #[path = "graphics_attachments.rs"]
 mod attachments;
+#[path = "graphics_storage.rs"]
+mod storage;
 pub use attachments::*;
 use attachments::{AttachmentCommit, AttachmentPlan};
+use storage::StorageDrawValidation;
 
 #[path = "graphics_resource_roles.rs"]
 mod resource_roles;
@@ -301,6 +304,7 @@ impl IndexFormat {
 /// Primitive Draw Command recorded in a Command List.
 #[derive(Clone, Debug)]
 pub enum GraphicsCommand {
+    SetStorageView(Option<GraphicsHandle>),
     SetWritableColorTargets {
         views: Vec<GraphicsHandle>,
         loads: Vec<GraphicsColorLoad>,
@@ -482,6 +486,7 @@ impl Default for GraphicsDrawState {
 /// Validated positions and viewport for one ordered draw.
 #[derive(Debug)]
 pub struct GraphicsPipeline {
+    pub storage: Option<xenora_shader::GraphicsStorageType>,
     pub array_layers: [Vec<xenora_shader::GraphicsArrayLayer>; 2],
     pub types: xenora_shader::GraphicsPipelineTypes,
     pub required_uniform_mask: u8,
@@ -1303,6 +1308,7 @@ pub struct GraphicsContext {
     view_backend: bool,
     array_view_backend: bool,
     shader_array_views: bool,
+    shader_storage_views: bool,
     texture_capabilities: GraphicsTextureCapabilities,
     uniform_backend: bool,
     produced_color_backend: bool,
@@ -1316,6 +1322,8 @@ pub struct GraphicsContext {
     resource_roles: GraphicsResourceRoleCapabilities,
     attachment_transactions: bool,
     writable_views: HashMap<GraphicsHandle, GraphicsWritableSelection>,
+    storage_views: HashMap<GraphicsHandle, GraphicsWritableSelection>,
+    retired_storage_views: HashMap<GraphicsHandle, GraphicsWritableSelection>,
     retired_writable_views: HashMap<GraphicsHandle, GraphicsWritableSelection>,
     unaligned_buffer_region_backend: bool,
     graph_backend: bool,
@@ -1395,6 +1403,7 @@ impl GraphicsContext {
             view_backend: false,
             array_view_backend: false,
             shader_array_views: false,
+            shader_storage_views: false,
             texture_capabilities: GraphicsTextureCapabilities::default(),
             uniform_backend: false,
             produced_color_backend: false,
@@ -1408,6 +1417,8 @@ impl GraphicsContext {
             resource_roles: GraphicsResourceRoleCapabilities::default(),
             attachment_transactions: false,
             writable_views: HashMap::new(),
+            storage_views: HashMap::new(),
+            retired_storage_views: HashMap::new(),
             retired_writable_views: HashMap::new(),
             unaligned_buffer_region_backend: false,
             graph_backend: false,
@@ -1461,6 +1472,7 @@ impl GraphicsContext {
         self.view_backend = false;
         self.array_view_backend = false;
         self.shader_array_views = false;
+        self.shader_storage_views = false;
         self.backend = None;
         self.pass_backend = None;
         self.async_backend = None;
@@ -2731,6 +2743,14 @@ impl GraphicsContext {
         let mut draws = Vec::new();
         for command in &self.command_lists[&list].commands {
             let indexed = match command {
+                GraphicsCommand::SetStorageView(view) => {
+                    if let Some(handle) = view {
+                        let root = self.storage_views[handle].root;
+                        reads.insert(root);
+                        writes.insert(root);
+                    }
+                    continue;
+                }
                 GraphicsCommand::SetSampledArrayRanges { ranges, .. } => {
                     sampled =
                         ranges.map(|handle| handle.map(|h| self.array_range_views[&h].backing));
@@ -2932,6 +2952,8 @@ impl GraphicsContext {
         self.retired_array_ranges
             .retain(|handle, _| pinned.contains(handle));
         self.retired_writable_views
+            .retain(|handle, _| pinned.contains(handle));
+        self.retired_storage_views
             .retain(|handle, _| pinned.contains(handle));
     }
 
@@ -3546,6 +3568,7 @@ impl GraphicsContext {
         self.view_backend = false;
         self.array_view_backend = false;
         self.shader_array_views = false;
+        self.shader_storage_views = false;
         self.multislot_backend = false;
         self.backend = None;
         self.pass_backend = None;
@@ -3654,6 +3677,10 @@ impl GraphicsContext {
                     ..
                 } => {
                     references.extend(handle.iter().copied());
+                }
+                GraphicsCommand::SetStorageView(Some(handle)) => {
+                    references.insert(*handle);
+                    references.insert(self.storage_views[handle].root);
                 }
                 GraphicsCommand::SetWritableColorTargets { views, .. } => {
                     for handle in views {
@@ -3877,6 +3904,7 @@ impl GraphicsContext {
         self.view_backend = false;
         self.array_view_backend = false;
         self.shader_array_views = false;
+        self.shader_storage_views = false;
         self.multislot_backend = false;
         self.async_backend = None;
         self.pass_backend = None;
@@ -4001,6 +4029,7 @@ impl GraphicsContext {
         self.view_backend = false;
         self.array_view_backend = false;
         self.shader_array_views = false;
+        self.shader_storage_views = false;
         self.multislot_backend = false;
         self.backend = None;
         self.async_backend = None;
@@ -4030,6 +4059,7 @@ impl GraphicsContext {
         self.view_backend = false;
         self.array_view_backend = false;
         self.shader_array_views = false;
+        self.shader_storage_views = false;
         self.multislot_backend = false;
         self.backend = None;
         self.async_backend = None;
@@ -4075,6 +4105,8 @@ impl GraphicsContext {
             + self.array_range_views.len()
             + self.writable_views.len()
             + self.retired_writable_views.len()
+            + self.storage_views.len()
+            + self.retired_storage_views.len()
             + self.retired_views.len()
             + self.retired_array_ranges.len()
     }
@@ -4419,6 +4451,7 @@ impl GraphicsContext {
             }
         }
         let pipeline = Arc::new(GraphicsPipeline {
+            storage: compiled.storage,
             array_layers: compiled.array_layers,
             types: compiled.types,
             msl: compiled.shader.msl,
@@ -5072,7 +5105,12 @@ impl GraphicsContext {
 
     /// Destroy a color, buffer or depth resource after all recorded references are released.
     pub fn destroy_resource(&mut self, resource: GraphicsHandle) -> Result<(), GraphicsError> {
-        if self.writable_views.values().any(|v| v.root == resource) {
+        if self
+            .writable_views
+            .values()
+            .chain(self.storage_views.values())
+            .any(|v| v.root == resource)
+        {
             return Err(GraphicsError::ResourceLifetimeViolation);
         }
         if self
@@ -5132,6 +5170,9 @@ impl GraphicsContext {
                 }
                 GraphicsCommand::SetGraphicsPipeline(_) | GraphicsCommand::SetShaderUniforms(_) => {
                     false
+                }
+                GraphicsCommand::SetStorageView(view) => {
+                    view.is_some_and(|h| self.storage_views[&h].root == resource)
                 }
                 GraphicsCommand::SetWritableColorTargets { views, .. } => views
                     .iter()
@@ -6252,6 +6293,7 @@ impl GraphicsContext {
         let mut pending_states = queued.map_or_else(HashMap::new, |q| q.states.clone());
         let mut pipeline_handle = None;
         let mut uniforms = None;
+        let mut storage_view = None;
         let mut sampled_textures = [None; 2];
         let mut sampled_views = [None; 2];
         let mut sampled_array_views = [None; 2];
@@ -6278,6 +6320,12 @@ impl GraphicsContext {
                 }
                 GraphicsCommand::SetGraphicsPipeline(handle) => {
                     pipeline_handle = *handle;
+                }
+                GraphicsCommand::SetStorageView(view) => {
+                    if queued.is_none() || !self.shader_storage_views {
+                        return Err(GraphicsError::NativeMetalRequired);
+                    }
+                    storage_view = *view;
                 }
                 GraphicsCommand::SetShaderUniforms(values) => {
                     uniforms = *values;
@@ -6536,6 +6584,19 @@ impl GraphicsContext {
                     if draw_count >= MAX_NATIVE_RENDER_DRAWS {
                         return Err(GraphicsError::InvalidDescriptor);
                     }
+                    self.validate_storage_draw(StorageDrawValidation {
+                        plan: attachments.as_ref(),
+                        view: storage_view,
+                        pipeline: pipeline_handle,
+                        count: *index_count_per_instance,
+                        previous_draws: draw_count,
+                        viewport,
+                        state: draw_state,
+                        depth_active: depth_target.is_some() || explicit_depth_clear,
+                        sampled: &sampled_textures,
+                        states: &pending_states,
+                        colors: &color_targets,
+                    })?;
                     total_vertices = total_vertices
                         .checked_add(*index_count_per_instance as usize)
                         .filter(|count| *count <= vertex_limit)
@@ -6693,6 +6754,19 @@ impl GraphicsContext {
                     if draw_count >= MAX_NATIVE_RENDER_DRAWS {
                         return Err(GraphicsError::InvalidDescriptor);
                     }
+                    self.validate_storage_draw(StorageDrawValidation {
+                        plan: attachments.as_ref(),
+                        view: storage_view,
+                        pipeline: pipeline_handle,
+                        count: *vertex_count_per_instance,
+                        previous_draws: draw_count,
+                        viewport,
+                        state: draw_state,
+                        depth_active: depth_target.is_some() || explicit_depth_clear,
+                        sampled: &sampled_textures,
+                        states: &pending_states,
+                        colors: &color_targets,
+                    })?;
                     total_vertices = total_vertices
                         .checked_add(*vertex_count_per_instance as usize)
                         .filter(|count| *count <= vertex_limit)
@@ -6853,6 +6927,11 @@ impl GraphicsContext {
             }
         }
 
+        if attachments.as_ref().is_some_and(|p| p.storage.is_some())
+            && (draw_count != 1 || explicit_depth_clear || depth_target.is_some())
+        {
+            return Err(GraphicsError::InvalidDescriptor);
+        }
         if !ordered
             && (pipeline_handle.is_some()
                 || (sampled_textures.iter().any(Option::is_some)

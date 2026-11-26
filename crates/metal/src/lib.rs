@@ -250,6 +250,12 @@ pub enum QueuedColorLoad<'a> {
     ProducedTypedView(RenderTypedTextureView),
 }
 
+/// Exact selected prior contents for a fresh shader-write surface.
+/// Only linear RGBA8Unorm and R32Uint one-mip 2D views are supported.
+pub enum QueuedStorageInput {
+    ProducedTypedView(RenderTypedTextureView),
+}
+
 /// Immutable exact produced depth version; no raw, upload or sampled conversion.
 ///
 /// ```compile_fail

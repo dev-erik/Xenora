@@ -46,6 +46,13 @@ enum Op {
     Phi(ValueType),
     Constant(u32),
     UniformFloat(u8),
+    PixelCoordinate(u8),
+    // Ordered effect: occupies an IR stream position but defines no Value.
+    Store2D {
+        coordinates: [Value; 2],
+        data: [Option<Value>; 4],
+        dmask: u8,
+    },
     Interpolate(u8),
     Binary(Binary, Value, Value),
     SampleLodZero {
@@ -183,6 +190,29 @@ pub enum GraphicsSampleType {
     Depth,
     FloatArray,
     UintArray,
+    StorageFloat,
+    StorageUint,
+}
+
+/// Required slot0 storage format and unique-writer address contract.
+/// Some storage metadata certifies that every reachable store uses the original
+/// synthetic pixel X/Y uint bits (v32/v33), possibly through direct VGPR copies.
+/// The loader and trusted native callers must independently enforce one draw of
+/// one three-vertex, non-instanced triangle, single sampling, no depth, viewport
+/// origin zero and extent equal to the selected 2D storage/color extent. Sampled
+/// inputs must not alias the storage root. This is not a general storage ABI.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GraphicsStorageType {
+    Float,
+    Uint,
+}
+
+fn storage_type(types: GraphicsPipelineTypes) -> Option<GraphicsStorageType> {
+    match types.textures[0] {
+        GraphicsSampleType::StorageFloat => Some(GraphicsStorageType::Float),
+        GraphicsSampleType::StorageUint => Some(GraphicsStorageType::Uint),
+        _ => None,
+    }
 }
 
 /// A view-relative array layer requirement, validated before every draw.
@@ -218,6 +248,9 @@ pub struct GraphicsPipelineTypes {
 #[derive(Debug)]
 pub struct CompiledGraphics {
     pub types: GraphicsPipelineTypes,
+    /// Slot0 storage requirement, including proven unique pixel-X/Y addresses.
+    /// See [`GraphicsStorageType`] for mandatory host geometry/binding constraints.
+    pub storage: Option<GraphicsStorageType>,
     /// Generated shader source, disassembly and intermediate representation.
     pub shader: CompiledShader,
     /// Number of contiguous color attachments starting at MRT0 (1..=8).
@@ -284,15 +317,27 @@ pub fn compile_graphics_pipeline(
 /// direct native callers must validate these before every draw, including all
 /// reachable branch arms, before the generated shader converts FP32 layers to uint.
 /// Depth arrays and unproven computed/interpolated layers are unsupported.
+/// StorageFloat/StorageUint reserve texture0 for ordered 2D stores and initialize
+/// v32/v33 with pixel-coordinate uint bits. See [`GraphicsStorageType`]; compilation
+/// proves coordinate provenance but cannot validate the host draw or aliases.
 pub fn compile_graphics_pipeline_typed(
     architecture: Architecture,
     vertex: &[u8],
     pixel: &[u8],
     types: GraphicsPipelineTypes,
 ) -> Result<CompiledGraphics, CompileError> {
+    if matches!(
+        types.textures[1],
+        GraphicsSampleType::StorageFloat | GraphicsSampleType::StorageUint
+    ) {
+        return Err(CompileError::GraphicsLink {
+            reason: "storage is restricted to texture slot0",
+        });
+    }
+    let storage = storage_type(types);
     let compile_stage = |stage: Stage, bytes: &[u8]| {
         let result = decode_fixture(architecture, bytes).and_then(|decoded| {
-            let lifted = lift(stage, &decoded, bytes.len())?;
+            let lifted = lift(stage, &decoded, bytes.len(), storage.is_some())?;
             Ok((decoded, lifted))
         });
         result.map_err(|error| CompileError::GraphicsStage {
@@ -384,6 +429,7 @@ pub fn compile_graphics_pipeline_typed(
         msl,
         "}};\n\nvertex VertexOutput {VERTEX_ENTRY_POINT}(\n    uint vertex_id [[vertex_id]],\n    device const float4* positions [[buffer(0)]],\n    device const float4* colors [[buffer(1)]]{vertex_uniforms}) {{\n"
     );
+    emit_fp_controls(&vertex, &mut msl);
     emit_values(&vertex, GraphicsPipelineTypes::default(), &mut ir, &mut msl);
     msl.push_str("    VertexOutput output;\n");
     emit_export(position, "pos0", "output.position", &mut ir, &mut msl);
@@ -401,6 +447,18 @@ pub fn compile_graphics_pipeline_typed(
     }
     msl.push_str("};\n\n");
     let mut params = Vec::new();
+    if let Some(storage) = storage {
+        let kind = match storage {
+            GraphicsStorageType::Float => "float",
+            GraphicsStorageType::Uint => "uint",
+        };
+        params.push(format!(
+            "texture2d<{kind}, access::write> storage0 [[texture(0)]]"
+        ));
+        if !interpolates {
+            params.push("float4 pixel_position [[position]]".to_string());
+        }
+    }
     if pixel.uniform_mask != 0 {
         params.push("constant uint* uniforms [[buffer(2)]]".to_string());
     }
@@ -415,6 +473,9 @@ pub fn compile_graphics_pipeline_typed(
                 GraphicsSampleType::Depth => "depth2d<float, access::sample>",
                 GraphicsSampleType::FloatArray => "texture2d_array<float, access::sample>",
                 GraphicsSampleType::UintArray => "texture2d_array<uint, access::sample>",
+                GraphicsSampleType::StorageFloat | GraphicsSampleType::StorageUint => {
+                    unreachable!("validated storage/sample role exclusion")
+                }
             };
             params.push(format!("{kind} tex{slot} [[texture({slot})]]"));
         }
@@ -436,6 +497,18 @@ pub fn compile_graphics_pipeline_typed(
         msl,
         "fragment PixelOutput {PIXEL_ENTRY_POINT}({param_decl}) {{"
     );
+    emit_fp_controls(&pixel, &mut msl);
+    if storage.is_some() {
+        msl.push_str(
+            "    // Host must enforce the GraphicsStorageType unique-writer draw contract.\n",
+        );
+        let position = if interpolates {
+            "input.position"
+        } else {
+            "pixel_position"
+        };
+        let _ = writeln!(msl, "    uint2 pixel_coordinates = uint2({position}.xy);");
+    }
     ir.push_str("pixel:\n");
     emit_values(&pixel, types, &mut ir, &mut msl);
     msl.push_str("    PixelOutput output;\n");
@@ -465,6 +538,7 @@ pub fn compile_graphics_pipeline_typed(
     msl.push_str("    return output;\n}\n");
     Ok(CompiledGraphics {
         types,
+        storage,
         shader: CompiledShader {
             disassembly,
             ir,
@@ -484,6 +558,7 @@ fn lift(
     stage: Stage,
     decoded: &[DecodedInstruction],
     length: usize,
+    storage: bool,
 ) -> Result<StageIr, CompileError> {
     let loops = cfg::analyze(decoded)?;
     let mut loop_headers: Vec<Option<RegisterState>> = vec![None; loops.len()];
@@ -500,6 +575,11 @@ fn lift(
                 *register = Some(ir.push(None, Op::VertexInput(input, component as u8)));
             }
         }
+    }
+
+    if stage == Stage::Pixel && storage {
+        registers[32] = Some(ir.push(None, Op::PixelCoordinate(0)));
+        registers[33] = Some(ir.push(None, Op::PixelCoordinate(1)));
     }
 
     ir.initial_values = ir.values.len();
@@ -763,6 +843,42 @@ fn lift(
                 }
                 registers[usize::from(dst)] =
                     Some(ir.push(Some(offset), Op::Interpolate(component)));
+            }
+            Instruction::ImageStore2D {
+                data,
+                coord,
+                resource,
+                dmask,
+            } if stage == Stage::Pixel && storage && !exporting => {
+                if resource != 0 {
+                    return Err(error("storage requires descriptor base s0"));
+                }
+                let coordinates = [read(coord)?, read(coord + 1)?];
+                for (component, value) in coordinates.iter().enumerate() {
+                    if !matches!(ir.values[value.0].1, Op::PixelCoordinate(c) if usize::from(c) == component)
+                    {
+                        return Err(error(
+                            "store coordinates require original pixel X/Y or direct copies; used phi/arithmetic addresses are unsupported",
+                        ));
+                    }
+                }
+                let mut values = [None; 4];
+                for (component, value) in
+                    values
+                        .iter_mut()
+                        .enumerate()
+                        .take(if dmask == 15 { 4 } else { 1 })
+                {
+                    *value = Some(read(data + component as u8)?);
+                }
+                ir.push(
+                    Some(offset),
+                    Op::Store2D {
+                        coordinates,
+                        data: values,
+                        dmask,
+                    },
+                );
             }
             Instruction::ImageSampleLz {
                 dst,
@@ -1191,8 +1307,20 @@ fn validate_resource_types(
     pairs: u8,
     colors: usize,
 ) -> Result<(), CompileError> {
+    let storage = storage_type(types);
+    let has_store = pixel
+        .values
+        .iter()
+        .any(|(_, op)| matches!(op, Op::Store2D { .. }));
+    if storage.is_some() != has_store || (storage.is_some() && pairs & 3 != 0) {
+        return Err(CompileError::GraphicsLink {
+            reason: "storage requires a reachable store and excludes sampling texture0",
+        });
+    }
     if (0..2).any(|slot| {
-        pairs & (3 << (slot * 2)) == 0 && types.textures[slot] != GraphicsSampleType::Float
+        pairs & (3 << (slot * 2)) == 0
+            && !(slot == 0 && storage.is_some())
+            && types.textures[slot] != GraphicsSampleType::Float
     }) || types.colors[colors..]
         .iter()
         .any(|t| *t != GraphicsExportType::Float)
@@ -1268,6 +1396,63 @@ fn validate_resource_types(
             }
         }
     }
+    let mut pixel_coordinates: Vec<bool> = pixel
+        .values
+        .iter()
+        .map(|(_, op)| matches!(op, Op::PixelCoordinate(_)))
+        .collect();
+    let mut work: Vec<_> = pixel_coordinates
+        .iter()
+        .enumerate()
+        .filter_map(|(i, used)| used.then_some(i))
+        .collect();
+    while let Some(source) = work.pop() {
+        for &destination in &dependents[source] {
+            if !pixel_coordinates[destination] {
+                pixel_coordinates[destination] = true;
+                work.push(destination);
+            }
+        }
+    }
+    for (offset, op) in &pixel.values {
+        let escaped = match op {
+            Op::Binary(_, a, b) => pixel_coordinates[a.0] || pixel_coordinates[b.0],
+            Op::SampleLodZero { u, v, layer, .. } => {
+                pixel_coordinates[u.0]
+                    || pixel_coordinates[v.0]
+                    || layer.is_some_and(|(v, _)| pixel_coordinates[v.0])
+            }
+            Op::Store2D { data, .. } => data.iter().flatten().any(|v| pixel_coordinates[v.0]),
+            _ => false,
+        };
+        if escaped {
+            return Err(CompileError::Verify {
+                offset: offset.unwrap_or(0),
+                reason: "pixel-coordinate bits may only be copied or used as store addresses",
+            });
+        }
+        if let Op::Store2D { data, dmask, .. } = op {
+            let expected = match storage {
+                Some(GraphicsStorageType::Float) => 15,
+                Some(GraphicsStorageType::Uint) => 1,
+                None => unreachable!("validated store role"),
+            };
+            if *dmask != expected {
+                return Err(CompileError::Verify {
+                    offset: offset.unwrap_or(0),
+                    reason: "store mask must match storage Float RGBA15 or Uint R1",
+                });
+            }
+            if storage == Some(GraphicsStorageType::Float)
+                && data.iter().flatten().any(|v| integer_bits[v.0])
+            {
+                return Err(CompileError::Verify {
+                    offset: offset.unwrap_or(0),
+                    reason: "RGBA storage cannot consume sampled integer bits",
+                });
+            }
+        }
+    }
     // The new SGPR->VGPR bit move is deliberately limited to validated layer
     // transport. Propagate through copies/phis to reject other observable uses.
     let mut uniform_floats: Vec<bool> = pixel
@@ -1292,6 +1477,7 @@ fn validate_resource_types(
         let invalid_use = match op {
             Op::SampleLodZero { u, v, .. } => uniform_floats[u.0] || uniform_floats[v.0],
             Op::Binary(_, a, b) => uniform_floats[a.0] || uniform_floats[b.0],
+            Op::Store2D { data, .. } => data.iter().flatten().any(|v| uniform_floats[v.0]),
             _ => false,
         };
         if invalid_use {
@@ -1321,6 +1507,12 @@ fn validate_resource_types(
     }
     for (slot, export) in pixel.colors[..colors].iter().enumerate() {
         let export = export.as_ref().expect("validated contiguous exports");
+        if export.values.iter().any(|v| pixel_coordinates[v.0]) {
+            return Err(CompileError::Verify {
+                offset: export.offset,
+                reason: "pixel-coordinate bits cannot be exported",
+            });
+        }
         if export.values.iter().any(|v| uniform_floats[v.0]) {
             return Err(CompileError::Verify {
                 offset: export.offset,
@@ -1347,7 +1539,8 @@ fn value_type(op: Op) -> &'static str {
     }
 }
 
-fn emit_values(stage: &StageIr, types: GraphicsPipelineTypes, ir: &mut String, msl: &mut String) {
+// Clang requires these controls before declarations or statements in the body.
+fn emit_fp_controls(stage: &StageIr, msl: &mut String) {
     if stage
         .values
         .iter()
@@ -1355,12 +1548,17 @@ fn emit_values(stage: &StageIr, types: GraphicsPipelineTypes, ir: &mut String, m
     {
         msl.push_str("    #pragma clang fp contract(off)\n    #pragma clang fp reassociate(off)\n");
     }
+}
 
+fn emit_values(stage: &StageIr, types: GraphicsPipelineTypes, ir: &mut String, msl: &mut String) {
     if !stage.runtime_control {
         emit_range(stage, types, 0..stage.values.len(), false, ir, msl);
         return;
     }
     for (index, &(_, op)) in stage.values.iter().enumerate() {
+        if matches!(op, Op::Store2D { .. }) {
+            continue;
+        }
         let _ = writeln!(msl, "    {} {};", value_type(op), Value(index));
     }
     emit_range(stage, types, 0..stage.initial_values, true, ir, msl);
@@ -1436,6 +1634,36 @@ fn emit_range(
 
         let value = Value(index);
         let (operation, expression) = match op {
+            Op::Store2D {
+                coordinates: [x, y],
+                data,
+                dmask,
+            } => {
+                let values = match storage_type(types) {
+                    Some(GraphicsStorageType::Float) => {
+                        let [a, b, c, d] = data.map(|v| v.expect("validated RGBA mask"));
+                        format!("float4({a}, {b}, {c}, {d})")
+                    }
+                    Some(GraphicsStorageType::Uint) => {
+                        let a = data[0].expect("validated R mask");
+                        format!("uint4(as_type<uint>({a}), 0u, 0u, 0u)")
+                    }
+                    None => unreachable!("validated storage effect"),
+                };
+                if let Some(offset) = offset {
+                    let _ = write!(ir, "{offset:04x}: ");
+                }
+                let _ = writeln!(ir, "store.2d tex0, ({x}, {y}), dmask:{dmask} {values}");
+                let _ = writeln!(
+                    msl,
+                    "    storage0.write({values}, uint2(as_type<uint>({x}), as_type<uint>({y})));"
+                );
+                continue;
+            }
+            Op::PixelCoordinate(component) => (
+                format!("pixel.coordinate.u32.bits [{component}]"),
+                format!("as_type<float>(pixel_coordinates[{component}])"),
+            ),
             Op::Phi(_) => continue, // Assigned on all incoming edges.
             Op::Compare(operator, left, right) => {
                 let expression = compare_expression(operator, left, right);
@@ -1501,6 +1729,9 @@ fn emit_range(
                     }
                     GraphicsSampleType::Uint | GraphicsSampleType::UintArray => {
                         ("u32.bits", format!("as_type<float>({sample}.{channel})"))
+                    }
+                    GraphicsSampleType::StorageFloat | GraphicsSampleType::StorageUint => {
+                        unreachable!("validated storage/sample exclusion")
                     }
                     GraphicsSampleType::Depth => (
                         "depth",

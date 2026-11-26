@@ -16,6 +16,44 @@ run ends with `PASS`. Quick mode also rejects filters that select no passing tes
 Use `--help` for prerequisites. These tests render offscreen and compare pixels;
 they do not open an application window. Avoid other GPU test runs at the same time.
 
+## S2.4 completion: selected shader storage
+
+S2.4 is complete within the documented synthetic resource-view contracts. Earlier
+checkpoint sections below describe their historical limits; the completed checklist
+is in the [view plan](../superpowers/plans/2026-11-26-view-completion.md).
+
+Selected RGBA8/R32Uint storage now uses ordered guest IMAGE_STORE effects, exact
+GPU prior contents and atomic complete-root publication. Runtime branches and
+bounded loops preserve skipped writes, while one triangle and proven pixel X/Y
+addresses give each invocation a distinct pixel. See the [storage contract](../graphics-call-v1.md#bounded-shader-storage-views)
+for format, geometry, feedback and instruction restrictions.
+
+All nine gates passed in `artifacts/validation-full.D3FtXT`: workspace **960 passed,
+zero failed, 128 ignored**; GPU script **430 passed, zero failed, one manual case
+ignored**. Totals overlap and are not unique GPU counts. Focused evidence includes
+**3 decoder**, **12 compiler**, **6 loader**, **3 native**, **5 FFI boundary/transaction**
+and **3 original guest tests**. Native/guest runs enabled Metal API and GPU validation.
+Independent reviewers accepted the compiler/loader and native/FFI components.
+
+The tests distinguish false/true branches, zero/repeated loop writes, integer bits,
+non-square pixel coordinates, pending producers, partial coverage and complete-root
+preservation. A role-separation test checks semantic prior A against newer base B,
+including B's disjoint byte. Both color and storage copy-back failure points drain
+without success and recover in a fresh generation. Native ownership tests retain a
+72-byte full-root differential and refund all charges; loader tests enforce a
+160 MiB + 256-byte reservation and reject a second receipt before dispatch.
+
+Six production mutations failed decisive assertions: omitted store, numeric uint
+conversion, wrong copy-back slice, omitted producer wait, omitted prior copy and
+omitted root lease. Current source hashes match exact restoration manifests under
+`artifacts/storage-*`; restored tests and the final full run passed. Initial logs
+retain the fixed FP-pragma placement failure and the validation wrapper error from
+an in-flight help-text edit; the unchanged final wrapper completed successfully.
+
+No checklist items remain for this bounded S2.4 milestone. Broader synchronization,
+formats/storage instructions and shader semantics remain later work. Synthetic
+validation does not establish Xbox hardware equivalence or commercial game support.
+
 ## Shader-indexed array sampling checkpoint
 
 Shader arrays now retain their type and complete backing through decoding, shader

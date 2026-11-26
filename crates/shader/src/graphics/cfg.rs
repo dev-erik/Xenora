@@ -168,6 +168,7 @@ pub(super) fn analyze(decoded: &[DecodedInstruction]) -> Result<Vec<CountedLoop>
                         *written = true;
                     }
                 }
+                Instruction::ImageStore2D { .. } => {} // Ordered effect, no register writes.
                 Instruction::Export { .. } | Instruction::EndProgram => {
                     return Err(reject(
                         item.offset,

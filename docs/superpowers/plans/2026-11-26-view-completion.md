@@ -1,6 +1,7 @@
 # Resource-view completion plan
 
-S2.4 remains open until every item below is implemented and independently accepted.
+S2.4 is complete within the finite synthetic contracts below. Every checklist item
+has implementation, regression evidence and independent component acceptance.
 The native color and depth Load primitives are prerequisites, not guest writable
 view support. Existing synthetic shader contracts remain explicit; this plan makes
 no claim about console execution.
@@ -24,9 +25,9 @@ no claim about console execution.
   cannot lose each other's changes through whole-root snapshot replacement.
 - [x] Shader-indexed array sampling carries array type, coordinate/index semantics,
   range bounds and exact producer ownership through decoder/compiler/guest/native APIs.
-- [ ] Writable storage views have an explicit implemented shader instruction and
+- [x] Writable storage views have an explicit implemented shader instruction and
   resource contract, independent expected results and rejection of unsupported forms.
-- [ ] Original guest integration, failure/rollback, lifetime churn, meaningful fault
+- [x] Original guest integration, failure/rollback, lifetime churn, meaningful fault
   mutations and native validation pass, with two independent acceptance reviews.
 
 ## Implementation order
@@ -49,3 +50,18 @@ comparisons, write-enabled .5 output, a later .625 probe, complete-backing byte
 comparisons, stale/foreign producer rejection, queue gating, full-root budget
 retention and controlled producer-failure propagation. These are native synthetic
 checks, not translated guest or hardware-fault recovery evidence.
+
+
+## Completion evidence — 26 November 2026
+
+The final nine-gate run passed with 960 workspace tests and 430 tests in the GPU
+script, zero failures. The suites overlap; 128 workspace cases and one manual GPU
+case were ignored and are not counted as verified GPU behavior. Local logs are in
+`artifacts/validation-full.D3FtXT`. The [checkpoint](../../testing/local-graphics-checkpoint.md)
+records focused counts, six storage fault mutations, restoration hashes and scope.
+
+Array layers support checked constants/direct uniforms. Storage supports selected
+RGBA8Unorm/R32Uint 2D mip/slices, ordered stores in supported branches/bounded loops,
+and a single-triangle pixel-address contract. Arbitrary storage addressing, atomics,
+array-dimension stores and general divergent shaders are outside these contracts;
+this completion does not close all of Stage 2 or Stage 3 or establish game execution.

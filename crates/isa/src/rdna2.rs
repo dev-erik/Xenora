@@ -185,3 +185,10 @@ pub const IMAGE_SAMPLE_LZ: Opcode = Opcode {
     bits: 0xf09c0000,
     bytes: 8,
 };
+
+/// RDNA2 MIMG opcode 8, plain format-converting image store.
+pub const IMAGE_STORE: Opcode = Opcode {
+    mask: 0xfdfc0001,
+    bits: 0xf0200000,
+    bytes: 8,
+};

@@ -68,7 +68,7 @@ fn view(
 }
 fn validate(request: &GraphicsAttachmentTransactionRequest) -> Result<usize, GraphicsError> {
     if !(1..=8).contains(&request.colors.len())
-        || !(1..=9).contains(&request.roots.len())
+        || !(1..=10).contains(&request.roots.len())
         || request.waits.len() > MAX_QUEUED_GRAPH_NODES
     {
         return Err(GraphicsError::InvalidDescriptor);
@@ -146,11 +146,108 @@ fn validate(request: &GraphicsAttachmentTransactionRequest) -> Result<usize, Gra
             return Err(GraphicsError::InvalidDescriptor);
         }
     }
+    if let Some(storage) = &request.storage {
+        let root = request
+            .roots
+            .get(storage.root_index)
+            .ok_or(GraphicsError::InvalidDescriptor)?;
+        if !matches!(
+            root.desc.format,
+            TextureFormat::Rgba8Unorm | TextureFormat::R32Uint
+        ) || request.depth.is_some()
+            || request.draws.len() != 1
+            || request
+                .colors
+                .iter()
+                .any(|c| c.root_index == storage.root_index)
+        {
+            return Err(GraphicsError::InvalidDescriptor);
+        }
+        check(
+            storage.root_index,
+            storage.mip,
+            storage.slice,
+            root.desc.format,
+        )?;
+        // Reject aliases visible across this worker boundary. Host logical-root
+        // identity is enforced by the loader; shared snapshots remain detectable.
+        let same_prior = |other: &GraphicsAttachmentRootInput| match (&root.prior, other) {
+            (
+                GraphicsAttachmentRootInput::Produced(a),
+                GraphicsAttachmentRootInput::Produced(b),
+            ) => a == b,
+            (GraphicsAttachmentRootInput::Host(a), GraphicsAttachmentRootInput::Host(b)) => {
+                Arc::ptr_eq(a, b)
+            }
+            _ => false,
+        };
+        if request
+            .colors
+            .iter()
+            .any(|c| same_prior(&request.roots[c.root_index].prior))
+        {
+            return Err(GraphicsError::InvalidDescriptor);
+        }
+        let draw = &request.draws[0];
+        if draw
+            .textures
+            .iter()
+            .flatten()
+            .any(|t| match (&root.prior, t) {
+                (
+                    GraphicsAttachmentRootInput::Produced(a),
+                    GraphicsTextureInput::ProducedTyped { version, .. }
+                    | GraphicsTextureInput::ProducedArray { version, .. }
+                    | GraphicsTextureInput::Produced { version, .. },
+                ) => a == version,
+                (GraphicsAttachmentRootInput::Host(a), GraphicsTextureInput::Host(b)) => {
+                    Arc::ptr_eq(a, &b.pixels)
+                }
+                _ => false,
+            })
+        {
+            return Err(GraphicsError::InvalidDescriptor);
+        }
+        let pipeline = draw
+            .pipeline
+            .as_ref()
+            .ok_or(GraphicsError::InvalidDescriptor)?;
+        let expected = match root.desc.format {
+            TextureFormat::Rgba8Unorm => xenora_shader::GraphicsStorageType::Float,
+            TextureFormat::R32Uint => xenora_shader::GraphicsStorageType::Uint,
+            _ => return Err(GraphicsError::InvalidDescriptor),
+        };
+        if pipeline.storage != Some(expected) || pipeline.sampled_pairs & 3 != 0 {
+            return Err(GraphicsError::InvalidDescriptor);
+        }
+        if draw
+            .geometry
+            .as_ref()
+            .map_or(draw.vertices.len(), |g| g.count as usize)
+            != 3
+            || draw.viewport != request.extent
+            || draw.state.viewport_origin != [0, 0]
+            || draw.state.depth_compare.is_some()
+            || draw.state.depth_write
+            || draw.textures[0].is_some()
+        {
+            return Err(GraphicsError::InvalidDescriptor);
+        }
+    }
+    if request.storage.is_none()
+        && request
+            .draws
+            .iter()
+            .any(|d| d.pipeline.as_ref().is_some_and(|p| p.storage.is_some()))
+    {
+        return Err(GraphicsError::InvalidDescriptor);
+    }
     if used.len() != request.roots.len() {
         return Err(GraphicsError::InvalidDescriptor);
     }
     Ok(1 + request.colors.len()
         + usize::from(request.depth.is_some())
+        + usize::from(request.storage.is_some())
         + request
             .roots
             .iter()
@@ -319,6 +416,14 @@ impl State {
                         .map(QueuedDepthInput::ProducedTypedView),
                 })
                 .transpose()?;
+            let storage = request
+                .storage
+                .as_ref()
+                .map(|s| {
+                    view(&roots[s.root_index], s.mip, s.slice)
+                        .map(xenora_metal::QueuedStorageInput::ProducedTypedView)
+                })
+                .transpose()?;
             let render = GraphicsQueuedSubmissionRequest {
                 color_types: request.colors.iter().map(|c| Some(c.attachment)).collect(),
                 generation: request.generation,
@@ -357,6 +462,11 @@ impl State {
                 Some(AttachmentInputs {
                     colors: loads,
                     depth,
+                    storage,
+                    storage_format: request
+                        .storage
+                        .as_ref()
+                        .map(|s| request.roots[s.root_index].desc.format),
                 }),
             )?;
             points.push((rendered.clone(), Stage::Render));
@@ -379,6 +489,10 @@ impl State {
                     .typed_output()
                     .map_err(metal_error)?;
                 patches.push((d.root_index, d.mip, d.slice, output));
+            }
+            if let Some(s) = &request.storage {
+                let output = self.cohort.storage_output(&rendered).map_err(metal_error)?;
+                patches.push((s.root_index, s.mip, s.slice, output));
             }
             for (root, destination) in roots.iter_mut().zip(destinations) {
                 if let Some(destination) = destination {
@@ -519,6 +633,7 @@ mod tests {
             waits: vec![],
             extent: (2, 1),
             depth: None,
+            storage: None,
             roots: vec![GraphicsAttachmentRoot {
                 desc: GraphicsTypedTextureDesc {
                     format: TextureFormat::Rgba8Unorm,
@@ -831,5 +946,239 @@ mod tests {
             };
             assert_eq!(roots[0].bytes, expected);
         }
+    }
+    // Independent boundary tests to insert into queued_attachments.rs::tests.
+    // CPU validate() only: no GPU submission or compiler-derived expected values.
+    fn storage_alias_request() -> GraphicsAttachmentTransactionRequest {
+        use xenora_loader::graphics::{
+            GraphicsPipeline, GraphicsSelectedStorage, GraphicsTextureSnapshot,
+        };
+        let mut r = request(1, true);
+        let desc = r.roots[0].desc;
+        r.roots.push(GraphicsAttachmentRoot {
+            desc,
+            destination_base: None,
+            prior: GraphicsAttachmentRootInput::Host(Arc::from([33u8; 80])),
+            output: GraphicsProducedVersion {
+                point: r.point,
+                output: GraphicsProducedOutput::AttachmentRoot(1),
+            },
+        });
+        r.storage = Some(GraphicsSelectedStorage {
+            root_index: 1,
+            mip: 1,
+            slice: 1,
+        });
+        let mut types = xenora_shader::GraphicsPipelineTypes::default();
+        types.textures[0] = xenora_shader::GraphicsSampleType::StorageFloat;
+        let draw = &mut r.draws[0];
+        draw.pipeline = Some(Arc::new(GraphicsPipeline {
+            storage: Some(xenora_shader::GraphicsStorageType::Float),
+            array_layers: Default::default(),
+            types,
+            required_uniform_mask: 0,
+            msl: String::new(),
+            color_targets: 1,
+            uses_texture: true,
+            sampled_pairs: 4,
+        }));
+        draw.samplers[0] = Some(xenora_texture::SamplerDesc::nearest_clamp());
+        draw.array_views[1] = Some(xenora_loader::graphics::GraphicsArraySliceViewDesc {
+            slice: 1,
+            base_mip: 1,
+            mip_count: 1,
+            format: xenora_loader::graphics::GraphicsTextureViewFormat::Rgba8Unorm,
+        });
+        draw.textures[1] = Some(GraphicsTextureInput::Host(GraphicsTextureSnapshot {
+            array_layers: Some(2),
+            format: TextureFormat::Rgba8Unorm,
+            width: 4,
+            height: 2,
+            pixels: Arc::from([99u8; 80]),
+            mip_levels: 2,
+        }));
+        r
+    }
+    #[test]
+    fn queued_storage_host_snapshot_feedback_rejects_in_preflight() {
+        let mut r = storage_alias_request();
+        assert!(validate(&r).is_ok(), "distinct sampled backing is valid");
+        let GraphicsAttachmentRootInput::Host(bytes) = &r.roots[1].prior else {
+            panic!("host storage")
+        };
+        let Some(GraphicsTextureInput::Host(sample)) = &mut r.draws[0].textures[1] else {
+            panic!("host sample")
+        };
+        sample.pixels = bytes.clone();
+        assert!(
+            validate(&r).is_err(),
+            "shared storage/sample backing must reject before seed admission"
+        );
+    }
+    #[test]
+    fn queued_storage_exact_produced_feedback_rejects_in_preflight() {
+        let mut r = storage_alias_request();
+        let version = GraphicsProducedVersion {
+            point: GraphicsQueuePoint {
+                queue: GraphicsHandle {
+                    id: 2,
+                    generation: 1,
+                },
+                value: 7,
+            },
+            output: GraphicsProducedOutput::AttachmentRoot(0),
+        };
+        r.waits.push(version.point);
+        r.roots[1].prior = GraphicsAttachmentRootInput::Produced(version);
+        assert!(
+            validate(&r).is_ok(),
+            "distinct host sample with produced storage is valid"
+        );
+        r.draws[0].textures[1] = Some(GraphicsTextureInput::ProducedTyped {
+            version,
+            desc: r.roots[1].desc,
+        });
+        assert!(
+            validate(&r).is_err(),
+            "exact produced storage/sample alias must reject before seed admission"
+        );
+    }
+    #[test]
+    fn queued_storage_color_root_identity_alias_rejects_in_preflight() {
+        let mut r = storage_alias_request();
+        assert!(validate(&r).is_ok());
+        r.roots[1].prior = r.roots[0].prior.clone();
+        assert!(
+            validate(&r).is_err(),
+            "different root indices cannot hide the same backing capability"
+        );
+    }
+
+    fn storage_request(generation: u64, enabled: bool) -> GraphicsAttachmentTransactionRequest {
+        use xenora_loader::graphics::{GraphicsPipeline, GraphicsSelectedStorage};
+        let mut r = request(generation, true);
+        let mut types = xenora_shader::GraphicsPipelineTypes::default();
+        types.textures[0] = xenora_shader::GraphicsSampleType::StorageFloat;
+        let c = xenora_shader::compile_graphics_pipeline_typed(
+            xenora_shader::Architecture::Gfx1030,
+            include_bytes!("../../../../fixtures/rdna2/x9-constant-vs.bin"),
+            include_bytes!("../../../../fixtures/rdna2/x9-storage-branch-ps.bin"),
+            types,
+        )
+        .unwrap();
+        r.draws[0].pipeline = Some(Arc::new(GraphicsPipeline {
+            storage: c.storage,
+            array_layers: c.array_layers,
+            types,
+            required_uniform_mask: c.required_uniform_mask,
+            msl: c.shader.msl,
+            color_targets: c.color_targets,
+            uses_texture: c.uses_texture,
+            sampled_pairs: c.sampled_pairs,
+        }));
+        r.draws[0].vertices = vec![[-1., -1., 0.5, 1.], [3., -1., 0.5, 1.], [-1., 3., 0.5, 1.]];
+        let mut uniforms = [0; 8];
+        uniforms[0] = u32::from(enabled);
+        r.draws[0].uniforms = Some(uniforms);
+        r.roots.push(GraphicsAttachmentRoot {
+            desc: r.roots[0].desc,
+            destination_base: None,
+            prior: GraphicsAttachmentRootInput::Host(Arc::from([33u8; 80])),
+            output: GraphicsProducedVersion {
+                point: r.point,
+                output: GraphicsProducedOutput::AttachmentRoot(1),
+            },
+        });
+        r.storage = Some(GraphicsSelectedStorage {
+            root_index: 1,
+            mip: 1,
+            slice: 1,
+        });
+        r
+    }
+    fn wait_transaction(
+        state: &mut State,
+        receiver: mpsc::Receiver<Completion>,
+    ) -> Vec<GraphicsAttachmentRootResult> {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            state.progress();
+            match receiver.try_recv() {
+                Ok(Ok(GraphicsQueuedWorkOutput::AttachmentTransaction(roots))) => return roots,
+                Err(mpsc::TryRecvError::Empty) => {
+                    assert!(std::time::Instant::now() < deadline);
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+                Ok(Err(error)) => panic!("transaction error: {error:?}"),
+                _ => panic!("unexpected transaction result"),
+            }
+        }
+    }
+    #[test]
+    fn queued_storage_each_copyback_failure_drains_and_recovers() {
+        for patch in 1..=2 {
+            let mut state = State::new().unwrap();
+            state.fail_after_attachment_patch = Some(patch);
+            let (tx, rx) = mpsc::channel();
+            assert!(
+                state
+                    .submit_attachments(&storage_request(1, true), tx)
+                    .is_err()
+            );
+            assert!(state.poisoned && state.entries.is_empty());
+            assert!(matches!(
+                rx.try_recv(),
+                Err(mpsc::TryRecvError::Disconnected)
+            ));
+            state.fail_after_attachment_patch = None;
+            let (tx, rx) = mpsc::channel();
+            state
+                .submit_attachments(&storage_request(2, true), tx)
+                .unwrap();
+            let roots = wait_transaction(&mut state, rx);
+            let mut expected = [33u8; 80];
+            expected[72..80].copy_from_slice(&[64, 128, 191, 255, 64, 128, 191, 255]);
+            assert_eq!(roots[1].bytes, expected);
+        }
+    }
+    #[test]
+    fn queued_storage_skipped_store_uses_semantic_prior_not_composition_base() {
+        let mut state = State::new().unwrap();
+        let a = storage_request(1, false);
+        let (tx, ra) = mpsc::channel();
+        state.submit_attachments(&a, tx).unwrap();
+        let mut b = storage_request(1, true);
+        b.point.value = 2;
+        b.waits = vec![a.point];
+        for (i, r) in b.roots.iter_mut().enumerate() {
+            r.output.point = b.point;
+            r.prior = GraphicsAttachmentRootInput::Produced(a.roots[i].output);
+        }
+        let mut newer = [33u8; 80];
+        newer[0] = 77;
+        b.roots[1].prior = GraphicsAttachmentRootInput::Host(Arc::from(newer));
+        let (tx, rb) = mpsc::channel();
+        state.submit_attachments(&b, tx).unwrap();
+        // The backend test deliberately makes the semantic selected bytes differ.
+        // Loader range ancestry is tested separately; preservation must not select B.
+        let mut c = storage_request(1, false);
+        c.point.value = 3;
+        c.waits = vec![a.point, b.point];
+        for (i, r) in c.roots.iter_mut().enumerate() {
+            r.output.point = c.point;
+            r.prior = GraphicsAttachmentRootInput::Produced(a.roots[i].output);
+            r.destination_base = Some(b.roots[i].output);
+        }
+        let (tx, rc) = mpsc::channel();
+        state.submit_attachments(&c, tx).unwrap();
+        let roots = wait_transaction(&mut state, rc);
+        let mut expected = [33u8; 80];
+        expected[0] = 77;
+        assert_eq!(roots[1].bytes, expected);
+        let a_roots = wait_transaction(&mut state, ra);
+        let b_roots = wait_transaction(&mut state, rb);
+        assert_eq!(a_roots[1].bytes, [33u8; 80]);
+        expected[72..80].copy_from_slice(&[64, 128, 191, 255, 64, 128, 191, 255]);
+        assert_eq!(b_roots[1].bytes, expected);
     }
 }

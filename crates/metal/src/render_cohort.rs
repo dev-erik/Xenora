@@ -329,7 +329,32 @@ pub struct RenderCohort {
     buffer_region_pipeline: Option<Retained<ProtocolObject<dyn MTLComputePipelineState>>>,
 }
 
+#[derive(Clone)]
+pub(super) struct StorageTarget {
+    pub source: crate::RenderTypedTextureView,
+    pub texture: Retained<ProtocolObject<dyn MTLTexture>>,
+    pub lease: Rc<ColorLease>,
+}
+
+fn aliases_storage_root(
+    texture: &ProtocolObject<dyn MTLTexture>,
+    root: &ProtocolObject<dyn MTLTexture>,
+) -> bool {
+    if std::ptr::eq(texture, root) {
+        return true;
+    }
+    let mut parent = texture.parentTexture();
+    while let Some(texture) = parent {
+        if std::ptr::eq(&*texture, root) {
+            return true;
+        }
+        parent = texture.parentTexture();
+    }
+    false
+}
+
 pub(super) struct SubmissionSync {
+    pub storage: Option<StorageTarget>,
     pub geometry: Vec<Option<Rc<geometry::Gather>>>,
     pub validation: Option<Rc<geometry::Validation>>,
     pub depth: Option<(MetalDepthTarget, DepthLoad)>,
@@ -346,6 +371,31 @@ pub(super) struct SubmissionSync {
     value: u64,
 }
 impl SubmissionSync {
+    pub(super) fn encode_storage_load(
+        &self,
+        command: &ProtocolObject<dyn MTLCommandBuffer>,
+    ) -> Result<(), MetalError> {
+        let Some(storage) = &self.storage else {
+            return Ok(());
+        };
+        let source = storage.source.view.retained_texture();
+        let [width, height] = storage.source.extent();
+        let blit = command
+            .blitCommandEncoder()
+            .ok_or_else(|| error("storage load encoder failed"))?;
+        // SAFETY: Preflight validates equal format, device and selected extent.
+        // The one-mip view rebases its source level/slice to zero; both owners
+        // remain retained through completion. Producer waits precede this copy.
+        unsafe {
+            blit.copyFromTexture_sourceSlice_sourceLevel_sourceOrigin_sourceSize_toTexture_destinationSlice_destinationLevel_destinationOrigin(
+                &source, 0, 0, MTLOrigin { x: 0, y: 0, z: 0 },
+                MTLSize { width, height, depth: 1 }, &storage.texture, 0, 0,
+                MTLOrigin { x: 0, y: 0, z: 0 });
+        }
+        blit.endEncoding();
+        Ok(())
+    }
+
     pub(super) fn encode_waits(&self, command: &ProtocolObject<dyn MTLCommandBuffer>) {
         for point in &self.waits {
             let event: &ProtocolObject<dyn MTLEvent> = ProtocolObject::from_ref(&*point.event);
@@ -1716,6 +1766,37 @@ impl RenderCohort {
                 .clone(),
         })
     }
+    /// Acquire the immutable pending shader-write output before collecting the point.
+    /// No CPU storage readback occurs; the returned version may feed a GPU copy.
+    pub fn storage_output(
+        &self,
+        point: &RenderPoint,
+    ) -> Result<RenderTypedTextureOutput, MetalError> {
+        self.validate_point(point)?;
+        let PendingWork::Render(pending) = &self.entries[self.entry_slot(point)?]
+            .as_ref()
+            .expect("entry")
+            .pending
+        else {
+            return Err(error("not a render"));
+        };
+        let storage = pending
+            .storage
+            .as_ref()
+            .ok_or_else(|| error("render has no storage output"))?;
+        Ok(RenderTypedTextureOutput {
+            point: point.clone(),
+            texture: storage.texture.clone(),
+            desc: crate::TypedTextureDesc {
+                format: storage.source.output.desc.format,
+                extent: pending.extent,
+                mip_levels: 1,
+                array_layers: None,
+            },
+            lease: storage.lease.clone(),
+        })
+    }
+
     pub fn typed_color_output(
         &self,
         point: &RenderPoint,
@@ -1967,6 +2048,47 @@ impl RenderCohort {
         )
     }
 
+    /// Render one non-instanced triangle with a fresh selected storage surface.
+    /// Trusted shaders must write only their fragment's integer pixel coordinates;
+    /// the compiler/loader separately prove this for guest shaders. No reflection
+    /// or arbitrary shader-race validation is performed here.
+    #[allow(clippy::too_many_arguments)]
+    pub fn submit_with_storage(
+        &mut self,
+        queue: RenderQueue,
+        shaders: &[TriangleShader<'_>],
+        pass: &crate::TypedTriangleTargetsPass<'_>,
+        bindings: &[Vec<QueuedSampledBinding>],
+        depth: Option<QueuedDepthInput>,
+        color_loads: &[QueuedColorLoad<'_>],
+        dependencies: &[RenderPoint],
+        uniforms: &[DrawUniforms],
+        geometry: &[Option<crate::QueuedGeometry<'_>>],
+        storage: crate::QueuedStorageInput,
+    ) -> Result<RenderPoint, MetalError> {
+        let clears = vec![[0; 4]; pass.colors.len()];
+        let legacy = crate::TriangleTargetsPass {
+            draws: pass.draws,
+            states: pass.states,
+            extent: pass.extent,
+            clears: &clears,
+            clear_depth: pass.clear_depth,
+        };
+        self.submit_internal_storage(
+            queue,
+            shaders,
+            &legacy,
+            bindings,
+            depth.map(DepthInput::Queued),
+            color_loads,
+            dependencies,
+            Some(uniforms),
+            Some(geometry),
+            Some(pass.colors),
+            Some(storage),
+        )
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn submit_internal(
         &mut self,
@@ -1980,6 +2102,36 @@ impl RenderCohort {
         uniforms: Option<&[DrawUniforms]>,
         geometry: Option<&[Option<crate::QueuedGeometry<'_>>]>,
         typed_colors: Option<&[crate::TypedColorAttachment]>,
+    ) -> Result<RenderPoint, MetalError> {
+        self.submit_internal_storage(
+            queue,
+            shaders,
+            pass,
+            bindings,
+            depth,
+            color_loads,
+            dependencies,
+            uniforms,
+            geometry,
+            typed_colors,
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn submit_internal_storage(
+        &mut self,
+        queue: RenderQueue,
+        shaders: &[TriangleShader<'_>],
+        pass: &crate::TriangleTargetsPass<'_>,
+        bindings: &[Vec<QueuedSampledBinding>],
+        depth: Option<DepthInput>,
+        color_loads: &[QueuedColorLoad<'_>],
+        dependencies: &[RenderPoint],
+        uniforms: Option<&[DrawUniforms]>,
+        geometry: Option<&[Option<crate::QueuedGeometry<'_>>]>,
+        typed_colors: Option<&[crate::TypedColorAttachment]>,
+        storage: Option<crate::QueuedStorageInput>,
     ) -> Result<RenderPoint, MetalError> {
         validate_uniforms(pass.draws.len(), uniforms)?;
         if geometry.is_some_and(|g| {
@@ -2175,6 +2327,47 @@ impl RenderCohort {
             }
             _ => None,
         };
+        let storage_source = match storage {
+            Some(crate::QueuedStorageInput::ProducedTypedView(view)) => {
+                self.validate_point(&view.output.point)?;
+                let texture = view.view.retained_texture();
+                let format = view.output.desc.format;
+                let effective_count = geometry
+                    .and_then(|g| g.first())
+                    .and_then(Option::as_ref)
+                    .map_or_else(
+                        || pass.draws.first().map_or(0, |d| d.vertices.len()),
+                        |g| g.count as usize,
+                    );
+                if pass.draws.len() != 1
+                    || pass.states.len() != 1
+                    || effective_count != 3
+                    || depth.is_some()
+                    || pass.clear_depth.is_some()
+                    || pass.states[0].depth != DepthState::DISABLED
+                    || pass.states[0].viewport_origin != [0, 0]
+                    || pass.draws[0].viewport != pass.extent
+                    || !matches!(format, TextureFormat::Rgba8Unorm | TextureFormat::R32Uint)
+                    || view.desc().mip_count != 1
+                    || view.extent() != pass.extent
+                    || texture.textureType() != MTLTextureType::Type2D
+                    || texture.mipmapLevelCount() != 1
+                    || texture.width() != pass.extent[0]
+                    || texture.height() != pass.extent[1]
+                    || texture.pixelFormat()
+                        != crate::texture_pipeline::storage_pixel_format(format)
+                    || texture.device().registryID() != self.queues[index].device.registryID()
+                    || view.output.texture.device().registryID()
+                        != self.queues[index].device.registryID()
+                {
+                    return Err(error(
+                        "invalid selected storage source or single-triangle pass",
+                    ));
+                }
+                Some(view)
+            }
+            None => None,
+        };
         let geometry_inputs = geometry.unwrap_or(&[]);
         let aggregate = pass
             .draws
@@ -2245,6 +2438,9 @@ impl RenderCohort {
         };
         if let Some(source) = &depth_source_owner {
             add(&source.point)?;
+        }
+        if let Some(source) = &storage_source {
+            add(&source.output.point)?;
         }
         for source in color_sources.iter().flatten() {
             add(&source.point)?;
@@ -2329,6 +2525,23 @@ impl RenderCohort {
             }
             normalized.push(pairs);
         }
+        let storage_lease = if let Some(source) = &storage_source {
+            for pair in normalized.iter().flatten() {
+                if pair.texture_slot().index == 0
+                    || aliases_storage_root(pair.texture().raw(), &source.output.texture)
+                {
+                    return Err(error("sampled texture aliases storage slot or root"));
+                }
+            }
+            Some(ColorLease::reserve(
+                &self.color_bytes,
+                pixels
+                    .checked_mul(4)
+                    .ok_or_else(|| error("storage size overflow"))?,
+            )?)
+        } else {
+            None
+        };
         // Bound total explicit, derived and implicit queue provenance before pruning.
         if deps.len() > self.entries.len() {
             return Err(error("too many producer dependencies"));
@@ -2343,6 +2556,11 @@ impl RenderCohort {
         // not the source's command buffer. Carry direct color leases only; copying
         // all ancestor reservations would accumulate historical scratch forever.
         let mut leases = vec![color_lease.clone(), temporary_lease.clone()];
+        if let (Some(source), Some(lease)) = (&storage_source, &storage_lease) {
+            leases.push(source.output.lease.clone());
+            leases.push(lease.clone());
+        }
+
         // This command retains its own packed buffers/uploads after collection.
         // Keep their charge here, without inheriting producer scratch leases.
         leases.extend(
@@ -2472,7 +2690,26 @@ impl RenderCohort {
                 Some((target, input.load))
             }
         };
+        let storage = match (storage_source, storage_lease) {
+            (Some(source), Some(lease)) => {
+                let texture = gpu.new_target(
+                    crate::texture_pipeline::storage_pixel_format(source.output.desc.format),
+                    pass.extent[0],
+                    pass.extent[1],
+                    MTLStorageMode::Private,
+                    MTLTextureUsage::ShaderRead | MTLTextureUsage::ShaderWrite,
+                )?;
+                Some(StorageTarget {
+                    source,
+                    texture,
+                    lease,
+                })
+            }
+            (None, None) => None,
+            _ => unreachable!("paired storage source and reservation"),
+        };
         let sync = SubmissionSync {
+            storage,
             geometry,
             validation: validation.clone(),
             depth: owned_depth,
@@ -4112,3 +4349,7 @@ mod attachment_view_budget_tests;
 #[cfg(test)]
 #[path = "shader_array_budget_tests.rs"]
 mod shader_array_budget_tests;
+
+#[cfg(test)]
+#[path = "storage_tests.rs"]
+mod storage_tests;

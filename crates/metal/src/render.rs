@@ -171,6 +171,7 @@ impl<'a> DrawBindings<'a> {
 /// are owned until completion. Dropping drains the work without publishing depth.
 #[must_use = "wait to read outputs and publish retained depth; drop drains without publishing"]
 pub struct PendingRender<'a> {
+    storage: Option<cohort::StorageTarget>,
     command: Retained<ProtocolObject<dyn MTLCommandBuffer>>,
     textures: Vec<Retained<ProtocolObject<dyn MTLTexture>>>,
     color_formats: Vec<xenora_texture::TextureFormat>,
@@ -1495,6 +1496,7 @@ impl NativeCompute {
                 for gather in sync.geometry.iter().flatten() {
                     gather.encode(&command)?;
                 }
+                sync.encode_storage_load(&command)?;
                 sync.encode_color_loads(&command, &textures)?;
                 sync.encode_depth_upload(&command)?;
             }
@@ -1575,6 +1577,11 @@ impl NativeCompute {
                             slot,
                         );
                     }
+                    // Sampled-slot normalization above clears unused slots. Storage
+                    // owns slot0 and must be installed after that clearing.
+                    if let Some(storage) = queued.as_ref().and_then(|q| q.storage.as_ref()) {
+                        encoder.setFragmentTexture_atIndex(Some(&storage.texture), 0);
+                    }
                     encoder.drawPrimitives_vertexStart_vertexCount(
                         MTLPrimitiveType::Triangle,
                         0,
@@ -1590,6 +1597,7 @@ impl NativeCompute {
                 sync.encode_signal(&command);
             }
             let pending = PendingRender {
+                storage: queued.as_ref().and_then(|q| q.storage.clone()),
                 command,
                 textures,
                 color_formats: color_descs.iter().map(|c| c.format).collect(),
@@ -2030,8 +2038,8 @@ impl NativeCompute {
         storage: MTLStorageMode,
         usage: MTLTextureUsage,
     ) -> Result<Retained<ProtocolObject<dyn MTLTexture>>, MetalError> {
-        // SAFETY: Callers validate bounded nonzero dimensions, and both
-        // RGBA8Unorm and Depth32Float are renderable on every Apple GPU family.
+        // SAFETY: Callers validate bounded nonzero dimensions and a supported
+        // pixel format for the requested render or shader-write usage.
         let descriptor = unsafe {
             MTLTextureDescriptor::texture2DDescriptorWithPixelFormat_width_height_mipmapped(
                 format, width, height, false,

@@ -226,6 +226,18 @@ impl GraphicsContext {
                     result.reads.entry(root).or_default().push(range);
                 }
             }
+            if let Some(storage) = &plan.storage {
+                let root = plan.roots[storage.root_index].root;
+                let range = AccessRange::Texture {
+                    slice: storage.slice,
+                    slices: 1,
+                    mip: storage.mip,
+                    mips: 1,
+                };
+                // False/zero-trip stores preserve the exact semantic prior surface.
+                result.reads.entry(root).or_default().push(range);
+                result.writes.entry(root).or_default().push(range);
+            }
             if let Some(depth) = &plan.depth {
                 let root = plan.roots[depth.root_index].root;
                 let range = AccessRange::Texture {

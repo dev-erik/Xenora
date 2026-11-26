@@ -103,10 +103,10 @@ pub fn graphics_call_v1(
     let opcode = words[1];
     let used = match opcode {
         1 => 0,
-        2 | 3 | 12 | 26 | 27 | 31 | 32 | 33 | 36 | 38 | 47 | 60 | 62 => 1,
-        4 | 11 | 14 | 25 | 28 | 30 | 34 | 39 | 48 | 66 => 2,
+        2 | 3 | 12 | 26 | 27 | 31 | 32 | 33 | 36 | 38 | 47 | 60 | 62 | 68 => 1,
+        4 | 11 | 14 | 25 | 28 | 30 | 34 | 39 | 48 | 66 | 69 => 2,
         5 | 7 | 15 | 17 | 29 | 41 | 42 | 56 | 63 => 3,
-        9 | 10 | 13 | 16 | 18 | 19 | 20 | 35 | 46 | 49 | 64 => 4,
+        9 | 10 | 13 | 16 | 18 | 19 | 20 | 35 | 46 | 49 | 64 | 67 => 4,
         6 | 8 | 21 | 23 | 37 | 45 | 61 => 5,
         24 | 40 | 43 | 51 | 52 | 55 | 59 | 65 => 6,
         44 => 11,
@@ -132,7 +132,8 @@ pub fn graphics_call_v1(
         || opcode == 53
         || opcode == 55
         || (57..=59).contains(&opcode)
-        || opcode == 61)
+        || opcode == 61
+        || opcode == 67)
         && graphics.guest_object_count() >= MAX_GUEST_OBJECTS
     {
         return Ok(STATUS_GRAPHICS_ERROR);
@@ -153,7 +154,8 @@ pub fn graphics_call_v1(
         || opcode == 56
         || opcode == 63
         || opcode == 64
-        || opcode == 66)
+        || opcode == 66
+        || opcode == 69)
         && graphics
             .guest_command_count(args.handle(0))
             .is_some_and(|count| count >= MAX_GUEST_COMMANDS)
@@ -349,7 +351,7 @@ pub fn graphics_call_v1(
                     GraphicsExportType, GraphicsPipelineTypes, GraphicsSampleType,
                 };
                 let bits = args.0[5];
-                if bits & !0xff3f != 0 {
+                if bits & !0xff7f != 0 {
                     return Err(GraphicsError::InvalidDescriptor);
                 }
                 let mut types = GraphicsPipelineTypes::default();
@@ -367,6 +369,13 @@ pub fn graphics_call_v1(
                             _ => return Err(GraphicsError::InvalidDescriptor),
                         };
                     }
+                }
+                if bits & (1 << 6) != 0 {
+                    types.textures[0] = match types.textures[0] {
+                        GraphicsSampleType::Float => GraphicsSampleType::StorageFloat,
+                        GraphicsSampleType::Uint => GraphicsSampleType::StorageUint,
+                        _ => return Err(GraphicsError::InvalidDescriptor),
+                    };
                 }
                 for (slot, export_type) in types.colors.iter_mut().enumerate() {
                     if bits & (1 << (8 + slot)) != 0 {
@@ -650,6 +659,19 @@ pub fn graphics_call_v1(
                 .to_u64();
             }
             38 => graphics.destroy_texture_view(args.handle(0))?,
+            67 => {
+                value = graphics
+                    .create_storage_view(
+                        args.handle(0),
+                        args.handle(1),
+                        args.u32(2)?,
+                        args.u32(3)?,
+                    )?
+                    .to_u64();
+            }
+            68 => graphics.destroy_storage_view(args.handle(0))?,
+            69 => graphics
+                .cmd_set_storage_view(args.handle(0), (args.0[1] != 0).then(|| args.handle(1)))?,
             65 => {
                 let semantic_count = args.size(3)?;
                 let composition_count = args.size(5)?;
