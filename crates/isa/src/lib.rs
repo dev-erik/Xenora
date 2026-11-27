@@ -196,13 +196,17 @@ impl VectorProductOp {
     }
 }
 
-/// Value-only two-source vector bit operation.
+/// Two-source vector bit operation, including Wave32 lane counts.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum VectorBitBinaryOp {
     /// `v_bfm_b32`.
     BfmB32,
     /// `v_bcnt_u32_b32`.
     BcntU32B32,
+    /// Masked bit count below the guest lane in the low word.
+    MbcntLoU32B32,
+    /// High-word masked bit count (accumulator passthrough in Wave32).
+    MbcntHiU32B32,
 }
 impl VectorBitBinaryOp {
     /// Returns the unmodified VOP3 mnemonic.
@@ -210,6 +214,8 @@ impl VectorBitBinaryOp {
         match self {
             Self::BfmB32 => "v_bfm_b32",
             Self::BcntU32B32 => "v_bcnt_u32_b32",
+            Self::MbcntLoU32B32 => "v_mbcnt_lo_u32_b32",
+            Self::MbcntHiU32B32 => "v_mbcnt_hi_u32_b32",
         }
     }
 }

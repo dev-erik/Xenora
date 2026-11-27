@@ -167,7 +167,7 @@ impl Op {
             Self::Constant(value) => format!("0x{value:08x}u"),
             Self::Unary(op, source) => vector_unary_expression(op, &name(source)),
             Self::Product(op, a, b) => vector_product_expression(op, &name(a), &name(b)),
-            Self::BitBinary(op, a, b) => vector_bit_binary_expression(op, &name(a), &name(b)),
+            Self::BitBinary(op, a, b) => vector_bit_binary_expression(op, &name(a), &name(b), lane),
             Self::Ternary(op, a, b, c) => {
                 vector_ternary_expression(op, &name(a), &name(b), &name(c))
             }
@@ -377,10 +377,16 @@ fn vector_product_expression(op: VectorProductOp, a: &str, b: &str) -> String {
         }
     }
 }
-fn vector_bit_binary_expression(op: VectorBitBinaryOp, a: &str, b: &str) -> String {
+fn vector_bit_binary_expression(op: VectorBitBinaryOp, a: &str, b: &str, lane: &str) -> String {
     match op {
         VectorBitBinaryOp::BfmB32 => format!("((1u << (({a}) & 31u)) - 1u) << (({b}) & 31u)"),
         VectorBitBinaryOp::BcntU32B32 => format!("popcount({a}) + ({b})"),
+        // AMD RDNA2 ISA §12.12: EXEC gates writes, not the counted SRC0 bits.
+        // Callers supply a logical Wave32 lane, so this never shifts by 32.
+        VectorBitBinaryOp::MbcntLoU32B32 => {
+            format!("popcount(({a}) & ((1u << ({lane})) - 1u)) + ({b})")
+        }
+        VectorBitBinaryOp::MbcntHiU32B32 => format!("({b})"),
     }
 }
 fn vector_ternary_expression(op: VectorTernaryOp, a: &str, b: &str, c: &str) -> String {
@@ -641,7 +647,9 @@ pub fn compile(architecture: Architecture, bytes: &[u8]) -> Result<CompiledShade
         let dest = Value(index);
         uniform.push(match operation {
             Op::Constant(_) | Op::LaneMask { .. } => true,
-            Op::Load | Op::MergeLanes { .. } => false,
+            Op::Load
+            | Op::MergeLanes { .. }
+            | Op::BitBinary(VectorBitBinaryOp::MbcntLoU32B32, _, _) => false,
             _ => operation.operands().iter().all(|value| uniform[value.0]),
         });
         let thread = |value: Value| value.to_string();
@@ -671,7 +679,10 @@ pub fn compile(architecture: Architecture, bytes: &[u8]) -> Result<CompiledShade
             ),
             Op::BitBinary(op, a, b) => (
                 format!("{dest} = {} {a}, {b}", op.mnemonic()),
-                format!("uint {dest} = {};", operation.expression(&thread, "", "")),
+                format!(
+                    "uint {dest} = {};",
+                    operation.expression(&thread, "", "(index & 31u)")
+                ),
             ),
             Op::Ternary(op, a, b, c) => (
                 format!("{dest} = {} {a}, {b}, {c}", op.mnemonic()),

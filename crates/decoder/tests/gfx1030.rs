@@ -509,6 +509,12 @@ fn reference_op(instruction: Instruction) -> Op {
                 xenora_decoder::VectorBitBinaryOp::BcntU32B32 => {
                     xenora_ref::BitBinary::CountBitsAdd
                 }
+                xenora_decoder::VectorBitBinaryOp::MbcntLoU32B32 => {
+                    xenora_ref::BitBinary::MaskedCountLow
+                }
+                xenora_decoder::VectorBitBinaryOp::MbcntHiU32B32 => {
+                    xenora_ref::BitBinary::MaskedCountHigh
+                }
             },
             dst,
             reference_vector_source(src0),
@@ -765,10 +771,11 @@ fn compares_fixture_instructions_against_llvm() {
         &matrix,
         include_bytes!("../../../fixtures/rdna2/scc1-branch.bin"),
         include_bytes!("../../../fixtures/rdna2/wait-vmcnt.bin"),
+        include_bytes!("../../../fixtures/rdna2/mbcnt.bin"),
     ] {
         count += compare_against_llvm(fixture, &mut forms);
     }
-    assert_eq!(forms.len(), 166, "forms compared: {forms:?}");
+    assert_eq!(forms.len(), 168, "forms compared: {forms:?}");
     eprintln!(
         "{count} three-way instruction comparisons across {} forms",
         forms.len()
@@ -1199,6 +1206,8 @@ fn normalize_llvm_assembly(assembly: &str, next_offset: usize) -> String {
         | "v_bfm_b32"
         | "v_alignbit_b32"
         | "v_bcnt_u32_b32"
+        | "v_mbcnt_lo_u32_b32"
+        | "v_mbcnt_hi_u32_b32"
         | "v_or3_b32"
         | "v_xor3_b32"
         | "v_bfe_i32"
@@ -2047,6 +2056,8 @@ fn llvm_vop3_bitfield_sources_match_exact_bytes_and_reference() {
     for (opcode, name, arity) in [
         (867, "v_bfm_b32", 2),
         (868, "v_bcnt_u32_b32", 2),
+        (869, "v_mbcnt_lo_u32_b32", 2),
+        (870, "v_mbcnt_hi_u32_b32", 2),
         (328, "v_bfe_u32", 3),
         (334, "v_alignbit_b32", 3),
         (882, "v_or3_b32", 3),
@@ -2115,7 +2126,7 @@ fn llvm_vop3_bitfield_sources_match_exact_bytes_and_reference() {
             }
         }
     }
-    assert_eq!(rows.len(), 434);
+    assert_eq!(rows.len(), 536);
     let assembly = rows
         .iter()
         .map(|(line, _)| format!("{line}\n"))

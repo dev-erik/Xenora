@@ -2226,3 +2226,27 @@ gpu = "fixture verified"
 recognized = true
 decoded = true
 llvm = "three-way passed"
+
+[[instruction]]
+form = "v_mbcnt_lo_u32_b32"
+encoding = "VOP3; checked sources with shared literal; modifiers excluded; Wave32 compute only, graphics rejected"
+representation = "8 B or 12 B with shared literal"
+lowering = "count SRC0 bits below the logical Wave32 lane and add SRC1 with uint wrapping; lane-aware comparison recomputation"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_mbcnt_hi_u32_b32"
+encoding = "VOP3; checked sources with shared literal; modifiers excluded; Wave32 compute only, graphics rejected"
+representation = "8 B or 12 B with shared literal"
+lowering = "copy SRC1 under Wave32; checked sources and EXEC destination retention; lane-aware comparison recomputation"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"

@@ -4,13 +4,13 @@ use xenora_decoder::{
     Architecture::Gfx1030, DecodeErrorKind, Instruction, VectorBitBinaryOp, VectorSource,
     VectorTernaryOp, decode, decode_at,
 };
-const OPS: [u32; 6] = [867, 868, 328, 334, 882, 376];
+const OPS: [u32; 8] = [869, 870, 867, 868, 328, 334, 882, 376];
 const FLOAT: [u32; 9] = [
     0x3f000000, 0xbf000000, 0x3f800000, 0xbf800000, 0x40000000, 0xc0000000, 0x40800000, 0xc0800000,
     0x3e22f983,
 ];
 fn arity(op: u32) -> usize {
-    if matches!(op, 867 | 868) { 2 } else { 3 }
+    if matches!(op, 867..=870) { 2 } else { 3 }
 }
 fn code(op: u32, dst: u8, raw: [u32; 3], literal: u32) -> Vec<u8> {
     [
@@ -36,8 +36,10 @@ fn source(raw: u32, literal: u32) -> Option<VectorSource> {
 fn expected(op: u32, dst: u8, src: [VectorSource; 3]) -> Instruction {
     let [src0, src1, src2] = src;
     match op {
-        867 | 868 => Instruction::VectorBitBinary {
+        867..=870 => Instruction::VectorBitBinary {
             op: match op {
+                869 => VectorBitBinaryOp::MbcntLoU32B32,
+                870 => VectorBitBinaryOp::MbcntHiU32B32,
                 867 => VectorBitBinaryOp::BfmB32,
                 868 => VectorBitBinaryOp::BcntU32B32,
                 _ => unreachable!(),
@@ -120,7 +122,7 @@ fn canonical_padding_and_each_modifier_bit() {
         }
     }
     // Nearby full-width/ternary opcodes are not admitted by a family catch-all.
-    for op in [336, 335, 375, 377, 866, 869, 870, 883] {
+    for op in [336, 335, 375, 377, 866, 883] {
         assert!(decode_at(Gfx1030, &code(op, 5, [257, 258, 259], 0), 0).is_err());
     }
 }
@@ -197,6 +199,8 @@ fn shared_literals_all_positions_truncation_and_stream_boundaries() {
 #[test]
 fn mnemonics_display_and_existing_add_domain() {
     for (op, name) in OPS.into_iter().zip([
+        "v_mbcnt_lo_u32_b32",
+        "v_mbcnt_hi_u32_b32",
         "v_bfm_b32",
         "v_bcnt_u32_b32",
         "v_bfe_u32",

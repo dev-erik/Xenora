@@ -45,7 +45,9 @@ const fn concat_forms<const N: usize>() -> [(&'static str, EncodingFamily); N] {
 }
 
 /// Decoded forms not yet described by the semantic registry.
-const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 110] = [
+const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 112] = [
+    ("V_MBCNT_LO_U32_B32", EncodingFamily::Vop3),
+    ("V_MBCNT_HI_U32_B32", EncodingFamily::Vop3),
     ("V_MAD_I32_I24", EncodingFamily::Vop3),
     ("V_MAD_U32_U24", EncodingFamily::Vop3),
     ("V_SAD_U8", EncodingFamily::Vop3),
@@ -1123,6 +1125,8 @@ impl CheckedVectorOp {
             0xd56c0000 => Self::Product(VectorProductOp::MulHiI32),
             0xd7630000 => Self::BitBinary(VectorBitBinaryOp::BfmB32),
             0xd7640000 => Self::BitBinary(VectorBitBinaryOp::BcntU32B32),
+            0xd7650000 => Self::BitBinary(VectorBitBinaryOp::MbcntLoU32B32),
+            0xd7660000 => Self::BitBinary(VectorBitBinaryOp::MbcntHiU32B32),
             0xd54a0000 => Self::Ternary(VectorTernaryOp::BfiB32),
             0xd76d0000 => Self::Ternary(VectorTernaryOp::Add3U32),
             0xd7710000 => Self::Ternary(VectorTernaryOp::AndOrB32),

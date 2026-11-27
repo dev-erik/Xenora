@@ -112,6 +112,8 @@ pub enum VectorProduct {
 pub enum BitBinary {
     BitFieldMask,
     CountBitsAdd,
+    MaskedCountLow,
+    MaskedCountHigh,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum VectorTernary {
@@ -550,6 +552,8 @@ pub fn decode(code: &[u8]) -> Result<Vec<DecodedInstruction>, ReferenceError> {
                                 | 867
                                 | 334
                                 | 868
+                                | 869
+                                | 870
                                 | 882
                                 | 376
                                 | 329
@@ -1030,6 +1034,8 @@ fn decode_vop3_integer(bytes: &[u8], offset: usize) -> Result<(Op, usize), Refer
             | 364
             | 867
             | 868
+            | 869
+            | 870
             | 265
             | 266
             | 267
@@ -1267,6 +1273,8 @@ fn decode_vop3_integer(bytes: &[u8], offset: usize) -> Result<(Op, usize), Refer
         881 => Op::VectorTernary(VectorTernary::AndOr, dst, args[0], args[1], args[2]),
         867 => Op::BitBinary(BitBinary::BitFieldMask, dst, args[0], args[1]),
         868 => Op::BitBinary(BitBinary::CountBitsAdd, dst, args[0], args[1]),
+        869 => Op::BitBinary(BitBinary::MaskedCountLow, dst, args[0], args[1]),
+        870 => Op::BitBinary(BitBinary::MaskedCountHigh, dst, args[0], args[1]),
         328 => Op::VectorTernary(
             VectorTernary::ExtractUnsigned,
             dst,
@@ -1645,6 +1653,13 @@ fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32
                         Op::BitBinary(BitBinary::CountBitsAdd, ..) => {
                             a.count_ones().wrapping_add(b)
                         }
+                        Op::BitBinary(BitBinary::MaskedCountLow, ..) => {
+                            // AMD RDNA2 §12.12: only positions below this Wave32 lane.
+                            // Count positions directly, independently of the MSL mask expression.
+                            let count = (0..lane).filter(|bit| (a >> bit) & 1 != 0).count();
+                            b.wrapping_add(count as u32)
+                        }
+                        Op::BitBinary(BitBinary::MaskedCountHigh, ..) => b,
                         Op::VectorTernary(VectorTernary::MinimumSigned, ..)
                         | Op::VectorTernary(VectorTernary::MaximumSigned, ..)
                         | Op::VectorTernary(VectorTernary::MedianSigned, ..) => {

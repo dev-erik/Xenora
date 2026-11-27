@@ -720,6 +720,20 @@ fn lift(
     storage: bool,
     extended: bool,
 ) -> Result<StageIr, CompileError> {
+    for decoded in decoded {
+        if matches!(
+            decoded.instruction,
+            Instruction::VectorBitBinary {
+                op: VectorBitBinaryOp::MbcntLoU32B32 | VectorBitBinaryOp::MbcntHiU32B32,
+                ..
+            }
+        ) {
+            return Err(CompileError::Verify {
+                offset: decoded.offset,
+                reason: "MBCNT requires the Wave32 compute lane contract",
+            });
+        }
+    }
     if extended {
         for decoded in decoded {
             let destination = match decoded.instruction {
@@ -2675,6 +2689,7 @@ fn emit_range(
                     op,
                     &format!("as_type<uint>({a})"),
                     &format!("as_type<uint>({b})"),
+                    "",
                 );
                 (
                     format!("{}.bits {a}, {b}", op.mnemonic()),

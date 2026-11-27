@@ -25,6 +25,10 @@ remains unsupported.
 - Extended the read-only RDNA2 planning CLI (`python3 -m qa rdna2`) with family/status filters, compact summaries, Codex-ready manifests under `artifacts/`, active-claim exclusion (family claims exclude those families; path-only claims block overlapping permitted files), coverage reconcile against `semantic_coverage` without inflating counts, and inventory diffs. Covered by `tests/qa/test_rdna2_plan.py`; planning only, no GPU production edits.
 
 ### Added
+- Added Wave32 compute masked-bit-count LO/HI instructions, with lane-aware
+  comparison recomputation, inactive destination retention and explicit graphics
+  rejection. Original LLVM fixtures and independent Metal readback cover the
+  bounded source modes; broader wave operations remain unsupported.
 - Added bounded SCC1 control-flow support and compute-only `s_waitcnt_vmcnt null,0`
   load waits, with independent original programs and native validation tests.
 - Corrected S3 stage assignment to include SOPP control, DS lane permutations and

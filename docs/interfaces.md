@@ -17,6 +17,15 @@ Empty EXEC suppresses vector arithmetic and moves. Reachable vector memory
 operations require full EXEC. Forward branches on EXEC or the vector condition
 code (VCC) test only their low halves. VCC must be initialized before use.
 
+The Wave32 compute contract also supports `V_MBCNT_LO_U32_B32` and
+`V_MBCNT_HI_U32_B32` with the existing checked VOP3 source modes. LO counts
+SRC0 bits below the logical lane and adds SRC1 with 32-bit wrapping; HI copies
+SRC1 in Wave32. EXEC gates destination writes, independently of the counted
+bits. Comparison expressions recompute the operation for each logical lane.
+Graphics rejects both forms, including unreachable occurrences. This adds no
+cross-lane data movement or Wave64 support. See the
+[wave-operation contract](shaders/control-wave-memory.md#s34-wave-and-lane).
+
 The native backend exposes `NativeCompute::new()` and `run_words(source, entry, input)` for trusted MSL. It binds input at index 0 and output at index 1, dispatches one invocation per word and returns owned readback after completion. `run_words_profiled` returns the same output plus measured library, pipeline, GPU and host durations for the benchmark harness; those timings are single submissions, not distributions. The caller runs generated MSL in a bounded child process. Raw MSL is a trusted developer input. Errors report the operation and backend detail. Across other stages, diagnostics carry a stage, error kind, optional byte offset and human-readable context.
 
 ## Synthetic guest experiment

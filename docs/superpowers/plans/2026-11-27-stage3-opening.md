@@ -18,3 +18,21 @@
 No stage is closed by this opening plan. Subsequent wave and memory increments need their own exact operand/semantic contracts and tests. The broader stage feature denominator remains under audit.
 
 Validated first increments and exact limitations are recorded in the [checkpoint](../../testing/stage3-control-memory-opening.md). S3.4 audit completion does not mean implementation completion.
+
+## Continuation: Wave32 masked bit count
+
+The request to complete S3.2, S3.4 and S3.5 remains broader than this increment.
+This checklist does not redefine full-stage acceptance as decoder coverage.
+
+- [x] Check public AMD semantics for MBCNT LO/HI and the existing Wave32 ABI.
+- [x] Implement typed decoding and lane-aware compute lowering; reject graphics.
+- [x] Add independently derived CPU execution, original LLVM assembly and readback cases.
+- [x] Validate source modes, aliasing, partial EXEC and final partial waves on Metal.
+- [x] Verify lane-dependent values inside recomputed comparison expressions.
+- [x] Run the LLVM oracle, regression gates and two independent reviews.
+- [x] Refresh recorded evidence, remaining scope and both generated shader maps; commit.
+
+Next control-flow work must retain target-boundary and termination guarantees.
+Next memory work must specify descriptors, address spaces and visibility before
+admitting additional forms. Cross-lane reads require a separate contract for
+inactive and absent source lanes; masked bit count alone does not provide it.

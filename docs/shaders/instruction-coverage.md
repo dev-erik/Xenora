@@ -196,6 +196,8 @@ The wider LLVM operand matrix exercises decoding only. ABI means application bin
 | `v_sad_u32` | VOP3; checked three sources; wrap and integer clamp | 8 B or 12 B with shared literal | yes | yes | three-way passed | integer compute and graphics; wrap and final saturation | implemented | fixture verified | fixture verified |
 | `s_cbranch_scc1` | Signed SOPP dword target; known compute SCC or constant/runtime graphics SCC; bounded complementary countdown guards only | `BF850001` | yes | yes | three-way passed | resolved compute conditional branch; graphics SCC complement with preserved condition state | implemented | fixture verified | fixture verified |
 | `s_waitcnt_vmcnt` | SOPK; exact null,0 only; synthetic compute pending-load contract; graphics unsupported | `BC7D0000` | yes | yes | three-way passed | verified compute load wait; store completion remains separate | implemented | fixture verified | fixture verified |
+| `v_mbcnt_lo_u32_b32` | VOP3; checked sources with shared literal; modifiers excluded; Wave32 compute only, graphics rejected | 8 B or 12 B with shared literal | yes | yes | three-way passed | count SRC0 bits below the logical Wave32 lane and add SRC1 with uint wrapping; lane-aware comparison recomputation | implemented | fixture verified | fixture verified |
+| `v_mbcnt_hi_u32_b32` | VOP3; checked sources with shared literal; modifiers excluded; Wave32 compute only, graphics rejected | 8 B or 12 B with shared literal | yes | yes | three-way passed | copy SRC1 under Wave32; checked sources and EXEC destination retention; lane-aware comparison recomputation | implemented | fixture verified | fixture verified |
 <!-- status:instructions:end -->
 
 ## Automated three-way comparison
