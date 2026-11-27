@@ -4414,8 +4414,8 @@ fn original_guest_backed_copy_forbidden_roles_and_failed_submit_preserve_destina
         2,
         Some(u64::MAX),
     );
-    // Whole/region copies may only target owned storage. Image transfers
-    // still reject guest-backed storage in either role, even for in-bounds ranges.
+    // Whole, region and image copies may only target owned storage.
+    // Guest-backed image sources are now valid, including in-bounds offsets.
     guest.call(
         42,
         &[H(list), H(forbidden_destination), H(seed)],
@@ -4436,7 +4436,7 @@ fn original_guest_backed_copy_forbidden_roles_and_failed_submit_preserve_destina
         Some(u64::MAX),
     );
     let texture = guest.handle(6, &[H(device), I(1), I(1), I(1), I(COPY_DEST)]);
-    guest.call(
+    guest.ok(
         44,
         &[
             H(list),
@@ -4451,8 +4451,6 @@ fn original_guest_backed_copy_forbidden_roles_and_failed_submit_preserve_destina
             I(1),
             I(1),
         ],
-        2,
-        Some(u64::MAX),
     );
     guest.call(
         44,
@@ -4472,6 +4470,8 @@ fn original_guest_backed_copy_forbidden_roles_and_failed_submit_preserve_destina
         2,
         Some(u64::MAX),
     );
+    // Discard the accepted image recording before the single-copy failure case.
+    guest.ok(11, &[H(list), H(allocator)]);
     // A valid earlier whole copy must not publish when a later barrier is
     // invalid. This is validation failure evidence, not a GPU/device fault.
     guest.barrier(list, destination, COPY_SOURCE, COPY_DEST);
@@ -6479,3 +6479,6 @@ mod storage_views;
 
 #[path = "guest_graphics/descriptor_tables.rs"]
 mod descriptor_tables;
+
+#[path = "guest_graphics/guest_image_sources.rs"]
+mod guest_image_sources;

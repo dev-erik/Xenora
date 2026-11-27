@@ -2084,8 +2084,8 @@ impl GraphicsContext {
         self.copy_layout_with_guest_source(handle, false)
     }
 
-    /// Whole-buffer and buffer-region source snapshots may resolve guest backing;
-    /// destinations and image-copy endpoints remain owned-only.
+    /// Source buffers may resolve guest backing through an admission-time snapshot;
+    /// destinations and texture backings remain owned-only.
     fn copy_layout_with_guest_source(
         &self,
         handle: GraphicsHandle,
@@ -2281,7 +2281,7 @@ impl GraphicsContext {
                         return Err(GraphicsError::InvalidDescriptor);
                     }
                     let source_layout =
-                        self.copy_submission_layout(source, image.is_none(), mip_copy, typed_copy)?;
+                        self.copy_submission_layout(source, true, mip_copy, typed_copy)?;
                     let layout =
                         self.copy_submission_layout(destination, false, mip_copy, typed_copy)?;
                     if (matches!(source_layout, GraphicsCopyLayout::Rgba8Array { .. })
@@ -2379,8 +2379,7 @@ impl GraphicsContext {
                 return Err(GraphicsError::ResourceLifetimeViolation);
             }
         }
-        let source_layout =
-            self.copy_submission_layout(source, image.is_none(), mip_copy, typed_copy)?;
+        let source_layout = self.copy_submission_layout(source, true, mip_copy, typed_copy)?;
         let produced = preparation.produced.get(&source).copied();
         if produced.is_some()
             && self
@@ -5684,7 +5683,7 @@ impl GraphicsContext {
             return Err(GraphicsError::InvalidDescriptor);
         }
         source_location.validate(
-            self.copy_layout_for_transfer(source, false, allow_mips, allow_arrays)?,
+            self.copy_layout_for_transfer(source, true, allow_mips, allow_arrays)?,
             extent,
         )?;
         destination_location.validate(
@@ -7940,6 +7939,15 @@ mod submission_history_tests {
 
     #[test]
     fn guest_copy_budget_rejection_precedes_guest_memory_read() {
+        guest_snapshot_budget_rejection_precedes_read(false);
+    }
+
+    #[test]
+    fn guest_image_copy_budget_rejection_precedes_guest_memory_read() {
+        guest_snapshot_budget_rejection_precedes_read(true);
+    }
+
+    fn guest_snapshot_budget_rejection_precedes_read(image: bool) {
         struct Pending;
         impl GraphicsQueuedPendingWork for Pending {
             fn poll(&mut self) -> Option<Result<GraphicsQueuedWorkOutput, GraphicsError>> {
@@ -7954,10 +7962,15 @@ mod submission_history_tests {
         let device = ctx.create_device().unwrap();
         let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let captured = calls.clone();
-        ctx.set_metal_copy_queued_backend(Default::default(), move |_| {
+        let renderer = move |_| -> Result<Box<dyn GraphicsQueuedPendingWork>, GraphicsError> {
             captured.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             Ok(Box::new(Pending))
-        });
+        };
+        if image {
+            ctx.set_metal_image_copy_queued_backend(Default::default(), renderer);
+        } else {
+            ctx.set_metal_copy_queued_backend(Default::default(), renderer);
+        }
         let queues: [GraphicsHandle; 2] = std::array::from_fn(|_| {
             ctx.create_command_queue(device, CommandListType::Direct)
                 .unwrap()
@@ -7986,11 +7999,43 @@ mod submission_history_tests {
                     address,
                 )
                 .unwrap();
+            let destination_desc = if image && slot == 1 {
+                ResourceDesc {
+                    dimension: ResourceDimension::Texture2D,
+                    width: 1,
+                    height: 1,
+                    depth_or_array_size: 1,
+                    mip_levels: 1,
+                    format_rgba8: true,
+                }
+            } else {
+                desc.clone()
+            };
             let destination = ctx
-                .create_committed_resource(device, desc.clone(), ResourceStates::COPY_DEST, None)
+                .create_committed_resource(
+                    device,
+                    destination_desc,
+                    ResourceStates::COPY_DEST,
+                    None,
+                )
                 .unwrap();
-            ctx.cmd_copy_resource(lists[slot], destination, source)
+            if image && slot == 1 {
+                ctx.cmd_copy_image(
+                    lists[slot],
+                    destination,
+                    GraphicsImageCopyLocation::Rgba8 { origin: (0, 0) },
+                    source,
+                    GraphicsImageCopyLocation::Buffer {
+                        offset: 0,
+                        bytes_per_row: 4,
+                    },
+                    (1, 1),
+                )
                 .unwrap();
+            } else {
+                ctx.cmd_copy_resource(lists[slot], destination, source)
+                    .unwrap();
+            }
             ctx.close_command_list(lists[slot]).unwrap();
         }
         let memory = GuestMemory::new();
@@ -8013,6 +8058,21 @@ mod submission_history_tests {
             ctx.queued_copy_allocation_bytes(),
             MAX_CONTEXT_RESOURCE_BYTES
         );
+        if image {
+            // One copied RGBA8 texel would need 20 bytes under the old copy
+            // ledger (8 output/staging + 8 source + 4 prior). The complete
+            // five-byte source rounds to eight and instead requires 28 bytes.
+            // Leave room for the rectangle only; full-source admission must fail
+            // before touching the deliberately unmapped fifth source byte.
+            ctx.queued.get_mut(&receipt).unwrap().copy_allocation_bytes =
+                MAX_CONTEXT_RESOURCE_BYTES - 20;
+            assert_eq!(
+                ctx.submit_command_list(queues[1], lists[1], &memory),
+                Err(GraphicsError::ResourceLifetimeViolation)
+            );
+            assert_eq!(ctx.next_id, next_id);
+            assert!(!ctx.queue_values.contains_key(&queues[1]));
+        }
         ctx.queued.get_mut(&receipt).unwrap().copy_allocation_bytes = charge;
         assert!(matches!(
             ctx.submit_command_list(queues[1], lists[1], &memory),

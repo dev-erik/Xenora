@@ -18,6 +18,10 @@ remains unsupported.
 - Extended the read-only RDNA2 planning CLI (`python3 -m qa rdna2`) with family/status filters, compact summaries, Codex-ready manifests under `artifacts/`, active-claim exclusion (family claims exclude those families; path-only claims block overlapping permitted files), coverage reconcile against `semantic_coverage` without inflating counts, and inventory diffs. Covered by `tests/qa/test_rdna2_plan.py`; planning only, no GPU production edits.
 
 ### Added
+- Guest-backed buffers can supply pitched image transfers through the existing
+  image, mip/array and typed-copy operations. Submission snapshots the complete
+  checked logical buffer after budget validation; pending work remains independent
+  of subsequent guest writes or unmapping. Destinations remain owned resources.
 - Immutable recorded descriptor tables through guest opcodes70–74, with four
   texture and sampler slots, atomic updates and bounded retained revisions.
   An additive shader ABI supports GPU selection by checked integer uniforms;

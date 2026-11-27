@@ -273,6 +273,14 @@ impl GraphicsContext {
         &self,
         h: GraphicsHandle,
     ) -> Result<GraphicsCopyLayout, GraphicsError> {
+        self.typed_copy_layout_with_guest_source(h, false)
+    }
+
+    fn typed_copy_layout_with_guest_source(
+        &self,
+        h: GraphicsHandle,
+        allow_guest_source: bool,
+    ) -> Result<GraphicsCopyLayout, GraphicsError> {
         if let Some(d) = self.depth_resources.get(&h) {
             return Ok(GraphicsCopyLayout::TypedTexture(d.typed_desc));
         }
@@ -280,11 +288,11 @@ impl GraphicsContext {
             .resources
             .get(&h)
             .ok_or(GraphicsError::InvalidResourceHandle)?;
+        if r.desc.dimension == ResourceDimension::Buffer {
+            return self.copy_layout_with_guest_source(h, allow_guest_source);
+        }
         if r.guest_backing_addr.is_some() {
             return Err(GraphicsError::InvalidDescriptor);
-        }
-        if r.desc.dimension == ResourceDimension::Buffer {
-            return self.copy_layout(h);
         }
         let desc = GraphicsTypedTextureDesc {
             format: r.texture_format.ok_or(GraphicsError::InvalidDescriptor)?,
@@ -310,7 +318,7 @@ impl GraphicsContext {
         typed: bool,
     ) -> Result<GraphicsCopyLayout, GraphicsError> {
         if typed {
-            self.typed_copy_layout(h)
+            self.typed_copy_layout_with_guest_source(h, guest)
         } else {
             self.copy_layout_for_transfer(h, guest, mips, mips)
         }
@@ -423,7 +431,7 @@ impl GraphicsContext {
             return Err(GraphicsError::InvalidDescriptor);
         }
         self.validate_typed_pair(
-            self.typed_copy_layout(source)?,
+            self.typed_copy_layout_with_guest_source(source, true)?,
             self.typed_copy_layout(destination)?,
             source_location,
             destination_location,

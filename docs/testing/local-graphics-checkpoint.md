@@ -16,6 +16,41 @@ run ends with `PASS`. Quick mode also rejects filters that select no passing tes
 Use `--help` for prerequisites. These tests render offscreen and compare pixels;
 they do not open an application window. Avoid other GPU test runs at the same time.
 
+## S2.6 increment: guest-buffer image sources
+
+27 November 2026. Guest-backed buffers now supply pitched, mip/array and typed
+image copies (opcodes44/50/54). Submission snapshots the entire logical source,
+including padding and uncopied tails, after full-budget admission. Destinations
+remain owned; partial copies retain exact produced destination contents.
+
+Seven focused CPU tests (six integration and one private budget regression) and
+three original guest tests cover snapshots, readable ranges, retry/refund,
+capability denial, source retirement and preservation of untouched contents.
+Mapping/remapping and read-only permission evidence is CPU-side. Native evidence
+uses the queued adapter; it does not establish three-adapter coverage. Compressed
+format checks cover a single-block mip tail, not multirow compressed pitch.
+
+All nine gates passed in `artifacts/validation-full.TACM0r`: **994 workspace tests
+passed, zero failed, 140 ignored**; the native suite reported **447 passed, zero
+failed, one ignored**. Suites overlap and ignored tests are not GPU evidence.
+An older source-rejection expectation was updated for the new contract; its list
+is reset before the separate invalid-barrier atomicity check so that failure
+remains independently exercised.
+
+Four isolated mutations failed meaningful assertions: undercharging the logical
+source, omitting an unreadable tail, reading the owned shadow instead of guest
+bytes, and dropping the produced destination prior. The last caused incorrect
+literal native readback. Each mutation was restored exactly; an independent
+reviewer checked failures and restoration hashes. Logs remain in
+`artifacts/s26-image-mutations`. Two independent reviews accepted the bounded
+increment, with their final-gate condition satisfied by the run above.
+
+The [implementation checklist](../superpowers/plans/2026-11-27-guest-image-sources.md)
+records this increment. **S2.6 remains open** for guest-backed texture creation,
+guest destination publication (permissions, remapping, lifetime and atomicity),
+and broader coherence/integrated acceptance. S2.7 is separate. No game execution
+or Xbox hardware equivalence is established.
+
 ## S2.5 completion: descriptor tables and runtime indexing
 
 27 November 2026. The [descriptor contract](../descriptor-tables.md) adds immutable

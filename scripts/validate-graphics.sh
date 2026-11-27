@@ -7,7 +7,7 @@ usage() {
 Usage: scripts/validate-graphics.sh [quick|full]
 
 quick (default): focused CPU and native Metal checks for produced geometry,
-                 descriptor tables/indexing, views, samplers, guest-backed copies, R8 sampling, mip/slice transfers, array sampling, storage writes, typed formats/roles and compute caching.
+                 guest image sources, descriptor tables/indexing, views, samplers, guest-backed copies, R8 sampling, mip/slice transfers, array sampling, storage writes, typed formats/roles and compute caching.
 full:            all nine repository validation gates, including the GPU suite.
 
 Run on native Apple Silicon with the repository build dependencies installed.
@@ -90,6 +90,9 @@ run_tests() {
 }
 printf 'Running %s validation. Logs: %s\n' "$mode" "$log_dir"
 if [[ "$mode" == quick ]]; then
+    run_tests guest-image-source-cpu cargo test --locked -p xenora-loader --test guest_image_sources
+    run_tests guest-image-source-budget cargo test --locked -p xenora-loader --lib guest_image_copy_budget_rejection_precedes_guest_memory_read
+    run_tests guest-image-source-native cargo test --locked -p xenora-ffi --features gpu-tests --test guest_graphics original_guest_image_sources_ -- --nocapture --test-threads=1
     run_tests descriptor-compiler cargo test --locked -p xenora-shader --test graphics_descriptors
     run_tests descriptor-loader cargo test --locked -p xenora-loader --test descriptor_tables
     run_tests descriptor-native cargo test --locked -p xenora-metal --features gpu-tests --test native_compute descriptor_tables:: -- --nocapture --test-threads=1

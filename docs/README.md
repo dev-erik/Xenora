@@ -16,6 +16,8 @@ either path. The [changelog](../CHANGELOG.md) records notable changes.
 
 ## Native Metal graphics
 
+- [Guest-backed image sources](graphics-call-v1.md#guest-backed-buffer-image-sources) — Checked submission-time buffer snapshots for pitched, mip/array and typed transfers; [implementation plan](superpowers/plans/2026-11-27-guest-image-sources.md).
+
 - [Descriptor tables and runtime indexing](descriptor-tables.md) — Immutable recorded revisions, four-slot bindings, selector rules and validation commands.
 
 - [Selected shader storage](graphics-call-v1.md#bounded-shader-storage-views) — Ordered pixel-address stores, exact prior contents and atomic full-root publication.

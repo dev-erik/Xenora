@@ -1917,7 +1917,7 @@ fn cpu_guest_copy_invalid_completion_preserves_destination_bytes_and_state() {
 }
 
 #[test]
-fn cpu_guest_copy_source_extension_does_not_admit_guest_destinations_or_image_sources() {
+fn cpu_guest_copy_source_extension_does_not_admit_guest_destinations() {
     let mut h = CopyHarness::new();
     let guest = h.guest_source(0x1800, 16);
     let owned = h.resource(false, &[0; 16]);
@@ -1933,13 +1933,13 @@ fn cpu_guest_copy_source_extension_does_not_admit_guest_destinations_or_image_so
         h.ctx
             .cmd_copy_image(
                 list,
-                texture,
-                GraphicsImageCopyLocation::Rgba8 { origin: (0, 0) },
                 guest,
                 GraphicsImageCopyLocation::Buffer {
                     offset: 0,
                     bytes_per_row: 4
                 },
+                texture,
+                GraphicsImageCopyLocation::Rgba8 { origin: (0, 0) },
                 (1, 1)
             )
             .is_err()

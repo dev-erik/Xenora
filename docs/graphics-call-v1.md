@@ -636,8 +636,8 @@ fresh bytes. Guest-memory faults retain the existing guest fault behavior.
 Pending work owns the snapshot independently of guest mappings and source handles.
 The synchronous submission call defines the capture boundary; it does not promise
 an atomic snapshot against concurrent external writers. Guest-backed destinations,
-image copies from guest-backed resources and general coherent shared memory
-remain unsupported. The native backend and shader ABI are unchanged.
+guest-backed texture creation and general coherent shared memory remain unsupported.
+Guest-backed buffer image sources are described below. The native backend and shader ABI are unchanged.
 
 
 ### Guest-backed buffer-region sources
@@ -652,7 +652,8 @@ is GPU-produced. Existing dependencies, leases and alignment-capability checks a
 
 Recording reads no guest bytes. Pre-submit writes are observed, post-submit writes
 cannot change the retained snapshot, and failed admission is retryable with fresh
-bytes. Guest-backed destinations and guest-backed image transfers remain rejected.
+bytes. Guest-backed destinations remain rejected; image source transfers use the
+same snapshot boundary described below.
 No guest opcode or native backend ABI is added by this extension.
 
 
@@ -954,3 +955,28 @@ not Xbox hardware equivalence or commercial game execution support.
 
 [Opcodes70–74](descriptor-tables.md) add immutable recorded tables, four-slot typed
 pipelines and bounded GPU descriptor indexing. Legacy bindings preserve their ABI.
+
+## Guest-backed buffer image sources
+
+Buffers created by opcode49 may supply pitched buffer locations to CopyImage
+(opcode44), mip/array subresource copies (opcode50), and typed copies (opcode54).
+Opcode48 remains sampler/view binding and is unchanged. The Rust mip-copy entry
+point also accepts the same source role. Destination resources remain owned.
+
+Recording validates logical bounds, offsets, row pitch, mip/slice selection and
+format/block rules without reading guest memory. Submission first validates the
+complete transfer budget, then snapshots the entire logical source buffer through
+checked guest reads. Padding and uncopied tail bytes must also be readable;
+read-only mapping is sufficient. The synchronous submit call is the capture boundary,
+not an atomic snapshot against concurrent external writers.
+
+Writes before submission are visible. After successful submission, guest writes,
+unmapping and source-handle destruction cannot change the retained bytes. A memory
+fault or backend admission failure publishes no destination bytes and consumes no
+logical queue point; retry captures the then-current source. Existing format and
+backend capability gates still apply, including BC block alignment and runtime support.
+
+Exact produced destination versions remain the prior contents for partial copies.
+Untouched borders, mips and array slices are preserved through publication. This
+extension does not add guest-backed textures, guest destinations, automatic mapping
+coherence or writeback. Those remain separate S2.6 work.

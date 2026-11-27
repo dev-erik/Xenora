@@ -1448,8 +1448,8 @@ validates the complete payload budget before copying the checked logical range
 into an immutable `GraphicsCopyInput::Host`. Recording does not capture bytes;
 post-submission changes and handle destruction cannot alter the pending snapshot.
 Failed admission leaves queue points and destination contents unchanged, and a
-retry captures fresh bytes. Guest-backed destinations and image copies
-remain rejected. This is bounded submission-time copying, not coherent guest/GPU
+retry captures fresh bytes. Guest-backed destinations remain rejected; pitched
+image-source transfers are supported as described below. This is bounded submission-time copying, not coherent guest/GPU
 memory; see the [guest ABI](graphics-call-v1.md#guest-backed-whole-buffer-copy-sources).
 
 
@@ -1552,3 +1552,12 @@ Metal's [array length](https://developer.apple.com/documentation/metal/mtltextur
 and [texture blit](https://developer.apple.com/documentation/metal/mtlblitcommandencoder/copy(from:sourceslice:sourcelevel:sourceorigin:sourcesize:to:destinationslice:destinationlevel:destinationorigin:))
 contracts distinguish slice selection from the 2D origin and depth. Each transfer
 uses one slice with origin z0 and depth1; buffer row-pitch rules remain unchanged.
+
+### Guest-backed image source snapshots
+
+The source-aware copy-layout path accepts guest-backed buffers for legacy, mip/array
+and typed image transfers. Destinations and commit identity checks continue using
+owned-only layouts. The native request stays unchanged: checked guest bytes become
+an immutable Host input, charged for the full logical buffer before capture. Exact
+Produced destination dependencies and complete-backing preservation remain intact.
+See [guest image sources](graphics-call-v1.md#guest-backed-buffer-image-sources).
