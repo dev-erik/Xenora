@@ -721,6 +721,12 @@ fn lift(
     extended: bool,
 ) -> Result<StageIr, CompileError> {
     for decoded in decoded {
+        if matches!(decoded.instruction, Instruction::BufferLoadNarrow { .. }) {
+            return Err(CompileError::Verify {
+                offset: decoded.offset,
+                reason: "narrow buffer loads require the synthetic compute input contract",
+            });
+        }
         if matches!(
             decoded.instruction,
             Instruction::BranchExecNonZero { .. } | Instruction::BranchVccNonZero { .. }

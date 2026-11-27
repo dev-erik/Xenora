@@ -3,13 +3,14 @@
 use std::fmt;
 
 pub use xenora_isa::{
-    Architecture, CompareRelation, ExportTarget, Instruction, InterpolationPhase, ScalarAluOp,
-    ScalarCompareOp, ScalarSource, ScalarUnaryOp, VectorAluOp, VectorBinaryOp, VectorBitBinaryOp,
-    VectorClampOp, VectorCompareOp, VectorMadSadOp, VectorProductOp, VectorSource, VectorTernaryOp,
-    VectorUnaryOp,
+    Architecture, BufferLoadKind, CompareRelation, ExportTarget, Instruction, InterpolationPhase,
+    ScalarAluOp, ScalarCompareOp, ScalarSource, ScalarUnaryOp, VectorAluOp, VectorBinaryOp,
+    VectorBitBinaryOp, VectorClampOp, VectorCompareOp, VectorMadSadOp, VectorProductOp,
+    VectorSource, VectorTernaryOp, VectorUnaryOp,
 };
 use xenora_isa::{
-    BUFFER_LOAD_DWORD, BUFFER_STORE_DWORD, EXP, IMAGE_SAMPLE_LZ, IMAGE_STORE, S_BRANCH,
+    BUFFER_LOAD_DWORD, BUFFER_LOAD_SBYTE, BUFFER_LOAD_SSHORT, BUFFER_LOAD_UBYTE,
+    BUFFER_LOAD_USHORT, BUFFER_STORE_DWORD, EXP, IMAGE_SAMPLE_LZ, IMAGE_STORE, S_BRANCH,
     S_CBRANCH_EXECNZ, S_CBRANCH_EXECZ, S_CBRANCH_SCC0, S_CBRANCH_SCC1, S_CBRANCH_VCCNZ,
     S_CBRANCH_VCCZ, S_ENDPGM, S_MOV_B32, S_WAITCNT, S_WAITCNT_VMCNT, S_WAITCNT_VSCNT, V_ADD_F32,
     V_AND_B32, V_ASHRREV_I32, V_CMP_EQ_I32, V_CMP_EQ_U32, V_CMP_GE_I32, V_CMP_GE_U32, V_CMP_GT_I32,
@@ -45,7 +46,7 @@ const fn concat_forms<const N: usize>() -> [(&'static str, EncodingFamily); N] {
 }
 
 /// Decoded forms not yet described by the semantic registry.
-const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 114] = [
+const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 118] = [
     ("V_MBCNT_LO_U32_B32", EncodingFamily::Vop3),
     ("V_MBCNT_HI_U32_B32", EncodingFamily::Vop3),
     ("V_MAD_I32_I24", EncodingFamily::Vop3),
@@ -77,6 +78,10 @@ const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 114] = [
     ("V_FFBL_B32", EncodingFamily::Vop3),
     ("V_FFBH_I32", EncodingFamily::Vop3),
     ("BUFFER_LOAD_DWORD", EncodingFamily::Mubuf),
+    ("BUFFER_LOAD_UBYTE", EncodingFamily::Mubuf),
+    ("BUFFER_LOAD_SBYTE", EncodingFamily::Mubuf),
+    ("BUFFER_LOAD_USHORT", EncodingFamily::Mubuf),
+    ("BUFFER_LOAD_SSHORT", EncodingFamily::Mubuf),
     ("BUFFER_STORE_DWORD", EncodingFamily::Mubuf),
     ("EXP", EncodingFamily::Exp),
     ("IMAGE_SAMPLE_LZ", EncodingFamily::Mimg),
@@ -343,6 +348,27 @@ fn unsupported(mnemonic: &'static str, detail: &'static str) -> DecodeErrorKind 
 fn decode_gfx1030(bytes: &[u8], offset: usize) -> Result<(Instruction, u8), DecodeErrorKind> {
     let first = word(bytes, 4)?;
 
+    for (opcode, kind) in [
+        (BUFFER_LOAD_UBYTE, BufferLoadKind::Ubyte),
+        (BUFFER_LOAD_SBYTE, BufferLoadKind::Sbyte),
+        (BUFFER_LOAD_USHORT, BufferLoadKind::Ushort),
+        (BUFFER_LOAD_SSHORT, BufferLoadKind::Sshort),
+    ] {
+        if opcode.matches(first) {
+            let len = opcode.byte_len();
+            let second = word(bytes, len)?;
+            let (data, index, resource) = buffer_operands(first, second, kind.mnemonic())?;
+            return Ok((
+                Instruction::BufferLoadNarrow {
+                    kind,
+                    data,
+                    index,
+                    resource,
+                },
+                len,
+            ));
+        }
+    }
     if BUFFER_LOAD_DWORD.matches(first) {
         let len = BUFFER_LOAD_DWORD.byte_len();
         let second = word(bytes, len)?;

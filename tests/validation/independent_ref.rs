@@ -160,7 +160,7 @@ enum Insn {
     VUnary(Unary, u8, CmpSrc),
     VAddF(u8, u8, u8),
     VMulF(u8, u8, u8),
-    Load(u8),
+    Load(u8, u8, bool),
     Store(u8),
     WaitRead,
     WaitWrite,
@@ -188,6 +188,7 @@ struct Lane {
     input: u32,
     vgpr: [Option<u32>; 256],
     pending_read: Option<u8>,
+    pending_value: u32,
     pending_write: Option<u32>,
     written: Option<u32>,
     /// A lane-local failure; the lane stops executing.
@@ -215,6 +216,7 @@ fn run_wave(program: &[(usize, Insn)], wave: &[u32]) -> Result<Vec<u32>, String>
             input,
             vgpr: [None; 256],
             pending_read: None,
+            pending_value: 0,
             pending_write: None,
             written: None,
             error: None,
@@ -1113,7 +1115,7 @@ fn lane_step(
     }
     if execution_mask.count_ones() < 32 {
         match insn {
-            Insn::Load(_) | Insn::Store(_) => {
+            Insn::Load(..) | Insn::Store(_) => {
                 return Err(format!(
                     "{offset:#x}: incomplete EXEC on a buffer instruction"
                 ));
@@ -1197,10 +1199,21 @@ fn lane_step(
     };
     let pending_read = lane.pending_read;
     let value = match insn {
-        Insn::Load(data) => {
+        Insn::Load(data, width, signed) => {
             if data == 0 || pending_read.is_some() {
                 return Err(format!("{offset:#x}: invalid or overlapping load"));
             }
+            // Reconstruct the loaded low bits individually; replicate the sign
+            // bit only above the loaded width. Original fixed four-byte stride.
+            let sign = signed && lane.input & (1 << (width - 1)) != 0;
+            lane.pending_value = (0..32).fold(0, |value, bit| {
+                let set = if bit < width {
+                    lane.input & (1 << bit) != 0
+                } else {
+                    sign
+                };
+                value | (u32::from(set) << bit)
+            });
             lane.pending_read = Some(data);
             return Ok(());
         }
@@ -1214,7 +1227,7 @@ fn lane_step(
         }
         Insn::WaitRead => {
             if let Some(dst) = lane.pending_read.take() {
-                lane.vgpr[dst as usize] = Some(lane.input);
+                lane.vgpr[dst as usize] = Some(lane.pending_value);
             }
             return Ok(());
         }
@@ -1683,8 +1696,11 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
 
     // The synthetic ABI permits only idxen with zero offsets. Only the
     // data VGPR varies across each complete eight-byte encoding.
-    if matches!(first, 0xe030_2000 | 0xe070_2000) {
-        let load = first == 0xe030_2000;
+    if matches!(
+        first,
+        0xe020_2000 | 0xe024_2000 | 0xe028_2000 | 0xe02c_2000 | 0xe030_2000 | 0xe070_2000
+    ) {
+        let load = first != 0xe070_2000;
         let expected = if load { 0x8000_0000 } else { 0x8001_0000 };
         let second = word(code, offset + 4)?;
         if second & 0xffff_00ff != expected {
@@ -1693,7 +1709,14 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
         let data = (second >> 8) as u8;
         return Ok((
             if load {
-                Insn::Load(data)
+                let (width, signed) = match first {
+                    0xe020_2000 => (8, false),
+                    0xe024_2000 => (8, true),
+                    0xe028_2000 => (16, false),
+                    0xe02c_2000 => (16, true),
+                    _ => (32, false),
+                };
+                Insn::Load(data, width, signed)
             } else {
                 Insn::Store(data)
             },

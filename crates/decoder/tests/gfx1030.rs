@@ -314,6 +314,26 @@ fn reference_op(instruction: Instruction) -> Op {
             index,
             resource,
         },
+        Instruction::BufferLoadNarrow {
+            kind,
+            data,
+            index,
+            resource,
+        } => {
+            let (bytes, signed) = match kind {
+                xenora_decoder::BufferLoadKind::Ubyte => (1, false),
+                xenora_decoder::BufferLoadKind::Sbyte => (1, true),
+                xenora_decoder::BufferLoadKind::Ushort => (2, false),
+                xenora_decoder::BufferLoadKind::Sshort => (2, true),
+            };
+            Op::LoadNarrow {
+                bytes,
+                signed,
+                data,
+                index,
+                resource,
+            }
+        }
         Instruction::BufferStoreDword {
             data,
             index,
@@ -781,10 +801,11 @@ fn compares_fixture_instructions_against_llvm() {
         include_bytes!("../../../fixtures/rdna2/wait-vmcnt.bin"),
         include_bytes!("../../../fixtures/rdna2/mbcnt.bin"),
         include_bytes!("../../../fixtures/rdna2/mask-nonzero-branch.bin"),
+        include_bytes!("../../../fixtures/rdna2/buffer-narrow-load.bin"),
     ] {
         count += compare_against_llvm(fixture, &mut forms);
     }
-    assert_eq!(forms.len(), 170, "forms compared: {forms:?}");
+    assert_eq!(forms.len(), 174, "forms compared: {forms:?}");
     eprintln!(
         "{count} three-way instruction comparisons across {} forms",
         forms.len()
@@ -843,6 +864,10 @@ fn assemble_matrix() -> Vec<u8> {
     let mut assembly = String::from(
         "
         buffer_load_dword v255, v128, s[100:103], 0 idxen
+        buffer_load_ubyte v255, v128, s[100:103], 0 idxen
+        buffer_load_sbyte v255, v128, s[100:103], 0 idxen
+        buffer_load_ushort v255, v128, s[100:103], 0 idxen
+        buffer_load_sshort v255, v128, s[100:103], 0 idxen
         buffer_store_dword v128, v255, s[96:99], 0 idxen
         v_and_b32_e32 v255, v128, v254
         v_xor_b32_e32 v128, v255, v127

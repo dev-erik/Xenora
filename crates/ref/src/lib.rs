@@ -44,6 +44,14 @@ pub enum Op {
         index: u8,
         resource: u8,
     },
+    /// Read the low byte or halfword of the lane's four-byte input element.
+    LoadNarrow {
+        bytes: u8,
+        signed: bool,
+        data: u8,
+        index: u8,
+        resource: u8,
+    },
     Store {
         data: u8,
         index: u8,
@@ -483,6 +491,9 @@ pub fn execute(code: &[u8], input: &[u32]) -> Result<Vec<u32>, ReferenceError> {
             }
             Op::Load {
                 index, resource, ..
+            }
+            | Op::LoadNarrow {
+                index, resource, ..
             } if (index, resource) != (0, 0) => {
                 return Err(error(
                     instruction.offset,
@@ -607,7 +618,7 @@ pub fn decode(code: &[u8]) -> Result<Vec<DecodedInstruction>, ReferenceError> {
             [
                 0,
                 0x20,
-                opcode @ (0x30 | 0x70),
+                opcode @ (0x20 | 0x24 | 0x28 | 0x2c | 0x30 | 0x70),
                 0xe0,
                 index,
                 data,
@@ -616,7 +627,15 @@ pub fn decode(code: &[u8]) -> Result<Vec<DecodedInstruction>, ReferenceError> {
                 ..,
             ] => {
                 let (data, index, resource) = (*data, *index, *group * 4);
-                let op = if *opcode == 0x30 {
+                let op = if *opcode < 0x30 {
+                    Op::LoadNarrow {
+                        bytes: if *opcode < 0x28 { 1 } else { 2 },
+                        signed: *opcode & 4 != 0,
+                        data,
+                        index,
+                        resource,
+                    }
+                } else if *opcode == 0x30 {
                     Op::Load {
                         data,
                         index,
@@ -1393,6 +1412,7 @@ fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32
     let mut lane_derived_vcc = false;
     let mut target = 0;
     let mut pending_read = None;
+    let mut pending_format = None;
     let mut pending_write = vec![None; lanes];
     let mut output = vec![None; lanes];
     for (position, &DecodedInstruction { offset, op, .. }) in program.iter().enumerate() {
@@ -1444,7 +1464,7 @@ fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32
                         read_scalar(Source::Register(src))?;
                     }
                 }
-                Op::Load { .. } | Op::Store { .. } => {
+                Op::Load { .. } | Op::LoadNarrow { .. } | Op::Store { .. } => {
                     return Err(error(offset, "vector memory requires full Wave32 EXEC"));
                 }
                 _ => {}
@@ -1453,7 +1473,7 @@ fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32
         // Per-lane results of a vector ALU instruction, applied after all lanes read.
         let mut results: Vec<Option<(u8, u32)>> = vec![None; lanes];
         match op {
-            Op::Load { data: dst, .. } => {
+            Op::Load { data: dst, .. } | Op::LoadNarrow { data: dst, .. } => {
                 if dst == 0 || pending_read.is_some() {
                     return Err(error(
                         offset,
@@ -1461,6 +1481,10 @@ fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32
                     ));
                 }
                 pending_read = Some(dst);
+                pending_format = match op {
+                    Op::LoadNarrow { bytes, signed, .. } => Some((bytes, signed)),
+                    _ => None,
+                };
             }
             Op::Store { data: src, .. } => {
                 for lane in 0..lanes {
@@ -1474,7 +1498,22 @@ fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32
             Op::WaitRead => {
                 if let Some(dst) = pending_read.take() {
                     for (lane, &word) in input.iter().enumerate() {
-                        results[lane] = Some((dst, word));
+                        let value = match pending_format {
+                            Some((1, false)) => u32::from(word.to_le_bytes()[0]),
+                            Some((1, true)) => i32::from(word.to_le_bytes()[0] as i8) as u32,
+                            Some((2, signed)) => {
+                                let b = word.to_le_bytes();
+                                let half = u16::from_le_bytes([b[0], b[1]]);
+                                if signed {
+                                    i32::from(half as i16) as u32
+                                } else {
+                                    u32::from(half)
+                                }
+                            }
+                            None => word,
+                            _ => unreachable!("decoder admits only byte or halfword loads"),
+                        };
+                        results[lane] = Some((dst, value));
                     }
                 }
             }

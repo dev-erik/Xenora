@@ -116,3 +116,47 @@ MTL_DEBUG_LAYER=1 MTL_SHADER_VALIDATION=1 CARGO_BUILD_JOBS=2 cargo test --locked
 
 S3.2 now has 8/24 decoded forms, S3.4 has 2/11 and S3.5 has 10/509. These remain
 open workstreams; the totals do not include operand-mode and architecture debt.
+
+## Narrow buffer-load continuation
+
+`BUFFER_LOAD_UBYTE`, `BUFFER_LOAD_SBYTE`, `BUFFER_LOAD_USHORT` and
+`BUFFER_LOAD_SSHORT` now use the existing synthetic four-byte input stride.
+Each reads its invocation's low byte/halfword and zero/sign-extends it into
+one VGPR. Full EXEC, zero offsets, fixed bindings/index, one pending load and
+separate store completion remain required. Graphics rejects all four forms,
+including skipped instructions. The [memory contract](../shaders/control-wave-memory.md)
+and [ABI decision](../adr/0003-demo-memory-model.md) retain these limits.
+
+- Independent suite: 11 passed, zero ignored with native execution enabled.
+  It includes 310 Metal programs, API/shader validation enabled, and four existing
+  reference self-tests. Both independent references match literal expected values.
+- Cases cover lengths 1/31/32/33/65, signed boundaries, independently varied upper
+  bits, direct output and comparison masks, both load waits, all 25 ordered pairs
+  of DWORD/narrow loads, and initialized-but-pending destination hazards.
+- LLVM oracle: 1,248 three-way comparisons across 174 forms passed.
+- Two independent static reviewers found no blocking defect in the bounded contract.
+- A deliberate zero-extension mutation for signed byte loads was caught by native
+  output assertions; production source was restored exactly.
+- Logs: `artifacts/s35-narrow-load/native.log`, `llvm.log`, `references.log`,
+  `mutation.json` and `mutation.log`.
+
+```sh
+MTL_DEBUG_LAYER=1 MTL_SHADER_VALIDATION=1 CARGO_BUILD_JOBS=2 cargo test --locked --target aarch64-apple-darwin -p xenora-semantic-review --test buffer_narrow_load -- --include-ignored --nocapture --test-threads=1
+```
+
+Current decoded counts: S3.2 **8/24**, S3.4 **2/11**, S3.5 **14/509**.
+All three remain open. General control flow, the other lane operations,
+address spaces, descriptors, atomics, synchronization and broader image/stage
+interfaces still require separate implementation and acceptance.
+
+The generated semantic-coverage report previously lagged at 134 decoded forms.
+Its evidence parser also rejected older MSL lowering descriptions that lacked
+its recognized prefix. Those descriptions now use the existing schema; the
+parser and its rejection rules were not weakened. The full validation status
+gate now checks this report as well as the instruction checklist and maps.
+
+Final combined validation: all nine gates passed on native ARM64 Metal. Workspace:
+1,380 passed, zero failed, 177 ignored. GPU gate:
+516 passed, zero failed, 1 ignored. Ignored tests do not count as verified.
+Logs: `artifacts/validation-full.L6zk4W`. Source hashes and gate counts:
+`artifacts/s35-narrow-load/verified-source.json`.

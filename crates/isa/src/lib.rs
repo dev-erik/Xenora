@@ -11,7 +11,8 @@ mod rdna2_meta;
 #[rustfmt::skip]
 mod semantics_gen;
 pub use rdna2::{
-    BUFFER_LOAD_DWORD, BUFFER_STORE_DWORD, EXP, IMAGE_SAMPLE_LZ, IMAGE_STORE, S_BRANCH,
+    BUFFER_LOAD_DWORD, BUFFER_LOAD_SBYTE, BUFFER_LOAD_SSHORT, BUFFER_LOAD_UBYTE,
+    BUFFER_LOAD_USHORT, BUFFER_STORE_DWORD, EXP, IMAGE_SAMPLE_LZ, IMAGE_STORE, S_BRANCH,
     S_CBRANCH_EXECNZ, S_CBRANCH_EXECZ, S_CBRANCH_SCC0, S_CBRANCH_SCC1, S_CBRANCH_VCCNZ,
     S_CBRANCH_VCCZ, S_ENDPGM, S_MOV_B32, S_WAITCNT, S_WAITCNT_VMCNT, S_WAITCNT_VSCNT, V_ADD_F32,
     V_ADD_NC_U32, V_AND_B32, V_ASHRREV_I32, V_CMP_EQ_I32, V_CMP_EQ_U32, V_CMP_GE_I32, V_CMP_GE_U32,
@@ -400,6 +401,31 @@ pub enum InterpolationPhase {
     Second,
 }
 
+/// Byte or halfword buffer load extending its result to one 32-bit VGPR.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BufferLoadKind {
+    /// Zero-extend an unsigned byte.
+    Ubyte,
+    /// Sign-extend a signed byte.
+    Sbyte,
+    /// Zero-extend an unsigned halfword.
+    Ushort,
+    /// Sign-extend a signed halfword.
+    Sshort,
+}
+
+impl BufferLoadKind {
+    /// Returns the unmodified MUBUF mnemonic.
+    pub const fn mnemonic(self) -> &'static str {
+        match self {
+            Self::Ubyte => "buffer_load_ubyte",
+            Self::Sbyte => "buffer_load_sbyte",
+            Self::Ushort => "buffer_load_ushort",
+            Self::Sshort => "buffer_load_sshort",
+        }
+    }
+}
+
 /// Instruction forms accepted by the gfx1030 decoder.
 ///
 /// Vector operations use VGPR indices and scalar operations use SGPR indices.
@@ -409,6 +435,13 @@ pub enum InterpolationPhase {
 pub enum Instruction {
     /// Indexed 32-bit buffer read into a VGPR.
     BufferLoadDword {
+        data: u8,
+        index: u8,
+        resource: u8,
+    },
+    /// Indexed byte or halfword buffer read extending to a full VGPR.
+    BufferLoadNarrow {
+        kind: BufferLoadKind,
         data: u8,
         index: u8,
         resource: u8,
@@ -707,6 +740,7 @@ impl Instruction {
     pub fn mnemonic(self) -> &'static str {
         match self {
             Self::BufferLoadDword { .. } => "buffer_load_dword",
+            Self::BufferLoadNarrow { kind, .. } => kind.mnemonic(),
             Self::BufferStoreDword { .. } => "buffer_store_dword",
             Self::WaitLoad => "s_waitcnt",
             Self::WaitVmcnt => "s_waitcnt_vmcnt",
@@ -778,6 +812,12 @@ impl fmt::Display for Instruction {
                 data,
                 index,
                 resource,
+            }
+            | Self::BufferLoadNarrow {
+                data,
+                index,
+                resource,
+                ..
             }
             | Self::BufferStoreDword {
                 data,

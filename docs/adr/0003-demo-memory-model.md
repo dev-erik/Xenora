@@ -5,3 +5,9 @@ For the synthetic compute fixture, the resource beginning at SGPR 0 denotes the 
 The compiler must reject descriptor forms, offsets, index changes and control flow outside this contract. Both engines must honor the load dependency and completion order. The host reads output after command completion. Supporting shared writable buffers will require a new ordering and aliasing contract.
 
 AMD RDNA 2 specifies implicit outstanding memory waits at program termination (class B, CLAIM-RDNA2-TRANSFER-WAITS). This fixture policy requires explicit corresponding wait instructions before termination to keep the bounded execution model auditable. See the [RDNA 2 source notes](../research/rdna2.md).
+
+The bounded narrow-load extension retains the same four-byte stride and bindings:
+byte/halfword loads select the low subword of that invocation's little-endian
+input element and extend it into one 32-bit destination. This is not packed
+one-byte/two-byte array indexing. The existing single-pending-load, full-EXEC,
+zero-offset and explicit-wait rules apply to all four narrow forms.

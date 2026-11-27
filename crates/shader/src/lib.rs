@@ -14,9 +14,9 @@ pub use graphics::{
 
 pub use xenora_decoder::Architecture;
 use xenora_decoder::{
-    DecodeError, DecodedInstruction, Instruction, ScalarSource, VectorBinary, VectorBinaryOp,
-    VectorBitBinaryOp, VectorClampOp, VectorCompareOp, VectorMadSadOp, VectorProductOp,
-    VectorSource, VectorTernaryOp, VectorUnaryOp,
+    BufferLoadKind, DecodeError, DecodedInstruction, Instruction, ScalarSource, VectorBinary,
+    VectorBinaryOp, VectorBitBinaryOp, VectorClampOp, VectorCompareOp, VectorMadSadOp,
+    VectorProductOp, VectorSource, VectorTernaryOp, VectorUnaryOp,
 };
 
 /// SGPR index of `vcc_lo`.
@@ -117,7 +117,7 @@ impl MaskCondition {
 
 #[derive(Clone, Copy)]
 enum Op {
-    Load,
+    Load(Option<BufferLoadKind>),
     Constant(u32),
     Binary(Binary, Value, Value),
     Unary(VectorUnaryOp, Value),
@@ -161,7 +161,7 @@ enum Op {
 impl Op {
     fn operands(self) -> Vec<Value> {
         match self {
-            Self::Load | Self::Constant(_) | Self::ScalarBranch { .. } => Vec::new(),
+            Self::Load(_) | Self::Constant(_) | Self::ScalarBranch { .. } => Vec::new(),
             Self::Binary(_, left, right) => vec![left, right],
             Self::Unary(_, source) => vec![source],
             Self::Product(_, a, b) => vec![a, b],
@@ -187,7 +187,20 @@ impl Op {
     /// dispatch index and the lane given by the caller.
     fn expression(self, name: &dyn Fn(Value) -> String, index: &str, lane: &str) -> String {
         match self {
-            Self::Load => format!("input[{index}]"),
+            Self::Load(kind) => {
+                let word = format!("input[{index}]");
+                // The synthetic ABI keeps a four-byte stride for every load kind.
+                // Unsigned subtraction sign-extends without signed overflow or narrowing casts.
+                match kind {
+                    None => word,
+                    Some(BufferLoadKind::Ubyte) => format!("({word} & 0xffu)"),
+                    Some(BufferLoadKind::Sbyte) => format!("(({word} & 0xffu) ^ 0x80u) - 0x80u"),
+                    Some(BufferLoadKind::Ushort) => format!("({word} & 0xffffu)"),
+                    Some(BufferLoadKind::Sshort) => {
+                        format!("(({word} & 0xffffu) ^ 0x8000u) - 0x8000u")
+                    }
+                }
+            }
             Self::Constant(value) => format!("0x{value:08x}u"),
             Self::Unary(op, source) => vector_unary_expression(op, &name(source)),
             Self::Product(op, a, b) => vector_product_expression(op, &name(a), &name(b)),
@@ -673,15 +686,18 @@ pub fn compile(architecture: Architecture, bytes: &[u8]) -> Result<CompiledShade
         let dest = Value(index);
         uniform.push(match operation {
             Op::Constant(_) | Op::LaneMask { .. } => true,
-            Op::Load
+            Op::Load(_)
             | Op::MergeLanes { .. }
             | Op::BitBinary(VectorBitBinaryOp::MbcntLoU32B32, _, _) => false,
             _ => operation.operands().iter().all(|value| uniform[value.0]),
         });
         let thread = |value: Value| value.to_string();
         let (step, statement) = match operation {
-            Op::Load => (
-                format!("{dest} = load.u32 input[index]"),
+            Op::Load(kind) => (
+                match kind {
+                    None => format!("{dest} = load.u32 input[index]"),
+                    Some(kind) => format!("{dest} = {} input[index]", kind.mnemonic()),
+                },
                 format!(
                     "uint {dest} = {};",
                     operation.expression(&thread, "index", "")
@@ -889,6 +905,9 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
             }
             Instruction::BufferLoadDword {
                 index, resource, ..
+            }
+            | Instruction::BufferLoadNarrow {
+                index, resource, ..
             } if (index, resource) != (0, 0) => "unsupported resource or buffer index",
             Instruction::BufferStoreDword {
                 index, resource, ..
@@ -1044,14 +1063,17 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
         if exec != u32::MAX
             && matches!(
                 instruction.instruction,
-                Instruction::BufferLoadDword { .. } | Instruction::BufferStoreDword { .. }
+                Instruction::BufferLoadDword { .. }
+                    | Instruction::BufferLoadNarrow { .. }
+                    | Instruction::BufferStoreDword { .. }
             )
         {
             return Err(error("vector memory requires full Wave32 EXEC"));
         }
         let next = Value(operations.len());
         let (dest, operation) = match instruction.instruction {
-            Instruction::BufferLoadDword { data, .. } => {
+            Instruction::BufferLoadDword { data, .. }
+            | Instruction::BufferLoadNarrow { data, .. } => {
                 let slot = usize::from(data);
                 if data == 0 || pending_load.is_some() {
                     return Err(error(
@@ -1060,7 +1082,11 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
                 }
                 registers[slot] = None;
                 pending_load = Some((slot, next));
-                (None, Op::Load)
+                let kind = match instruction.instruction {
+                    Instruction::BufferLoadNarrow { kind, .. } => Some(kind),
+                    _ => None,
+                };
+                (None, Op::Load(kind))
             }
             Instruction::BufferStoreDword { data, .. } => {
                 if stored {

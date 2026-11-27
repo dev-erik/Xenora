@@ -1,4 +1,4 @@
-# Control flow, wave operations and memory: opening scope
+# Control flow, wave operations and memory
 
 Reviewed 27 November 2026. These workstreams are open. The inventory is desktop gfx1030; it does not establish Xbox binary compatibility.
 
@@ -41,7 +41,7 @@ Acceptance must specify Wave32/Wave64, EXEC and inactive lanes, source/destinati
 
 ## S3.5 memory and interfaces
 
-First increment: `S_WAITCNT_VMCNT null,0` under the existing synthetic compute pending-load contract. A load wait must not discharge pending stores. Unknown/nonzero thresholds and other scalar operands remain rejected; graphics admission is separate.
+Implemented waits: `S_WAITCNT_VMCNT null,0` under the existing synthetic compute pending-load contract. A load wait must not discharge pending stores. Unknown/nonzero thresholds and other scalar operands remain rejected; graphics admission is separate.
 
 | Inventory area | Required closure beyond decoding |
 | --- | --- |
@@ -77,7 +77,7 @@ independent expected outputs, applicable native tests and documented limits.
 Wait-counter thresholds cannot be accepted before the corresponding event and
 dependency states are modeled. The full-stage acceptance criteria remain open.
 
-### Next bounded control and memory contracts
+### Implemented bounded control and memory contracts
 
 Implemented control increment: `S_CBRANCH_EXECNZ` and `S_CBRANCH_VCCNZ` test the
 nonzero low mask under Wave32. Preserve full-stream target validation and
@@ -87,7 +87,7 @@ when the branch is taken. Unknown VCC, nested runtime regions, memory operations
 inside a region and graphics use remain rejected. These complements do not
 add dynamic EXEC or general loops.
 
-Planned memory increment: signed and unsigned byte/halfword buffer loads under
+Implemented memory increment: signed and unsigned byte/halfword buffer loads under
 the existing synthetic four-byte input stride. Each invocation reads the low
 8 or 16 bits of its own little-endian input word; signed forms extend to 32 bits,
 unsigned forms zero-extend. This preserves the current two-buffer ABI and input

@@ -49,7 +49,7 @@ either path. The [changelog](../CHANGELOG.md) records notable changes.
 
 ## RDNA 2 decoding and shader translation
 
-- [Control, wave and memory scope](shaders/control-wave-memory.md) — S3.2/S3.4/S3.5 boundaries, Wave32 masked-bit-count contract and remaining closure requirements.
+- [Control, wave and memory scope](shaders/control-wave-memory.md) — S3.2/S3.4/S3.5 boundaries, nonzero mask branches, Wave32 masked counts, narrow loads and remaining closure requirements.
 
 - [GPU-produced geometry](interfaces.md#gpu-produced-geometry-in-queued-draws) — Exact queued buffer versions, guarded GPU gathering and atomic validation failure.
 - [Bounded graphics countdowns](interfaces.md#bounded-countdown-loops-in-original-graphics-stages) — Original unsigned and signed-positive constant/MIN-bounded nested loops and early exits, typed carried values, native evidence and explicit admission limits.

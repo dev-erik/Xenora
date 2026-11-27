@@ -10,6 +10,26 @@ pub const BUFFER_LOAD_DWORD: Opcode = Opcode {
     bits: 0xe0300000,
     bytes: 8,
 };
+pub const BUFFER_LOAD_UBYTE: Opcode = Opcode {
+    mask: 0xfffc0000,
+    bits: 0xe0200000,
+    bytes: 8,
+};
+pub const BUFFER_LOAD_SBYTE: Opcode = Opcode {
+    mask: 0xfffc0000,
+    bits: 0xe0240000,
+    bytes: 8,
+};
+pub const BUFFER_LOAD_USHORT: Opcode = Opcode {
+    mask: 0xfffc0000,
+    bits: 0xe0280000,
+    bytes: 8,
+};
+pub const BUFFER_LOAD_SSHORT: Opcode = Opcode {
+    mask: 0xfffc0000,
+    bits: 0xe02c0000,
+    bytes: 8,
+};
 pub const BUFFER_STORE_DWORD: Opcode = Opcode {
     mask: 0xfffc0000,
     bits: 0xe0700000,

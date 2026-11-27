@@ -8,6 +8,15 @@ The production decoder takes borrowed code bytes. Its output records typed instr
 
 The compiler lifts decoded instructions to typed operations and verifies register initialization, supported resource offsets and termination before generating MSL. The initial subset permits only lane-indexed 32-bit buffer accesses against two disjoint buffers with equal lengths. The input is read-only. Each invocation may write only its own output word. The compiler and reference check instruction boundaries, termination placement and buffer bindings throughout the stream. Register initialization and transfer state are checked on the path selected by compile-time known forward scalar branches. Dynamic branches, workgroup barriers and cross-lane operations remain unsupported.
 
+The same input binding supports `BUFFER_LOAD_UBYTE`, `BUFFER_LOAD_SBYTE`,
+`BUFFER_LOAD_USHORT` and `BUFFER_LOAD_SSHORT`. They read the low byte or halfword
+of each invocation's little-endian input word with an unchanged four-byte
+stride, then zero- or sign-extend to 32 bits. Direct reads and comparison replay
+use the same conversion. The single pending destination becomes available only
+after either supported zero-count load wait; stores require their separate wait.
+Full EXEC, zero offsets, fixed index/binding and whole-stream graphics rejection
+remain mandatory. This adds no packed array addressing or hardware descriptors.
+
 The Wave32 execution mask (EXEC) starts full. A supported scalar move can
 assign a known 32-bit value to its low half. Each bit selects the corresponding
 logical lane, numbered by the one-dimensional grid index modulo 32. Partial

@@ -10,12 +10,12 @@ For the Xbox Series X|S target and non-shader requirements, see the [master comp
 
 | Status | Forms | Meaning |
 | --- | ---: | --- |
-| Converted subset; fixture accepted | 103 | Translation is recorded and the status registry records accepted native fixture evidence; only the documented operand subset is covered. |
+| Converted subset; fixture accepted | 107 | Translation is recorded and the status registry records accepted native fixture evidence; only the documented operand subset is covered. |
 | Converted subset; acceptance pending | 82 | Translation is recorded, but the registry does not record accepted native fixture evidence. This may reflect pending acceptance or documentation lag. |
 | Decoded; translation evidence unrecorded | 5 | The decoder lists the form, but no translation evidence row is recorded. This is an evidence gap, not proof that lowering is absent. |
-| Not converted | 1275 | No supported decoder identity exists. Opcode recognition from metadata alone does not implement execution. |
+| Not converted | 1271 | No supported decoder identity exists. Opcode recognition from metadata alone does not implement execution. |
 
-**Decoder coverage: 190/1465. Not yet decoded: 1275.**
+**Decoder coverage: 194/1465. Not yet decoded: 1271.**
 
 No row means “all operand modes complete.” Sources, literals, modifiers, register widths, execution masks, graphics versus compute applicability, control-flow interactions and numerical behavior still require their own contracts and tests. This list covers the pinned inventory, not every future AMD instruction or every Xbox graphics method.
 
@@ -23,7 +23,7 @@ The evidence columns reproduce `docs/status.toml` without turning local readback
 
 ## Stage 3 planning map
 
-**All S3 stages remain open.** See the [latest validated checkpoint](../testing/stage3-control-memory-opening.md) for bounded SCC1 branches, compute load waits and Wave32 masked bit count. Other wave/lane operations remain open.
+**All S3 stages remain open.** See the [latest validated checkpoint](../testing/stage3-control-memory-opening.md) for bounded scalar/mask branches, compute loads and waits, and Wave32 masked bit count. Other wave/lane operations remain open.
 
 The partition below includes SOPP control flow and memory families alongside arithmetic. It is provisional, not a claim that a stage is complete or that forms outside arithmetic are optional. S3.6 numerical correctness applies across floating-point operations and is not counted as a disjoint opcode bucket. State assignments remain explicit gaps; scalar comparisons retain their historical arithmetic assignment pending a separate ownership audit. Counts exclude operand-mode debt such as DPP/SDWA, wave sizes, masks and ordering. The earlier 7/8/12 totals for S3.2/S3.4/S3.5 excluded whole families and were not stage completion denominators.
 
@@ -33,7 +33,7 @@ The partition below includes SOPP control flow and memory families alongside ari
 | S3.2 Control flow | 24 | 8 | 16 |
 | S3.3 Masks / comparisons | 419 | 12 | 407 |
 | S3.4 Wave / lane | 11 | 2 | 9 |
-| S3.5 Memory / interfaces | 509 | 10 | 499 |
+| S3.5 Memory / interfaces | 509 | 14 | 495 |
 | State / assignment pending | 22 | 0 | 22 |
 
 **158/480 arithmetic forms decoded is not 158 accepted or fully converted forms.** This distinction corrects the earlier shorthand used in progress updates.
@@ -48,7 +48,7 @@ The partition below includes SOPP control flow and memory families alongside ari
 | [GLOBAL](#global) | 57 | 0 | 0 | 0 | 57 |
 | [MIMG](#mimg) | 130 | 0 | 0 | 2 | 128 |
 | [MTBUF](#mtbuf) | 16 | 0 | 0 | 0 | 16 |
-| [MUBUF](#mubuf) | 75 | 2 | 0 | 0 | 73 |
+| [MUBUF](#mubuf) | 75 | 6 | 0 | 0 | 69 |
 | [SCRATCH](#scratch) | 22 | 0 | 0 | 0 | 22 |
 | [SMEM](#smem) | 14 | 0 | 0 | 0 | 14 |
 | [SOP1](#sop1) | 65 | 4 | 11 | 0 | 50 |
@@ -498,10 +498,10 @@ Update the implementation and its evidence in `docs/status.toml`, then regenerat
 | 5 | `BUFFER_STORE_FORMAT_XY` | Not converted | — | — | — |
 | 6 | `BUFFER_STORE_FORMAT_XYZ` | Not converted | — | — | — |
 | 7 | `BUFFER_STORE_FORMAT_XYZW` | Not converted | — | — | — |
-| 8 | `BUFFER_LOAD_UBYTE` | Not converted | — | — | — |
-| 9 | `BUFFER_LOAD_SBYTE` | Not converted | — | — | — |
-| 10 | `BUFFER_LOAD_USHORT` | Not converted | — | — | — |
-| 11 | `BUFFER_LOAD_SSHORT` | Not converted | — | — | — |
+| 8 | `BUFFER_LOAD_UBYTE` | Converted subset; fixture accepted | MSL ubyte low-subword extension into uint; shared direct/comparison replay expression; explicit load wait | fixture verified | fixture verified |
+| 9 | `BUFFER_LOAD_SBYTE` | Converted subset; fixture accepted | MSL sbyte low-subword extension into uint; shared direct/comparison replay expression; explicit load wait | fixture verified | fixture verified |
+| 10 | `BUFFER_LOAD_USHORT` | Converted subset; fixture accepted | MSL ushort low-subword extension into uint; shared direct/comparison replay expression; explicit load wait | fixture verified | fixture verified |
+| 11 | `BUFFER_LOAD_SSHORT` | Converted subset; fixture accepted | MSL sshort low-subword extension into uint; shared direct/comparison replay expression; explicit load wait | fixture verified | fixture verified |
 | 12 | `BUFFER_LOAD_DWORD` | Converted subset; fixture accepted | MSL load | fixture verified | fixture verified |
 | 13 | `BUFFER_LOAD_DWORDX2` | Not converted | — | — | — |
 | 14 | `BUFFER_LOAD_DWORDX4` | Not converted | — | — | — |
@@ -1181,26 +1181,26 @@ Update the implementation and its evidence in `docs/status.toml`, then regenerat
 | 262 | `V_FMAC_LEGACY_F32` | Not converted | — | — | — |
 | 263 | `V_MUL_LEGACY_F32` | Not converted | — | — | — |
 | 264 | `V_MUL_F32` | Not converted | — | — | — |
-| 265 | `V_MUL_I32_I24` | Converted subset; fixture accepted | existing integer primitive; compute and graphics | fixture verified | fixture verified |
-| 266 | `V_MUL_HI_I32_I24` | Converted subset; fixture accepted | existing integer primitive; compute and graphics | fixture verified | fixture verified |
-| 267 | `V_MUL_U32_U24` | Converted subset; fixture accepted | existing integer primitive; compute and graphics | fixture verified | fixture verified |
-| 268 | `V_MUL_HI_U32_U24` | Converted subset; fixture accepted | existing integer primitive; compute and graphics | fixture verified | fixture verified |
+| 265 | `V_MUL_I32_I24` | Converted subset; fixture accepted | MSL integer primitive; compute and graphics | fixture verified | fixture verified |
+| 266 | `V_MUL_HI_I32_I24` | Converted subset; fixture accepted | MSL integer primitive; compute and graphics | fixture verified | fixture verified |
+| 267 | `V_MUL_U32_U24` | Converted subset; fixture accepted | MSL integer primitive; compute and graphics | fixture verified | fixture verified |
+| 268 | `V_MUL_HI_U32_U24` | Converted subset; fixture accepted | MSL integer primitive; compute and graphics | fixture verified | fixture verified |
 | 271 | `V_MIN_F32` | Not converted | — | — | — |
 | 272 | `V_MAX_F32` | Not converted | — | — | — |
-| 273 | `V_MIN_I32` | Converted subset; fixture accepted | existing integer primitive; compute and graphics | fixture verified | fixture verified |
-| 274 | `V_MAX_I32` | Converted subset; fixture accepted | existing integer primitive; compute and graphics | fixture verified | fixture verified |
-| 275 | `V_MIN_U32` | Converted subset; fixture accepted | existing integer primitive; compute and graphics | fixture verified | fixture verified |
-| 276 | `V_MAX_U32` | Converted subset; fixture accepted | existing integer primitive; compute and graphics | fixture verified | fixture verified |
-| 278 | `V_LSHRREV_B32` | Converted subset; fixture accepted | existing integer primitive; compute and graphics | fixture verified | fixture verified |
-| 280 | `V_ASHRREV_I32` | Converted subset; fixture accepted | existing integer primitive; compute and graphics | fixture verified | fixture verified |
-| 282 | `V_LSHLREV_B32` | Converted subset; fixture accepted | existing integer primitive; compute and graphics | fixture verified | fixture verified |
-| 283 | `V_AND_B32` | Converted subset; fixture accepted | existing integer primitive; compute and graphics | fixture verified | fixture verified |
-| 284 | `V_OR_B32` | Converted subset; fixture accepted | existing integer primitive; compute and graphics | fixture verified | fixture verified |
-| 285 | `V_XOR_B32` | Converted subset; fixture accepted | existing integer primitive; compute and graphics | fixture verified | fixture verified |
-| 286 | `V_XNOR_B32` | Converted subset; fixture accepted | existing integer primitive; compute and graphics | fixture verified | fixture verified |
+| 273 | `V_MIN_I32` | Converted subset; fixture accepted | MSL integer primitive; compute and graphics | fixture verified | fixture verified |
+| 274 | `V_MAX_I32` | Converted subset; fixture accepted | MSL integer primitive; compute and graphics | fixture verified | fixture verified |
+| 275 | `V_MIN_U32` | Converted subset; fixture accepted | MSL integer primitive; compute and graphics | fixture verified | fixture verified |
+| 276 | `V_MAX_U32` | Converted subset; fixture accepted | MSL integer primitive; compute and graphics | fixture verified | fixture verified |
+| 278 | `V_LSHRREV_B32` | Converted subset; fixture accepted | MSL integer primitive; compute and graphics | fixture verified | fixture verified |
+| 280 | `V_ASHRREV_I32` | Converted subset; fixture accepted | MSL integer primitive; compute and graphics | fixture verified | fixture verified |
+| 282 | `V_LSHLREV_B32` | Converted subset; fixture accepted | MSL integer primitive; compute and graphics | fixture verified | fixture verified |
+| 283 | `V_AND_B32` | Converted subset; fixture accepted | MSL integer primitive; compute and graphics | fixture verified | fixture verified |
+| 284 | `V_OR_B32` | Converted subset; fixture accepted | MSL integer primitive; compute and graphics | fixture verified | fixture verified |
+| 285 | `V_XOR_B32` | Converted subset; fixture accepted | MSL integer primitive; compute and graphics | fixture verified | fixture verified |
+| 286 | `V_XNOR_B32` | Converted subset; fixture accepted | MSL integer primitive; compute and graphics | fixture verified | fixture verified |
 | 293 | `V_ADD_NC_U32` | Converted subset; fixture accepted | MSL unsigned add | fixture verified | fixture verified |
-| 294 | `V_SUB_NC_U32` | Converted subset; fixture accepted | existing integer primitive; compute and graphics | fixture verified | fixture verified |
-| 295 | `V_SUBREV_NC_U32` | Converted subset; fixture accepted | existing integer primitive; compute and graphics | fixture verified | fixture verified |
+| 294 | `V_SUB_NC_U32` | Converted subset; fixture accepted | MSL integer primitive; compute and graphics | fixture verified | fixture verified |
+| 295 | `V_SUBREV_NC_U32` | Converted subset; fixture accepted | MSL integer primitive; compute and graphics | fixture verified | fixture verified |
 | 299 | `V_FMAC_F32` | Not converted | — | — | — |
 | 303 | `V_CVT_PKRTZ_F16_F32` | Not converted | — | — | — |
 | 306 | `V_ADD_F16` | Not converted | — | — | — |
@@ -1212,8 +1212,8 @@ Update the implementation and its evidence in `docs/status.toml`, then regenerat
 | 314 | `V_MIN_F16` | Not converted | — | — | — |
 | 315 | `V_LDEXP_F16` | Not converted | — | — | — |
 | 320 | `V_FMA_LEGACY_F32` | Not converted | — | — | — |
-| 322 | `V_MAD_I32_I24` | Converted subset; fixture accepted | integer compute and graphics; wrap and final saturation | fixture verified | fixture verified |
-| 323 | `V_MAD_U32_U24` | Converted subset; fixture accepted | integer compute and graphics; wrap and final saturation | fixture verified | fixture verified |
+| 322 | `V_MAD_I32_I24` | Converted subset; fixture accepted | MSL integer compute and graphics; wrap and final saturation | fixture verified | fixture verified |
+| 323 | `V_MAD_U32_U24` | Converted subset; fixture accepted | MSL integer compute and graphics; wrap and final saturation | fixture verified | fixture verified |
 | 324 | `V_CUBEID_F32` | Not converted | — | — | — |
 | 325 | `V_CUBESC_F32` | Not converted | — | — | — |
 | 326 | `V_CUBETC_F32` | Not converted | — | — | — |
@@ -1236,10 +1236,10 @@ Update the implementation and its evidence in `docs/status.toml`, then regenerat
 | 343 | `V_MED3_F32` | Not converted | — | — | — |
 | 344 | `V_MED3_I32` | Converted subset; fixture accepted | MSL signed/unsigned integer ordering; compute and graphics | fixture verified | fixture verified |
 | 345 | `V_MED3_U32` | Converted subset; fixture accepted | MSL signed/unsigned integer ordering; compute and graphics | fixture verified | fixture verified |
-| 346 | `V_SAD_U8` | Converted subset; fixture accepted | integer compute and graphics; wrap and final saturation | fixture verified | fixture verified |
-| 347 | `V_SAD_HI_U8` | Converted subset; fixture accepted | integer compute and graphics; wrap and final saturation | fixture verified | fixture verified |
-| 348 | `V_SAD_U16` | Converted subset; fixture accepted | integer compute and graphics; wrap and final saturation | fixture verified | fixture verified |
-| 349 | `V_SAD_U32` | Converted subset; fixture accepted | integer compute and graphics; wrap and final saturation | fixture verified | fixture verified |
+| 346 | `V_SAD_U8` | Converted subset; fixture accepted | MSL integer compute and graphics; wrap and final saturation | fixture verified | fixture verified |
+| 347 | `V_SAD_HI_U8` | Converted subset; fixture accepted | MSL integer compute and graphics; wrap and final saturation | fixture verified | fixture verified |
+| 348 | `V_SAD_U16` | Converted subset; fixture accepted | MSL integer compute and graphics; wrap and final saturation | fixture verified | fixture verified |
+| 349 | `V_SAD_U32` | Converted subset; fixture accepted | MSL integer compute and graphics; wrap and final saturation | fixture verified | fixture verified |
 | 350 | `V_CVT_PK_U8_F32` | Not converted | — | — | — |
 | 351 | `V_DIV_FIXUP_F32` | Not converted | — | — | — |
 | 352 | `V_DIV_FIXUP_F64` | Not converted | — | — | — |
@@ -1302,11 +1302,11 @@ Update the implementation and its evidence in `docs/status.toml`, then regenerat
 | 436 | `V_SQRT_F64` | Not converted | — | — | — |
 | 437 | `V_SIN_F32` | Not converted | — | — | — |
 | 438 | `V_COS_F32` | Not converted | — | — | — |
-| 439 | `V_NOT_B32` | Converted subset; fixture accepted | existing integer primitive; compute and graphics | fixture verified | fixture verified |
-| 440 | `V_BFREV_B32` | Converted subset; fixture accepted | existing integer primitive; compute and graphics | fixture verified | fixture verified |
-| 441 | `V_FFBH_U32` | Converted subset; fixture accepted | existing integer primitive; compute and graphics | fixture verified | fixture verified |
-| 442 | `V_FFBL_B32` | Converted subset; fixture accepted | existing integer primitive; compute and graphics | fixture verified | fixture verified |
-| 443 | `V_FFBH_I32` | Converted subset; fixture accepted | existing integer primitive; compute and graphics | fixture verified | fixture verified |
+| 439 | `V_NOT_B32` | Converted subset; fixture accepted | MSL integer primitive; compute and graphics | fixture verified | fixture verified |
+| 440 | `V_BFREV_B32` | Converted subset; fixture accepted | MSL integer primitive; compute and graphics | fixture verified | fixture verified |
+| 441 | `V_FFBH_U32` | Converted subset; fixture accepted | MSL integer primitive; compute and graphics | fixture verified | fixture verified |
+| 442 | `V_FFBL_B32` | Converted subset; fixture accepted | MSL integer primitive; compute and graphics | fixture verified | fixture verified |
+| 443 | `V_FFBH_I32` | Converted subset; fixture accepted | MSL integer primitive; compute and graphics | fixture verified | fixture verified |
 | 444 | `V_FREXP_EXP_I32_F64` | Not converted | — | — | — |
 | 445 | `V_FREXP_MANT_F64` | Not converted | — | — | — |
 | 446 | `V_FRACT_F64` | Not converted | — | — | — |
@@ -1384,8 +1384,8 @@ Update the implementation and its evidence in `docs/status.toml`, then regenerat
 | 866 | `V_LDEXP_F32` | Not converted | — | — | — |
 | 867 | `V_BFM_B32` | Converted subset; fixture accepted | MSL uint masked width and offset mask creation; compute and graphics | fixture verified | fixture verified |
 | 868 | `V_BCNT_U32_B32` | Converted subset; fixture accepted | MSL uint population count plus wrapping accumulator; compute and graphics | fixture verified | fixture verified |
-| 869 | `V_MBCNT_LO_U32_B32` | Converted subset; fixture accepted | count SRC0 bits below the logical Wave32 lane and add SRC1 with uint wrapping; lane-aware comparison recomputation | fixture verified | fixture verified |
-| 870 | `V_MBCNT_HI_U32_B32` | Converted subset; fixture accepted | copy SRC1 under Wave32; checked sources and EXEC destination retention; lane-aware comparison recomputation | fixture verified | fixture verified |
+| 869 | `V_MBCNT_LO_U32_B32` | Converted subset; fixture accepted | MSL count SRC0 bits below the logical Wave32 lane and add SRC1 with uint wrapping; lane-aware comparison recomputation | fixture verified | fixture verified |
+| 870 | `V_MBCNT_HI_U32_B32` | Converted subset; fixture accepted | MSL copy SRC1 under Wave32; checked sources and EXEC destination retention; lane-aware comparison recomputation | fixture verified | fixture verified |
 | 872 | `V_CVT_PKNORM_I16_F32` | Not converted | — | — | — |
 | 873 | `V_CVT_PKNORM_U16_F32` | Not converted | — | — | — |
 | 874 | `V_CVT_PK_U16_U32` | Not converted | — | — | — |
