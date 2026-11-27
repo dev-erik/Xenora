@@ -23,6 +23,8 @@ remains unsupported.
 - Extended the read-only RDNA2 planning CLI (`python3 -m qa rdna2`) with family/status filters, compact summaries, Codex-ready manifests under `artifacts/`, active-claim exclusion (family claims exclude those families; path-only claims block overlapping permitted files), coverage reconcile against `semantic_coverage` without inflating counts, and inventory diffs. Covered by `tests/qa/test_rdna2_plan.py`; planning only, no GPU production edits.
 
 ### Added
+- Added a public startup/graphics contract ledger with ten bounded requirements
+  and observations, explicit synthetic-interface gaps and reference limitations.
 - Added public-source Xbox compatibility feasibility research, distinguishing
   console ABI gaps, optional DXIL conversion and target validation from desktop
   instruction coverage, with eight prioritized research investigations.

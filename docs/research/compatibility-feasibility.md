@@ -70,6 +70,12 @@ is Xbox One/UWP-scoped and is not evidence of a Series X/S native-game ABI.
 
 ## Priority research backlog
 
+The [startup and graphics contract ledger](startup-graphics-contracts.md) records
+the next public-source pass: five startup requirements, five graphics observations,
+the current synthetic-interface gap and available reference evidence. R1–R3 remain
+open; this is research progress, not a console execution result.
+
+
 All tasks below are **open**. This assessment identifies evidence and questions;
 it does not count the proposed experiments as completed research results.
 
