@@ -94,6 +94,24 @@ impl VectorProductOp {
     }
 }
 
+/// Value-only two-source vector bit operation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum VectorBitBinaryOp {
+    /// `v_bfm_b32`.
+    BfmB32,
+    /// `v_bcnt_u32_b32`.
+    BcntU32B32,
+}
+impl VectorBitBinaryOp {
+    /// Returns the unmodified VOP3 mnemonic.
+    pub const fn mnemonic(self) -> &'static str {
+        match self {
+            Self::BfmB32 => "v_bfm_b32",
+            Self::BcntU32B32 => "v_bcnt_u32_b32",
+        }
+    }
+}
+
 /// Value-only three-source 32-bit vector operation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum VectorTernaryOp {
@@ -103,6 +121,14 @@ pub enum VectorTernaryOp {
     Add3U32,
     /// `v_and_or_b32`.
     AndOrB32,
+    /// `v_bfe_u32`.
+    BfeU32,
+    /// `v_alignbit_b32`.
+    AlignbitB32,
+    /// `v_or3_b32`.
+    Or3B32,
+    /// `v_xor3_b32`.
+    Xor3B32,
 }
 
 impl VectorTernaryOp {
@@ -112,6 +138,10 @@ impl VectorTernaryOp {
             Self::BfiB32 => "v_bfi_b32",
             Self::Add3U32 => "v_add3_u32",
             Self::AndOrB32 => "v_and_or_b32",
+            Self::BfeU32 => "v_bfe_u32",
+            Self::AlignbitB32 => "v_alignbit_b32",
+            Self::Or3B32 => "v_or3_b32",
+            Self::Xor3B32 => "v_xor3_b32",
         }
     }
 }
@@ -254,6 +284,13 @@ pub enum Instruction {
     /// Unmodified full-width product; preserves SCC, VCC and EXEC.
     VectorProduct {
         op: VectorProductOp,
+        dst: u8,
+        src0: VectorSource,
+        src1: VectorSource,
+    },
+    /// Unmodified mask/count operation; preserves SCC, VCC and EXEC.
+    VectorBitBinary {
+        op: VectorBitBinaryOp,
         dst: u8,
         src0: VectorSource,
         src1: VectorSource,
@@ -456,6 +493,7 @@ impl Instruction {
             Self::MoveB32 { .. } => "v_mov_b32_e32",
             Self::AddNoCarryU32 { .. } => "v_add_nc_u32_e64",
             Self::VectorProduct { op, .. } => op.mnemonic(),
+            Self::VectorBitBinary { op, .. } => op.mnemonic(),
             Self::VectorTernary { op, .. } => op.mnemonic(),
             Self::ScalarMoveB32 { .. } => "s_mov_b32",
             Self::ScalarBitSetB32 { value: false, .. } => "s_bitset0_b32",
@@ -554,6 +592,9 @@ impl fmt::Display for Instruction {
                 write!(formatter, " vcc_lo, {src0}, v{src1}")
             }
             Self::VectorProduct {
+                dst, src0, src1, ..
+            }
+            | Self::VectorBitBinary {
                 dst, src0, src1, ..
             } => write!(formatter, " v{dst}, {src0}, {src1}"),
             Self::VectorTernary {

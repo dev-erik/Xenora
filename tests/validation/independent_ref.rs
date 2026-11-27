@@ -128,6 +128,12 @@ enum Insn {
     VBitSelect(u8, CmpSrc, CmpSrc, CmpSrc),
     VAddThree(u8, CmpSrc, CmpSrc, CmpSrc),
     VAndOr(u8, CmpSrc, CmpSrc, CmpSrc),
+    VExtractUnsigned(u8, CmpSrc, CmpSrc, CmpSrc),
+    VMask(u8, CmpSrc, CmpSrc),
+    VAlignBits(u8, CmpSrc, CmpSrc, CmpSrc),
+    VCountAdd(u8, CmpSrc, CmpSrc),
+    VOrThree(u8, CmpSrc, CmpSrc, CmpSrc),
+    VXorThree(u8, CmpSrc, CmpSrc, CmpSrc),
     VAnd(u8, CmpSrc, u8),
     VOr(u8, CmpSrc, u8),
     VShiftLeft(u8, CmpSrc, u8),
@@ -775,10 +781,16 @@ fn lane_step(
     let vop3 = match insn {
         Insn::VMulLow(d, a, b)
         | Insn::VMulHighUnsigned(d, a, b)
+        | Insn::VMask(d, a, b)
+        | Insn::VCountAdd(d, a, b)
         | Insn::VMulHighSigned(d, a, b) => Some((d, [a, b, CmpSrc::Imm(0)])),
-        Insn::VBitSelect(d, a, b, c) | Insn::VAddThree(d, a, b, c) | Insn::VAndOr(d, a, b, c) => {
-            Some((d, [a, b, c]))
-        }
+        Insn::VExtractUnsigned(d, a, b, c)
+        | Insn::VAlignBits(d, a, b, c)
+        | Insn::VOrThree(d, a, b, c)
+        | Insn::VXorThree(d, a, b, c)
+        | Insn::VBitSelect(d, a, b, c)
+        | Insn::VAddThree(d, a, b, c)
+        | Insn::VAndOr(d, a, b, c) => Some((d, [a, b, c])),
         _ => None,
     };
     if let Some((dst, sources)) = vop3 {
@@ -831,6 +843,49 @@ fn lane_step(
                 low % 65536 + (high % 65536) * 65536
             }
             Insn::VAndOr(..) => !((!a | !b) & !c),
+            Insn::VCountAdd(..) => {
+                let mut rest = a;
+                let mut count = 0;
+                while rest != 0 {
+                    rest &= rest - 1;
+                    count += 1;
+                }
+                ripple(b, count, false).0
+            }
+            Insn::VExtractUnsigned(..)
+            | Insn::VMask(..)
+            | Insn::VAlignBits(..)
+            | Insn::VOrThree(..)
+            | Insn::VXorThree(..) => {
+                let mut out = 0;
+                for j in 0..32 {
+                    let weight = 2u32.pow(j);
+                    let bit = match insn {
+                        Insn::VExtractUnsigned(..) => {
+                            j < c % 32
+                                && j + b % 32 < 32
+                                && !(a / 2u32.pow(j + b % 32)).is_multiple_of(2)
+                        }
+                        Insn::VMask(..) => j >= b % 32 && j - b % 32 < a % 32,
+                        Insn::VAlignBits(..) => {
+                            let k = j + c % 32;
+                            if k < 32 {
+                                (b / 2u32.pow(k)) % 2 != 0
+                            } else {
+                                !(a / 2u32.pow(k - 32)).is_multiple_of(2)
+                            }
+                        }
+                        Insn::VOrThree(..) => {
+                            (a / weight) % 2 + (b / weight) % 2 + (c / weight) % 2 != 0
+                        }
+                        _ => ((a / weight) % 2 + (b / weight) % 2 + (c / weight) % 2) % 2 != 0,
+                    };
+                    if bit {
+                        out += weight;
+                    }
+                }
+                out
+            }
             _ => unreachable!(),
         };
         lane.vgpr[dst as usize] = Some(result);
@@ -1201,13 +1256,18 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
     let first = word(code, offset)?;
     let fail = |detail: &str| format!("{offset:#x}: {detail}");
     let opcode = (first / 65536) % 1024;
-    if first >> 26 == 53 && matches!(opcode, 361 | 362 | 364 | 330 | 877 | 881) {
+    if first >> 26 == 53
+        && matches!(
+            opcode,
+            361 | 362 | 364 | 330 | 877 | 881 | 328 | 867 | 334 | 868 | 882 | 376
+        )
+    {
         let next = word(code, offset + 4).map_err(|_| fail("truncated VOP3 instruction"))?;
         if (first / 256) % 256 != 0 || next / (1 << 27) != 0 {
             return Err(fail("unsupported VOP3 modifiers"));
         }
         let raw = [next % 512, (next / 512) % 512, (next / 262144) % 512];
-        let count = if matches!(opcode, 361 | 362 | 364) {
+        let count = if matches!(opcode, 361 | 362 | 364 | 867 | 868) {
             2
         } else {
             3
@@ -1253,7 +1313,14 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
             364 => Insn::VMulHighSigned(dst, args[0], args[1]),
             330 => Insn::VBitSelect(dst, args[0], args[1], args[2]),
             877 => Insn::VAddThree(dst, args[0], args[1], args[2]),
-            _ => Insn::VAndOr(dst, args[0], args[1], args[2]),
+            881 => Insn::VAndOr(dst, args[0], args[1], args[2]),
+            328 => Insn::VExtractUnsigned(dst, args[0], args[1], args[2]),
+            867 => Insn::VMask(dst, args[0], args[1]),
+            334 => Insn::VAlignBits(dst, args[0], args[1], args[2]),
+            868 => Insn::VCountAdd(dst, args[0], args[1]),
+            882 => Insn::VOrThree(dst, args[0], args[1], args[2]),
+            376 => Insn::VXorThree(dst, args[0], args[1], args[2]),
+            _ => return Err(fail("unsupported VOP3 integer opcode")),
         };
         return Ok((insn, if has_literal { 12 } else { 8 }));
     }

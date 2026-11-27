@@ -6,6 +6,29 @@ claim of Xbox hardware equivalence. Supporting raw logs, mutation records and
 source manifests remain local and are not distributed with the repository.
 The array-range descriptor increment below was validated on 26 November 2026.
 
+## Stage 3.1 increment: bitfields, alignment and population count
+
+27 November 2026. BFE_U32, BFM, ALIGNBIT, BCNT, OR3 and XOR3 extend the checked
+VOP3 path. Both independent reviewers accepted the bounded implementation.
+Width32 masks to zero; alignment count0 retains the low word; count accumulation
+wraps. ALIGNBIT clamp and wider operand coverage remain explicit S3.1 debt.
+
+Final unchanged-source checks passed 325 CPU tests (ten ignored), 23 LLVM tests
+including 434 new source-matrix rows and 939 three-way comparisons across 126
+forms, 13 compute tests including 75 native dispatches, and two graphics tests
+covering 120 draws. Graphics admission/provenance tests now cover all twelve
+VOP3 identities. Native execution used Apple M4 Max with API/shader validation;
+draw/dispatch totals derive from test loops. No AMD/Xbox equivalence is claimed.
+
+Three assertion-killed mutations cover width masking, wrong zero-count alignment
+source and omitted population-count accumulator. Sources were restored. All nine
+repository gates passed in `artifacts/validation-full.2pUpaj`: workspace 1205
+passed/0 failed/162 ignored; GPU suite 494 passed/0 failed/1 ignored (overlap).
+Native audit checked 135 executables. Final 26-file hashes and five command logs
+are in `artifacts/s31-bitfield/`; R1/R2 acceptance is in the corresponding
+`artifacts/s31-bitfield-r1-review.md` and `s31-bitfield-r2-review.md` reports.
+Only acceptance documentation changed after the bound run. Full S3.1 remains open.
+
 ## Stage 3.1 increment: full-width products and three-source integer operations
 
 27 November 2026. Six VOP3 forms add full-width low/high multiplication, bit

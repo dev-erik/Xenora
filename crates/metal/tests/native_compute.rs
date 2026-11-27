@@ -505,3 +505,6 @@ mod scalar_conditional_graphics;
 
 #[path = "native/vop3_integer_graphics.rs"]
 mod vop3_integer_graphics;
+
+#[path = "native/vop3_bitfield_graphics.rs"]
+mod vop3_bitfield_graphics;

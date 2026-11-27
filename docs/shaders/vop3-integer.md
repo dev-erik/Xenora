@@ -1,7 +1,9 @@
-# Full-width vector products and three-source integer operations
+# Full-width vector products, bitfields and three-source integer operations
 
-The bounded gfx1030 VOP3 subset adds six handwritten instruction identities;
-the semantic registry is unchanged. All results are 32-bit words.
+The bounded gfx1030 VOP3 subset contains the six product/ternary forms below
+and the six bitfield/count extension forms described later. All twelve use
+handwritten instruction identities; the semantic registry is unchanged.
+All results are 32-bit words.
 
 | Instruction | OP | Result for inputs a, b, c |
 | --- | ---: | --- |
@@ -21,8 +23,8 @@ for high products. The signed result is reinterpreted as a uint word.
 First word: `0xd4000000 | OP << 16 | VDST`; second word:
 `SRC0 | SRC1 << 9 | SRC2 << 18`. VDST is eight bits and each source is nine
 bits. First-word bits 8–15 and second-word bits 27–31 must be zero: no ABS,
-OP_SEL, CLAMP, OMOD or NEG modifiers. Products have two active operands and
-require unused SRC2=128 (inline zero). This is a canonical subset restriction:
+OP_SEL, CLAMP, OMOD or NEG modifiers. Products, BFM and BCNT have two active
+operands and require unused SRC2=128 (inline zero). This is a canonical subset restriction:
 LLVM also disassembles other unused values, so rejection does not establish
 hardware invalidity. The existing `V_ADD_NC_U32` e64 contract is unchanged.
 
@@ -60,6 +62,27 @@ arithmetic, float exports, floating texture coordinates, float storage data,
 or vertex POS/PARAM exports. Uniform array-layer carriers and pixel-coordinate
 metadata cannot be consumed as integer operands, including SRC2.
 
+## Bitfield and count extension
+
+Six further operations share the source contract above. BFM and BCNT have two
+active inputs and canonical unused SRC2=128; the other four have three.
+
+| Instruction | OP | Word result |
+| --- | ---: | --- |
+| `V_BFE_U32` | 328 | Extract width c&31 bits from a starting at b&31, zero-fill |
+| `V_BFM_B32` | 867 | Mask of a&31 low bits, shifted left by b&31 |
+| `V_ALIGNBIT_B32` | 334 | Low word of concatenated a:high,b:low shifted right by c&31 |
+| `V_BCNT_U32_B32` | 868 | Population count of a plus b, wrapping |
+| `V_OR3_B32` | 882 | a OR b OR c |
+| `V_XOR3_B32` | 376 | a XOR b XOR c |
+
+A width of 32 masks to zero, and ALIGNBIT count 0 returns b. The lowering avoids
+shifts by 32; extraction crossing the high end zero-fills. These operations are
+lane-local and preserve flags. Their output provenance and every active source
+position have the same graphics restrictions as the preceding six forms.
+LLVM accepts an ALIGNBIT clamp modifier; the current no-modifiers contract is
+a deliberate subset restriction, and broader modifier coverage remains S3.1 debt.
+
 ## Evidence and acceptance
 
 Semantics and fields follow the public [AMD RDNA2 ISA, sections 6.2.1, 12.12
@@ -71,7 +94,11 @@ observations, not arithmetic execution correctness.
 The original fixture is `fixtures/rdna2/vop3-integer.s`. Decoder source/field
 checks and the LLVM matrix accompany independent references, compute tests,
 `crates/shader/tests/graphics_vop3_integer.rs` and native graphics tests in
-`crates/metal/tests/native/vop3_integer_graphics.rs`. Both independent reviewers accepted this bounded increment after CPU, LLVM,
-native Metal and full repository validation. See the
+`crates/metal/tests/native/vop3_integer_graphics.rs`. Both independent reviewers
+accepted the original six-form increment after CPU, LLVM, native Metal and
+full repository validation. See the
 [local checkpoint](../testing/local-graphics-checkpoint.md) for counts and limits.
-This six-form increment does not complete S3.1 or establish Xbox compatibility.
+The extension uses `fixtures/rdna2/vop3-bitfield.s` and the separate encoding
+record `artifacts/s31-bitfield-source-evidence.md`. Its integrated acceptance
+remains pending; the original six-form acceptance does not cover it. Neither
+increment completes S3.1 or establishes Xbox compatibility.

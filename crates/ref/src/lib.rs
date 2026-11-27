@@ -81,6 +81,7 @@ pub enum Op {
     VectorInteger(VectorInteger, u8, CompareSource, u8),
     VectorUnary(VectorUnary, u8, CompareSource),
     VectorProduct(VectorProduct, u8, CompareSource, CompareSource),
+    BitBinary(BitBinary, u8, CompareSource, CompareSource),
     VectorTernary(
         VectorTernary,
         u8,
@@ -98,7 +99,16 @@ pub enum VectorProduct {
     HighSigned,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BitBinary {
+    BitFieldMask,
+    CountBitsAdd,
+}
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum VectorTernary {
+    ExtractUnsigned,
+    AlignBits,
+    OrThree,
+    XorThree,
     BitSelect,
     AddThree,
     AndOr,
@@ -480,7 +490,10 @@ pub fn decode(code: &[u8]) -> Result<Vec<DecodedInstruction>, ReferenceError> {
                 if {
                     let first = u32::from_le_bytes(bytes[..4].try_into().unwrap());
                     first & 0xfc000000 == 0xd4000000
-                        && matches!((first >> 16) & 1023, 361 | 362 | 364 | 330 | 877 | 881)
+                        && matches!(
+                            (first >> 16) & 1023,
+                            361 | 362 | 364 | 330 | 877 | 881 | 328 | 867 | 334 | 868 | 882 | 376
+                        )
                 } =>
             {
                 decode_vop3_integer(bytes, offset)?
@@ -896,7 +909,7 @@ fn decode_vop3_integer(bytes: &[u8], offset: usize) -> Result<(Op, usize), Refer
         return Err(error(offset, "unsupported VOP3 modifiers"));
     }
     let opcode = (first >> 16) & 1023;
-    let binary = matches!(opcode, 361 | 362 | 364);
+    let binary = matches!(opcode, 361 | 362 | 364 | 867 | 868);
     let raw = [second & 511, (second >> 9) & 511, (second >> 18) & 511];
     if binary && raw[2] != 128 {
         return Err(error(offset, "noncanonical VOP3 binary SRC2"));
@@ -939,7 +952,20 @@ fn decode_vop3_integer(bytes: &[u8], offset: usize) -> Result<(Op, usize), Refer
         364 => Op::VectorProduct(VectorProduct::HighSigned, dst, args[0], args[1]),
         330 => Op::VectorTernary(VectorTernary::BitSelect, dst, args[0], args[1], args[2]),
         877 => Op::VectorTernary(VectorTernary::AddThree, dst, args[0], args[1], args[2]),
-        _ => Op::VectorTernary(VectorTernary::AndOr, dst, args[0], args[1], args[2]),
+        881 => Op::VectorTernary(VectorTernary::AndOr, dst, args[0], args[1], args[2]),
+        867 => Op::BitBinary(BitBinary::BitFieldMask, dst, args[0], args[1]),
+        868 => Op::BitBinary(BitBinary::CountBitsAdd, dst, args[0], args[1]),
+        328 => Op::VectorTernary(
+            VectorTernary::ExtractUnsigned,
+            dst,
+            args[0],
+            args[1],
+            args[2],
+        ),
+        334 => Op::VectorTernary(VectorTernary::AlignBits, dst, args[0], args[1], args[2]),
+        882 => Op::VectorTernary(VectorTernary::OrThree, dst, args[0], args[1], args[2]),
+        376 => Op::VectorTernary(VectorTernary::XorThree, dst, args[0], args[1], args[2]),
+        _ => return Err(error(offset, "unsupported VOP3 integer opcode")),
     };
     Ok((op, if literal { 12 } else { 8 }))
 }
@@ -1070,6 +1096,7 @@ fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32
                 | Op::MoveScalar(dst, _)
                 | Op::Add(dst, ..)
                 | Op::Vector(_, dst, ..)
+                | Op::BitBinary(_, dst, ..)
                 | Op::VectorProduct(_, dst, ..)
                 | Op::VectorTernary(_, dst, ..)
                 | Op::VectorInteger(_, dst, ..)
@@ -1197,7 +1224,9 @@ fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32
                     results[lane] = Some((dst, kind.apply(value)));
                 }
             }
-            Op::VectorProduct(_, dst, a, b) | Op::VectorTernary(_, dst, a, b, _) => {
+            Op::VectorProduct(_, dst, a, b)
+            | Op::BitBinary(_, dst, a, b)
+            | Op::VectorTernary(_, dst, a, b, _) => {
                 let c = match op {
                     Op::VectorTernary(_, _, _, _, c) => c,
                     _ => CompareSource::Immediate(0),
@@ -1231,6 +1260,20 @@ fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32
                             a.wrapping_add(b).wrapping_add(c)
                         }
                         Op::VectorTernary(VectorTernary::AndOr, ..) => (a & b) | c,
+                        Op::BitBinary(BitBinary::BitFieldMask, ..) => {
+                            ((1u32 << (a & 31)) - 1) << (b & 31)
+                        }
+                        Op::BitBinary(BitBinary::CountBitsAdd, ..) => {
+                            a.count_ones().wrapping_add(b)
+                        }
+                        Op::VectorTernary(VectorTernary::ExtractUnsigned, ..) => {
+                            (a >> (b & 31)) & ((1u32 << (c & 31)) - 1)
+                        }
+                        Op::VectorTernary(VectorTernary::AlignBits, ..) => {
+                            (((u64::from(a) << 32) | u64::from(b)) >> (c & 31)) as u32
+                        }
+                        Op::VectorTernary(VectorTernary::OrThree, ..) => a | b | c,
+                        Op::VectorTernary(VectorTernary::XorThree, ..) => a ^ b ^ c,
                         _ => unreachable!(),
                     };
                     results[lane] = Some((dst, value));

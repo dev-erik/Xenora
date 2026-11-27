@@ -6,8 +6,8 @@ mod cfg;
 
 use xenora_decoder::{
     DecodedInstruction, ExportTarget, Instruction, InterpolationPhase, ScalarAluOp,
-    ScalarCompareOp, ScalarSource, ScalarUnaryOp, VectorProductOp, VectorSource, VectorTernaryOp,
-    VectorUnaryOp,
+    ScalarCompareOp, ScalarSource, ScalarUnaryOp, VectorBitBinaryOp, VectorProductOp, VectorSource,
+    VectorTernaryOp, VectorUnaryOp,
 };
 
 use super::{Architecture, Binary, CompileError, CompiledShader, Value, decode_fixture};
@@ -63,6 +63,7 @@ enum Op {
     IntegerBinary(Binary, Value, Value),
     IntegerUnary(VectorUnaryOp, Value),
     IntegerProduct(VectorProductOp, Value, Value),
+    IntegerBitBinary(VectorBitBinaryOp, Value, Value),
     IntegerTernary(VectorTernaryOp, Value, Value, Value),
     ScalarBits(ScalarValue),
     SampleLodZero {
@@ -758,6 +759,7 @@ fn lift(
                 Instruction::VectorAlu { dst, .. }
                 | Instruction::VectorUnary { dst, .. }
                 | Instruction::VectorProduct { dst, .. }
+                | Instruction::VectorBitBinary { dst, .. }
                 | Instruction::VectorTernary { dst, .. }
                 | Instruction::AddNoCarryU32 { dst, .. }
                 | Instruction::VectorAndB32 { dst, .. }
@@ -1155,6 +1157,36 @@ fn lift(
                     };
                 }
                 let result = ir.push(Some(offset), Op::IntegerProduct(op, values[0], values[1]));
+                registers[usize::from(dst)] = Some(result);
+            }
+            Instruction::VectorBitBinary {
+                op,
+                dst,
+                src0,
+                src1,
+            } if !exporting => {
+                if stage == Stage::Pixel && dst < 2 {
+                    return Err(error("pixel VGPRs 0 and 1 are reserved for interpolation"));
+                }
+                let mut values = [Value(0); 2];
+                for (slot, src) in values.iter_mut().zip([src0, src1]) {
+                    *slot = match src {
+                        VectorSource::Register(register) => read(register)?,
+                        VectorSource::Immediate(bits) => {
+                            ir.push(Some(offset), Op::ScalarBits(ScalarValue::Constant(bits)))
+                        }
+                        VectorSource::Scalar(register) => {
+                            let source = read_scalar(
+                                ScalarSource::Register(register),
+                                &scalars,
+                                &mut ir.uniform_mask,
+                                offset,
+                            )?;
+                            ir.push(Some(offset), Op::ScalarBits(source))
+                        }
+                    };
+                }
+                let result = ir.push(Some(offset), Op::IntegerBitBinary(op, values[0], values[1]));
                 registers[usize::from(dst)] = Some(result);
             }
             Instruction::VectorTernary {
@@ -1912,6 +1944,7 @@ fn validate_vertex_integer_bits(vertex: &StageIr) -> Result<(), CompileError> {
                 Op::IntegerBinary(..)
                     | Op::IntegerUnary(..)
                     | Op::IntegerProduct(..)
+                    | Op::IntegerBitBinary(..)
                     | Op::IntegerTernary(..)
                     | Op::ScalarBits(_)
             )
@@ -2022,6 +2055,7 @@ fn validate_resource_types(
                 Op::IntegerBinary(..)
                     | Op::IntegerUnary(..)
                     | Op::IntegerProduct(..)
+                    | Op::IntegerBitBinary(..)
                     | Op::IntegerTernary(..)
                     | Op::ScalarBits(_)
             ) || matches!(op, Op::SampleLodZero { texture_index, .. }
@@ -2077,6 +2111,7 @@ fn validate_resource_types(
             }
             Op::IntegerUnary(_, source) => pixel_coordinates[source.0],
             Op::IntegerProduct(_, a, b) => pixel_coordinates[a.0] || pixel_coordinates[b.0],
+            Op::IntegerBitBinary(_, a, b) => pixel_coordinates[a.0] || pixel_coordinates[b.0],
             Op::IntegerTernary(_, a, b, c) => {
                 pixel_coordinates[a.0] || pixel_coordinates[b.0] || pixel_coordinates[c.0]
             }
@@ -2144,6 +2179,7 @@ fn validate_resource_types(
             }
             Op::IntegerUnary(_, source) => uniform_floats[source.0],
             Op::IntegerProduct(_, a, b) => uniform_floats[a.0] || uniform_floats[b.0],
+            Op::IntegerBitBinary(_, a, b) => uniform_floats[a.0] || uniform_floats[b.0],
             Op::IntegerTernary(_, a, b, c) => {
                 uniform_floats[a.0] || uniform_floats[b.0] || uniform_floats[c.0]
             }
@@ -2491,6 +2527,17 @@ fn emit_range(
             }
             Op::IntegerProduct(op, a, b) => {
                 let expression = super::vector_product_expression(
+                    op,
+                    &format!("as_type<uint>({a})"),
+                    &format!("as_type<uint>({b})"),
+                );
+                (
+                    format!("{}.bits {a}, {b}", op.mnemonic()),
+                    format!("as_type<float>({expression})"),
+                )
+            }
+            Op::IntegerBitBinary(op, a, b) => {
+                let expression = super::vector_bit_binary_expression(
                     op,
                     &format!("as_type<uint>({a})"),
                     &format!("as_type<uint>({b})"),

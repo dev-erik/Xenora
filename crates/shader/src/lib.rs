@@ -14,8 +14,8 @@ pub use graphics::{
 
 pub use xenora_decoder::Architecture;
 use xenora_decoder::{
-    DecodeError, DecodedInstruction, Instruction, ScalarSource, VectorBinary, VectorCompareOp,
-    VectorProductOp, VectorSource, VectorTernaryOp, VectorUnaryOp,
+    DecodeError, DecodedInstruction, Instruction, ScalarSource, VectorBinary, VectorBitBinaryOp,
+    VectorCompareOp, VectorProductOp, VectorSource, VectorTernaryOp, VectorUnaryOp,
 };
 
 /// SGPR index of `vcc_lo`.
@@ -99,6 +99,7 @@ enum Op {
     Binary(Binary, Value, Value),
     Unary(VectorUnaryOp, Value),
     Product(VectorProductOp, Value, Value),
+    BitBinary(VectorBitBinaryOp, Value, Value),
     Ternary(VectorTernaryOp, Value, Value, Value),
     MergeLanes {
         mask: u32,
@@ -139,6 +140,7 @@ impl Op {
             Self::Binary(_, left, right) => vec![left, right],
             Self::Unary(_, source) => vec![source],
             Self::Product(_, a, b) => vec![a, b],
+            Self::BitBinary(_, a, b) => vec![a, b],
             Self::Ternary(_, a, b, c) => vec![a, b, c],
             Self::MergeLanes {
                 active, inactive, ..
@@ -162,6 +164,7 @@ impl Op {
             Self::Constant(value) => format!("0x{value:08x}u"),
             Self::Unary(op, source) => vector_unary_expression(op, &name(source)),
             Self::Product(op, a, b) => vector_product_expression(op, &name(a), &name(b)),
+            Self::BitBinary(op, a, b) => vector_bit_binary_expression(op, &name(a), &name(b)),
             Self::Ternary(op, a, b, c) => {
                 vector_ternary_expression(op, &name(a), &name(b), &name(c))
             }
@@ -328,11 +331,26 @@ fn vector_product_expression(op: VectorProductOp, a: &str, b: &str) -> String {
         }
     }
 }
+fn vector_bit_binary_expression(op: VectorBitBinaryOp, a: &str, b: &str) -> String {
+    match op {
+        VectorBitBinaryOp::BfmB32 => format!("((1u << (({a}) & 31u)) - 1u) << (({b}) & 31u)"),
+        VectorBitBinaryOp::BcntU32B32 => format!("popcount({a}) + ({b})"),
+    }
+}
 fn vector_ternary_expression(op: VectorTernaryOp, a: &str, b: &str, c: &str) -> String {
     match op {
         VectorTernaryOp::BfiB32 => format!("(({a}) & ({b})) | (~({a}) & ({c}))"),
         VectorTernaryOp::Add3U32 => format!("(({a}) + ({b})) + ({c})"),
         VectorTernaryOp::AndOrB32 => format!("(({a}) & ({b})) | ({c})"),
+        VectorTernaryOp::BfeU32 => {
+            format!("(({a}) >> (({b}) & 31u)) & ((1u << (({c}) & 31u)) - 1u)")
+        }
+        // Select the low word for count zero; every evaluated shift is at most31.
+        VectorTernaryOp::AlignbitB32 => format!(
+            "((({c}) & 31u) == 0u ? ({b}) : ((({b}) >> (({c}) & 31u)) | (({a}) << ((32u - (({c}) & 31u)) & 31u))))"
+        ),
+        VectorTernaryOp::Or3B32 => format!("({a}) | ({b}) | ({c})"),
+        VectorTernaryOp::Xor3B32 => format!("({a}) ^ ({b}) ^ ({c})"),
     }
 }
 
@@ -508,6 +526,10 @@ pub fn compile(architecture: Architecture, bytes: &[u8]) -> Result<CompiledShade
                 format!("uint {dest} = {};", operation.expression(&thread, "", "")),
             ),
             Op::Product(op, a, b) => (
+                format!("{dest} = {} {a}, {b}", op.mnemonic()),
+                format!("uint {dest} = {};", operation.expression(&thread, "", "")),
+            ),
+            Op::BitBinary(op, a, b) => (
                 format!("{dest} = {} {a}, {b}", op.mnemonic()),
                 format!("uint {dest} = {};", operation.expression(&thread, "", "")),
             ),
@@ -808,6 +830,7 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
                 | Instruction::VectorAlu { .. }
                 | Instruction::VectorUnary { .. }
                 | Instruction::VectorProduct { .. }
+                | Instruction::VectorBitBinary { .. }
                 | Instruction::VectorTernary { .. } => continue,
                 _ => {}
             }
@@ -1168,6 +1191,38 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
                     };
                 }
                 (Some(dst), Op::Product(op, values[0], values[1]))
+            }
+            Instruction::VectorBitBinary {
+                op,
+                dst,
+                src0,
+                src1,
+            } => {
+                let mut values = [Value(0); 2];
+                for (slot, src) in values.iter_mut().zip([src0, src1]) {
+                    *slot = match src {
+                        VectorSource::Register(register) => read(register)?,
+                        VectorSource::Scalar(register) if usize::from(register) == VCC_LO => {
+                            match (lane_vcc, scalars[VCC_LO]) {
+                                (Some(mask), _) => mask,
+                                (None, Some(bits)) => {
+                                    constant(&mut operations, &mut facts, offset, bits)
+                                }
+                                (None, None) => {
+                                    return Err(error("VOP3 integer reads uninitialized VCC_LO"));
+                                }
+                            }
+                        }
+                        VectorSource::Scalar(register) => {
+                            let bits = read_scalar(ScalarSource::Register(register))?;
+                            constant(&mut operations, &mut facts, offset, bits)
+                        }
+                        VectorSource::Immediate(bits) => {
+                            constant(&mut operations, &mut facts, offset, bits)
+                        }
+                    };
+                }
+                (Some(dst), Op::BitBinary(op, values[0], values[1]))
             }
             Instruction::VectorTernary {
                 op,

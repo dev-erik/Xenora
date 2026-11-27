@@ -1669,3 +1669,75 @@ gpu = "fixture verified"
 recognized = true
 decoded = true
 llvm = "three-way passed"
+
+[[instruction]]
+form = "v_bfe_u32"
+encoding = "VOP3; 3 checked sources; two scalar identities; modifiers excluded"
+representation = "8 B or 12 B with shared literal"
+lowering = "MSL uint masked unsigned extraction; compute and graphics"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_bfm_b32"
+encoding = "VOP3; 2 checked sources; two scalar identities; modifiers excluded"
+representation = "8 B or 12 B with shared literal"
+lowering = "MSL uint masked width and offset mask creation; compute and graphics"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_alignbit_b32"
+encoding = "VOP3; 3 checked sources; two scalar identities; modifiers excluded"
+representation = "8 B or 12 B with shared literal"
+lowering = "MSL uint concatenated word alignment with zero-count handling; compute and graphics"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_bcnt_u32_b32"
+encoding = "VOP3; 2 checked sources; two scalar identities; modifiers excluded"
+representation = "8 B or 12 B with shared literal"
+lowering = "MSL uint population count plus wrapping accumulator; compute and graphics"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_or3_b32"
+encoding = "VOP3; 3 checked sources; two scalar identities; modifiers excluded"
+representation = "8 B or 12 B with shared literal"
+lowering = "MSL uint three-input bitwise OR; compute and graphics"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_xor3_b32"
+encoding = "VOP3; 3 checked sources; two scalar identities; modifiers excluded"
+representation = "8 B or 12 B with shared literal"
+lowering = "MSL uint three-input bitwise XOR; compute and graphics"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"

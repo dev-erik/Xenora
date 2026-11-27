@@ -5,9 +5,13 @@ use xenora_shader::{
     compile_graphics_pipeline_typed,
 };
 const VS: &[u8] = include_bytes!("../../../fixtures/rdna2/x9-constant-vs.bin");
-const OPS: [u32; 6] = [361, 362, 364, 330, 877, 881];
+const OPS: [u32; 12] = [361, 362, 364, 330, 877, 881, 867, 868, 328, 334, 882, 376];
 fn arity(op: u32) -> usize {
-    if matches!(op, 361 | 362 | 364) { 2 } else { 3 }
+    if matches!(op, 361 | 362 | 364 | 867 | 868) {
+        2
+    } else {
+        3
+    }
 }
 fn bytes(words: &[u32]) -> Vec<u8> {
     words.iter().flat_map(|w| w.to_le_bytes()).collect()
