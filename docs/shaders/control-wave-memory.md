@@ -72,7 +72,7 @@ Implemented waits: `S_WAITCNT_VMCNT null,0` under the existing synthetic compute
 | EXP / VINTRP / VOP interpolation | Stage interfaces, export ordering, interpolation and linkage |
 | Waits / barriers / cache controls | Exact counters, scopes, visibility, rendezvous and unsupported-mode rejection |
 
-Waits cannot be blanket no-ops. Resource graphs and local readback tests do not establish all guest ordering semantics. LGKMCNT/EXPCNT and register/nonzero thresholds remain deferred until their pending-state contracts exist.
+Waits cannot be blanket no-ops. Resource graphs and local readback tests do not establish all guest ordering semantics. A bounded LGKMCNT-zero wait already completes the single pending DS result. General LGKM/EXP event accounting and register/nonzero thresholds remain deferred until their pending-state contracts exist.
 
 ## Evidence and next gates
 
@@ -185,12 +185,14 @@ this increment does not complete S3.4.
 ### Bounded selected-lane writes
 
 VOP3 WRITELANE accepts ordinary SGPR data, inline integer/float-bit constants
-and literal words, with a compile-time-known ordinary SGPR lane selector.
+and literal words, with a known ordinary SGPR lane selector or a captured
+runtime ordinary SGPR selector under a full-wave launch.
 The selected lane is the low five selector bits in Wave32 or six in complete
 Wave64; the write
 ignores EXEC, including EXEC zero. An initialized v1–v255 destination retains
 its earlier value in every other lane. Pending-load destinations, unknown
-scalar data, runtime lane selectors, modifiers, special-register data and
+scalar data, runtime lane selectors under partial-wave launches, modifiers,
+special-register data and
 inline/literal lane selectors remain rejected. The data may be a captured lane-read scalar snapshot.
 
 No input lookup is required at the destination lane. When that lane lies outside

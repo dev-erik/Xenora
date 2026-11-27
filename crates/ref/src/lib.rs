@@ -1937,7 +1937,16 @@ fn execute_wave(
                 }
             }
             Op::WriteLane { dst, src, index } => {
-                let selected = read_scalar(Source::Register(index))? & (width as u32 - 1);
+                // Resolve both scalar snapshots before inspecting or changing any lane.
+                // Runtime selectors are admitted only under the explicit full-wave contract.
+                let selector = if launch == Wave32Launch::FullWavesRequired {
+                    scalars[usize::from(index)]
+                        .or(lane_scalars[usize::from(index)])
+                        .ok_or_else(|| error(offset, "read from uninitialized SGPR"))?
+                } else {
+                    read_scalar(Source::Register(index))?
+                };
+                let selected = selector & (width as u32 - 1);
                 let value = match src {
                     Source::Immediate(bits) => bits,
                     Source::Register(register) => scalars[usize::from(register)]

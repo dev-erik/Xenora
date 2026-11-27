@@ -1717,13 +1717,15 @@ this contract does not invent values for missing lanes or read outside input.
 See [remaining wave/lane requirements](shaders/control-wave-memory.md).
 
 
-`v_writelane_b32` admits a known ordinary SGPR selector and ordinary SGPR data
+`v_writelane_b32` admits a known ordinary SGPR selector, or a captured runtime
+ordinary SGPR selector under a full-wave launch, and ordinary SGPR data
 (constant or a captured lane-read result), inline integer/float-bit constants,
 or a literal dword, with an initialized v1–v255 destination. Literal data follows
 both encoding words, making the instruction12 bytes rather than8. The write
 selects `selector & 31` under Wave32 or `selector & 63` under complete Wave64, ignores EXEC, and preserves
 other destination lanes. An absent destination changes none of the present
-invocations. Pending destinations, runtime selectors, modifiers, special-register
+invocations. Pending destinations, runtime selectors under partial-wave launches,
+modifiers, special-register
 data, inline/literal selectors, graphics and lane writes inside runtime branch
 regions remain rejected. Constant float operands retain their exact word bits.
 
@@ -1868,3 +1870,20 @@ masked rotation, inactive PERMLANE modes, shared VGPRs and graphics/helper-lane
 semantics remain rejected. Configuration is an original synthetic ABI, not an
 Xbox launch descriptor. Actual acceptance evidence belongs in the
 [shader checkpoint](testing/stage3-control-memory-opening.md).
+
+
+### Captured runtime lane-write selectors
+
+Full-wave Wave32 and Wave64 compute launches admit WRITELANE selectors captured
+by a supported lane read. Selector and data snapshots are evaluated before the
+write, including when they share an SGPR. The selected guest lane is the low
+five or six bits of that captured selector. Every other lane retains its prior
+VGPR value, independently of EXEC. Later overwrites of the original source or
+selector cannot change the captured result.
+
+The compiler represents this write as a lane-varying operation with explicit
+selector, data and prior-destination dependencies. Replaying a later lane read
+or comparison evaluates selection in that replay's guest-lane context. Existing
+source-size, node and context limits still apply. This does not admit arbitrary
+runtime scalar arithmetic, dynamic EXEC, runtime branch-region lane writes,
+graphics participation or runtime selectors in partial-wave launches.

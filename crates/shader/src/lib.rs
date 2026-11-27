@@ -270,6 +270,12 @@ enum Op {
         source: Value,
         selector: Value,
     },
+    /// Captured scalar selector/data; only the selected guest lane changes.
+    WriteLane {
+        selector: Value,
+        data: Value,
+        old: Value,
+    },
     Constant(u32),
     Binary(Binary, Value, Value),
     Unary(VectorUnaryOp, Value),
@@ -324,6 +330,11 @@ impl Op {
             Self::Load(_) | Self::Constant(_) | Self::ScalarBranch { .. } => Vec::new(),
             Self::Binary(_, left, right) => vec![left, right],
             Self::ReadLane { source, selector } => vec![source, selector],
+            Self::WriteLane {
+                selector,
+                data,
+                old,
+            } => vec![selector, data, old],
             Self::Unary(_, source) => vec![source],
             Self::Product(_, a, b) => vec![a, b],
             Self::BitBinary(_, a, b) => vec![a, b],
@@ -417,6 +428,17 @@ impl Op {
                     _ => format!("{left} {symbol} {right}"),
                 }
             }
+            Self::WriteLane {
+                selector,
+                data,
+                old,
+            } => format!(
+                "({lane}) == ({} & {}u) ? {} : {}",
+                name(selector),
+                wave.lanes() - 1,
+                name(data),
+                name(old)
+            ),
             Self::MergeLanes {
                 mask,
                 active,
@@ -961,6 +983,7 @@ pub fn compile_with_wave_config(
             | Op::Gather { .. }
             | Op::Scatter { .. }
             | Op::MergeLanes { .. }
+            | Op::WriteLane { .. }
             | Op::BitBinary(
                 VectorBitBinaryOp::MbcntLoU32B32 | VectorBitBinaryOp::MbcntHiU32B32,
                 _,
@@ -1079,6 +1102,17 @@ pub fn compile_with_wave_config(
                 let _ = writeln!(ir, "{offset:04x}: branch.{suffix} {mask} -> 0x{target:04x}");
                 continue;
             }
+            Op::WriteLane {
+                selector,
+                data,
+                old,
+            } => (
+                format!("{dest} = write.lane {selector}, {data}, {old}"),
+                format!(
+                    "uint {dest} = {};",
+                    operation.expression(&thread, "", &lane, config.size)
+                ),
+            ),
             Op::MergeLanes {
                 mask,
                 active,
@@ -1873,7 +1907,18 @@ fn lift(
                 continue;
             }
             Instruction::WriteLaneB32 { dst, src, lane } => {
-                let selected = read_scalar(ScalarSource::Register(lane))? & lane_mask;
+                let selected = scalars[usize::from(lane)].map(|bits| bits & lane_mask);
+                let runtime_selector = if selected.is_none() {
+                    if launch != WaveLaunch::FullWavesRequired {
+                        return Err(error("runtime lane write selector requires full waves"));
+                    }
+                    Some(
+                        lane_scalars[usize::from(lane)]
+                            .ok_or_else(|| error("lane write selector has no captured value"))?,
+                    )
+                } else {
+                    None
+                };
                 let old = read(dst)?;
                 let value = match src {
                     ScalarSource::Immediate(bits) => {
@@ -1893,15 +1938,34 @@ fn lift(
                         ));
                     }
                 };
-                registers[usize::from(dst)] = Some(merge_lanes(
-                    &mut operations,
-                    &mut facts,
-                    offset,
-                    1u64 << selected,
-                    value,
-                    Some(old),
-                    wave,
-                )?);
+                let written = if let Some(selector) = runtime_selector {
+                    let next = Value(operations.len());
+                    operations.push((
+                        offset,
+                        Op::WriteLane {
+                            selector,
+                            data: value,
+                            old,
+                        },
+                    ));
+                    facts.push(KnownBits {
+                        zero: facts[value.0].zero & facts[old.0].zero,
+                        one: facts[value.0].one & facts[old.0].one,
+                        values: None,
+                    });
+                    next
+                } else {
+                    merge_lanes(
+                        &mut operations,
+                        &mut facts,
+                        offset,
+                        1u64 << selected.unwrap(),
+                        value,
+                        Some(old),
+                        wave,
+                    )?
+                };
+                registers[usize::from(dst)] = Some(written);
                 continue;
             }
             Instruction::ReadFirstLaneB32 { dst, src }

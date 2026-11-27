@@ -29,6 +29,11 @@ remains unsupported.
 - Extended the read-only RDNA2 planning CLI (`python3 -m qa rdna2`) with family/status filters, compact summaries, Codex-ready manifests under `artifacts/`, active-claim exclusion (family claims exclude those families; path-only claims block overlapping permitted files), coverage reconcile against `semantic_coverage` without inflating counts, and inventory diffs. Covered by `tests/qa/test_rdna2_plan.py`; planning only, no GPU production edits.
 
 ### Added
+- Added a full Stage 3 roadmap separating decoded instruction counts, remaining
+  architectural work and qualified effort bands.
+- Extended full-wave compute lane writes to captured runtime SGPR selectors,
+  preserving per-wave snapshots and other destination lanes. Default partial-wave
+  launches retain their existing constant-selector restriction.
 - Extended compute WRITELANE data to inline integer values, floating-point bit
   patterns and literal words while preserving lane selection, destination
   readiness and EXEC-independent writes. Verification is recorded in the shader

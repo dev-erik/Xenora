@@ -455,3 +455,39 @@ run; the focused five-encoding LLVM check passed separately. Workspace all-targe
 Clippy, formatting, generated coverage/map checks, claims and dependency checks
 passed. Exact changed-source hashes are archived in
 `artifacts/s34-write-constants/verified-source.json`.
+
+## Captured runtime WRITELANE selectors
+
+Explicit full-wave Wave32 and Wave64 compute launches now accept WRITELANE
+selectors captured by supported lane reads. Data and selector may share an SGPR;
+both snapshots precede the destination update. Selection uses the low five or
+six bits, ignores EXEC, and retains all other destination lanes. Default
+partial-wave launches still reject runtime selectors. Graphics and runtime
+branch-region lane transfers remain outside this contract.
+
+The independent corpus supplies48 programs, covering both wave sizes, READFIRST
+and READLANE capture, three EXEC states and four observation modes. Three waves
+per program use different selectors. Expected outputs check source overwrites,
+data/index aliasing, nested-read snapshots and comparison replay without using
+production lowering or the reference evaluator to construct expected values.
+
+On Apple M4 Max, the runtime-selector, existing lane-write and Wave64 suites
+passed21 tests with zero ignored, covering810 native dispatches:48 new runtime
+cases,132 constant-data cases,504 earlier lane-write cases and126 Wave64
+regressions. Metal API and shader validation were enabled. A mutation forced
+runtime selection to lane zero; the independent native output assertion failed.
+After byte-for-byte source restoration, all21 tests and810 dispatches passed
+again. See `artifacts/s34-write-runtime/native.log`, `mutation.log` and
+`native-restored.log`.
+
+CPU results:317 shader tests,80 reference tests and343 independent semantic
+tests passed. The ordinary semantic run ignored39 native opt-ins; only the
+selected native suites above were rerun for this increment. Workspace all-target
+Clippy, formatting, generated coverage/maps, claims and dependency checks passed.
+Two independent static reviewers approved implementation and expected values.
+Source hashes are archived in `artifacts/s34-write-runtime/verified-source.json`.
+
+The [full S3 roadmap](../shaders/stage3-roadmap.md) records all stages, remaining
+work packages and qualified effort bands. Runtime selectors close one bounded
+S3.4 operand gap; dynamic EXEC, special-register/other operand modes, graphics
+helper lanes and unresolved public ISA semantics remain open.

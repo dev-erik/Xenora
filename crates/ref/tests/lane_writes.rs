@@ -184,3 +184,93 @@ fn constant_sources_do_not_relax_selector_modifier_or_destination_contract() {
         );
     }
 }
+
+#[test]
+fn runtime_selector_uses_guest_width_and_captured_data_in_full_waves() {
+    use xenora_ref::{WaveConfig, WaveLaunch, WaveSize, execute_with_wave_config};
+    for (size, width) in [(WaveSize::Wave32, 32usize), (WaveSize::Wave64, 64)] {
+        for selector in [0, 31, 32, 63, 64, 127, u32::MAX] {
+            let mut input: Vec<u32> = (0..width * 2).map(|i| 1000 + i as u32).collect();
+            input[0] = selector;
+            input[width] = selector.wrapping_add(1);
+            // Capture s9 from v1, use that same SGPR for data and selector,
+            // then overwrite it. Empty EXEC cannot suppress the write.
+            let p = code(&[
+                0x7e120501, 0xbefe0380, 0xbeff0380, 0xd7610001, 0x02001209, 0xbe890387, 0xbefe03c1,
+                0xbeff03c1,
+            ]);
+            let mut expected = input.clone();
+            for base in [0, width] {
+                expected[base + (input[base] as usize & (width - 1))] = input[base];
+            }
+            assert_eq!(
+                execute_with_wave_config(
+                    &p,
+                    &input,
+                    WaveConfig {
+                        size,
+                        launch: WaveLaunch::FullWavesRequired
+                    }
+                )
+                .unwrap(),
+                expected
+            );
+            assert!(execute(&p, &input).is_err()); // PartialAllowed rejects even a complete population.
+        }
+    }
+}
+#[test]
+fn runtime_selector_is_not_recomputed_after_its_source_vgpr_changes() {
+    use xenora_ref::{WaveConfig, WaveLaunch, WaveSize, execute_with_wave_config};
+    for (size, width) in [(WaveSize::Wave32, 32usize), (WaveSize::Wave64, 64)] {
+        let mut input: Vec<u32> = (0..width).map(|i| 100 + i as u32).collect();
+        input[0] = width as u32; // selects lane zero in either mode
+        let p = code(&[0x7e120501, 0xd7610001, 0x02001287, 0xd7610001, 0x02001289]);
+        let mut expected = input.clone();
+        expected[0] = 9;
+        assert_eq!(
+            execute_with_wave_config(
+                &p,
+                &input,
+                WaveConfig {
+                    size,
+                    launch: WaveLaunch::FullWavesRequired
+                }
+            )
+            .unwrap(),
+            expected
+        );
+    }
+}
+#[test]
+fn runtime_selector_retains_destination_readiness_checks_with_empty_exec() {
+    use xenora_ref::{WaveConfig, WaveLaunch, WaveSize, execute_with_wave_config};
+    for (size, width) in [(WaveSize::Wave32, 32usize), (WaveSize::Wave64, 64)] {
+        for dst in [0, 1, 2] {
+            let mut b = vec![0x7e120501];
+            if dst == 1 {
+                b.extend([0xe0302000, 0x80000100]);
+            } // pending reload
+            b.extend([
+                0xbefe0380,
+                0xbeff0380,
+                0xd7610000 | dst,
+                0x02001287,
+                0xbf8c3f70,
+                0xbefe03c1,
+                0xbeff03c1,
+            ]);
+            assert!(
+                execute_with_wave_config(
+                    &code(&b),
+                    &vec![0; width],
+                    WaveConfig {
+                        size,
+                        launch: WaveLaunch::FullWavesRequired
+                    }
+                )
+                .is_err()
+            );
+        }
+    }
+}

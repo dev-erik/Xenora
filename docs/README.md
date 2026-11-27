@@ -23,6 +23,8 @@ either path. The [changelog](../CHANGELOG.md) records notable changes.
 - [WRITELANE constant-data plan](superpowers/plans/2026-11-27-writelane-constants.md) — Scope and validation for inline and literal lane-write data.
 - [Explicit Wave64 compute plan](superpowers/plans/2026-11-27-wave64-compute.md) — Implemented complete-wave configuration, 64-bit masks and half-wave transfer rules, with independent native validation and remaining limits.
 
+- [Full S3 roadmap and effort map](shaders/stage3-roadmap.md) — All shader stages, remaining work packages and shared prerequisites.
+
 ## Native Metal graphics
 
 - [Bounded resource dependencies](interfaces.md#bounded-resource-dependency-contract) — Version selection, failure/lifetime rules and [acceptance checklist](superpowers/plans/2026-11-27-resource-graph-acceptance.md).

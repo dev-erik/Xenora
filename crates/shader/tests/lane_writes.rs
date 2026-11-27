@@ -249,3 +249,125 @@ fn literal_write_is_rejected_in_graphics_even_when_skipped() {
         }
     }
 }
+
+fn full_runtime_write(
+    size: xenora_shader::WaveSize,
+    tail: &[u32],
+) -> xenora_shader::CompiledShader {
+    use xenora_shader::{WaveConfig, WaveLaunch, compile_with_wave_config};
+    let mut body = vec![0x7e120501, 0x7e100501]; // Capture selector s9 and data s8 before writes.
+    body.extend([0xbefe0380]);
+    if size == xenora_shader::WaveSize::Wave64 {
+        body.push(0xbeff0380);
+    }
+    body.extend([0xd7610001, 0x02001208]);
+    body.extend([0xbe880389, 0xbe890380]); // Later scalar writes cannot alter either snapshot.
+    body.push(0xbefe03c1);
+    if size == xenora_shader::WaveSize::Wave64 {
+        body.push(0xbeff03c1);
+    }
+    body.extend(tail);
+    compile_with_wave_config(
+        Gfx1030,
+        &code(&body),
+        WaveConfig {
+            size,
+            launch: WaveLaunch::FullWavesRequired,
+        },
+    )
+    .unwrap()
+}
+#[test]
+fn full_wave_runtime_selector_captures_data_and_ignores_exec() {
+    for size in [
+        xenora_shader::WaveSize::Wave32,
+        xenora_shader::WaveSize::Wave64,
+    ] {
+        let compiled = full_runtime_write(size, &[]);
+        assert!(compiled.ir.contains("write.lane"));
+        let mask = if size == xenora_shader::WaveSize::Wave64 {
+            63
+        } else {
+            31
+        };
+        assert!(compiled.msl.contains(&format!("& {mask}u) ?")));
+        assert!(!compiled.msl.contains("simd_"));
+    }
+}
+#[test]
+fn runtime_write_replays_through_compare_readlane_and_gather() {
+    for size in [
+        xenora_shader::WaveSize::Wave32,
+        xenora_shader::WaveSize::Wave64,
+    ] {
+        for tail in [
+            vec![0x7d840301, 0x7e02026a], // Compare replays the updated source at each guest lane.
+            vec![0xd760000a, 0x02001301, 0x7e02020a], // Read selected lane of updated VGPR.
+            vec![0xd8d4041f, 0x01000001, 0xbf8cc07f], // Gather uses selected child lane context.
+        ] {
+            let compiled = full_runtime_write(size, &tail);
+            assert!(compiled.msl.matches(" ? ").count() >= 2);
+        }
+    }
+}
+#[test]
+fn runtime_write_requires_captured_selector_ready_destination_and_full_launch() {
+    use xenora_shader::{WaveConfig, WaveLaunch, WaveSize, compile_with_wave_config};
+    let body = [0x7e120501, 0xd7610001, 0x02001281];
+    let err = compile(Gfx1030, &code(&body)).unwrap_err();
+    assert!(err.to_string().contains("requires full waves"), "{err}");
+    for size in [WaveSize::Wave32, WaveSize::Wave64] {
+        let cfg = WaveConfig {
+            size,
+            launch: WaveLaunch::FullWavesRequired,
+        };
+        let err =
+            compile_with_wave_config(Gfx1030, &code(&[0xd7610001, 0x02001281]), cfg).unwrap_err();
+        assert!(err.to_string().contains("no captured value"), "{err}");
+        for dst in [0, 2] {
+            let err = compile_with_wave_config(
+                Gfx1030,
+                &code(&[0x7e120501, 0xd7610000 | dst, 0x02001281]),
+                cfg,
+            )
+            .unwrap_err();
+            assert!(err.to_string().contains("source register"), "{err}");
+        }
+        let err = compile_with_wave_config(
+            Gfx1030,
+            &code(&[
+                0x7e120501, 0xe0302000, 0x80000100, 0xd7610001, 0x02001281, 0xbf8c3f70,
+            ]),
+            cfg,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("pending a load wait"), "{err}");
+    }
+}
+
+#[test]
+fn runtime_write_scatter_replay_and_full_wave_region_exclusion() {
+    use xenora_shader::{WaveConfig, WaveLaunch, WaveSize, compile_with_wave_config};
+    for size in [WaveSize::Wave32, WaveSize::Wave64] {
+        // Address zero makes scatter revisit the captured write at each writer lane.
+        let compiled = full_runtime_write(size, &[0x7e060280, 0xdac80000, 0x01000103, 0xbf8cc07f]);
+        assert!(compiled.msl.contains("< 32u;"));
+        assert!(compiled.msl.contains("== ("));
+        for branch in [0xbf860002, 0xbf870002] {
+            let body = [0x7e120501, 0x7d840301, branch, 0xd7610001, 0x02001281];
+            let err = compile_with_wave_config(
+                Gfx1030,
+                &code(&body),
+                WaveConfig {
+                    size,
+                    launch: WaveLaunch::FullWavesRequired,
+                },
+            )
+            .unwrap_err();
+            assert!(
+                matches!(err, xenora_shader::CompileError::Verify { .. }),
+                "{err}"
+            );
+        }
+    }
+}
