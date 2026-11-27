@@ -181,7 +181,7 @@ else
     run workspace cargo test --locked --workspace
     run gpu scripts/test-gpu.sh
     run fixtures scripts/assemble-fixture.sh --check
-    run status python3 scripts/audit/status.py --check
+    run status bash -c 'python3 scripts/audit/status.py --check && python3 scripts/audit/shader_checklist.py --check'
     run claims scripts/audit/claims.sh
     run dependencies scripts/audit/dependencies.sh
     run diff git diff --check

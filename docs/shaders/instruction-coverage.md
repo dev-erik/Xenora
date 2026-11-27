@@ -1,5 +1,7 @@
 # gfx1030 instruction coverage
 
+See the [complete conversion checklist](shader-checklist.md) for **all** pinned RDNA2 forms, including those not implemented. This page contains the narrower recorded evidence and operand contracts.
+
 For counts of every gfx1030 form in AMD's metadata against forms Xenora can execute, run `xenora shaders coverage`. Its "discovered" column is metadata coverage, not execution support.
 
 The decoder accepts an explicitly tagged, little-endian gfx1030 Wave32

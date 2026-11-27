@@ -18,6 +18,16 @@ Xenora is still experimental. Verified work is restricted to independently autho
 
 ---
 
+## Shader conversion progress
+
+[![Every RDNA2 form and its conversion status](docs/assets/shader-conversion-map.svg)](docs/shaders/shader-checklist.md)
+
+Browse the **[complete instruction checklist](docs/shaders/shader-checklist.md)**:
+all pinned RDNA2 encoding forms, grouped by family, with converted subsets,
+pending acceptance, evidence gaps and forms not yet converted. The checklist
+separates decoder support from recorded translation and native validation;
+a decoded instruction is not automatically fully implemented.
+
 ## What works today?
 
 Xenora has progressed from executing individual x86-64 instructions to running original PE32+ guest programs that interact with translated GPU workloads on Apple Silicon.

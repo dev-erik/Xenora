@@ -51,6 +51,7 @@ either path. The [changelog](../CHANGELOG.md) records notable changes.
 - [Scalar bit operations and conditional writes](shaders/scalar-conditional.md) — Masked bit updates/tests, lazy conditional writes and loop state.
 - [SOP2 scalar ALU](shaders/scalar-alu.md) — Supported scalar arithmetic, bitwise and half-word packing forms, their SCC rules and sources.
 - [Semantic registry](shaders/semantic-registry.md) — How to add an instruction form: registry fields, validation, generation and the independence rule.
+- [Complete shader conversion checklist](shaders/shader-checklist.md) — Every pinned RDNA2 form, family summaries, Stage 3 planning map and generated conversion graphic.
 - [Vector products, bitfields and three-source integer arithmetic](shaders/vop3-integer.md) — Checked VOP3 sources, scalar-bus limits and bit-preserving lowering; including multiply-add and packed absolute differences.
 - [Integer vector unary instructions](shaders/vector-unary.md) — Bit operations, scan sentinels, sources and preserved execution state.
 - [VOPC integer compares](shaders/vector-compare.md) — Wave32 compare forms, the VCC/EXEC contract, runtime `s_cbranch_vccz` and the Metal mapping.
