@@ -6,6 +6,33 @@ claim of Xbox hardware equivalence. Supporting raw logs, mutation records and
 source manifests remain local and are not distributed with the repository.
 The array-range descriptor increment below was validated on 26 November 2026.
 
+## Stage 3.1 increment: scalar bit tests, updates and conditional writes
+
+27 November 2026. Six new 32-bit scalar forms implement BITSET0/1, BITCMP0/1,
+CMOV and CMOVK. See the [dataflow and operand contract](../shaders/scalar-conditional.md).
+Both independent reviewers accepted the bounded increment. Conditional false
+writes retain undefined state, bit updates retain old destination bits, and both
+loop-analysis scans account for possible writes. Full S3.1 remains open.
+
+Final stable-source checks passed 306 CPU tests (eight ignored), 21 LLVM tests
+including 223 new encoding rows and 915 three-way instruction comparisons over
+114 forms, 12 compute validation tests including 33 native dispatches, and four
+native graphics tests covering 156 draws. The graphics CPU tests exercise lazy
+writes, flags, masks, counter protection and lost bounds with valid controls.
+Native results ran on Apple M4 Max with Metal API/shader validation; counts of
+dispatches and draws derive from test loops. No AMD/Xbox hardware claim follows.
+
+Six assertion-killed mutations exercise eager conditional reads, false-path
+initialization, each CFG scan independently, CMOVK sign extension and index
+masking. Source restoration hashes match. All nine repository gates passed in
+`artifacts/validation-full.q6XLvG`: workspace 1161 passed/0 failed/158 ignored;
+GPU 487 passed/0 failed/1 ignored (overlapping suites). The ARM64 audit checked
+130 executables/loadable dependencies. Evidence is local under
+`artifacts/s31-scalar-conditional/` and adjacent independent review records.
+Historical unsupported-opcode tests now exclude the six forms covered by the
+new positive suite; other exclusions remain checked. The independent reference
+also attributes truncated scalar literals to their owning instruction.
+
 ## Stage 3.1 increment: scalar and literal integer vector operands
 
 27 November 2026. Six existing e32 bitwise/reverse-shift forms now accept the

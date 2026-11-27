@@ -59,7 +59,7 @@ fn sopk_identity_operands_and_four_byte_length() {
 #[test]
 fn neighboring_opcodes_stay_unsupported() {
     for op in 1..=26u32 {
-        if matches!(op, 3..=16 | 23) {
+        if matches!(op, 2..=16 | 23) {
             continue;
         }
         let word = 0xb000_0000 | (op << 23);

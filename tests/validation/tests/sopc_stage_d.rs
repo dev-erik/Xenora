@@ -367,9 +367,9 @@ fn unsupported_compare_operands_are_rejected() {
 
 #[test]
 fn neighbouring_sopc_opcodes_stay_unsupported() {
-    // 12-15 are bit tests, 18-19 the 64-bit compares (guide 12.4); 16, 17 and
-    // 20-127 are not listed. Neither interpreter supports any of them.
-    for op in 12..=127 {
+    // Bit tests12/13 are covered by scalar_conditional. Their B64 neighbors14/15,
+    // 64-bit compares18/19 and remaining unimplemented encodings stay rejected.
+    for op in 14..=127 {
         let code = program(&[(8, 1), (9, 2)], false, &[sopc(op, 8, 9)], 10);
         assert_rejected_at_alu(&format!("opcode {op}"), &code, 2);
     }

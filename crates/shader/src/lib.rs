@@ -311,6 +311,14 @@ fn vector_unary_expression(op: VectorUnaryOp, source: &str) -> String {
     }
 }
 
+fn scalar_bit_set(old: u32, index: u32, value: bool) -> u32 {
+    let mask = 1u32 << (index & 31);
+    if value { old | mask } else { old & !mask }
+}
+fn scalar_bit_test(word: u32, index: u32, value: bool) -> bool {
+    ((word >> (index & 31)) & 1 != 0) == value
+}
+
 // Each bit is either known zero, known one or unconstrained.
 #[derive(Clone, Copy)]
 struct KnownBits {
@@ -921,6 +929,46 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
                     .get_mut(usize::from(dst))
                     .ok_or_else(|| error("scalar destination exceeds the fixture register file"))?;
                 *slot = Some(value);
+                continue;
+            }
+            Instruction::ScalarBitSetB32 { dst, index, value } => {
+                if dst < 8 {
+                    return Err(error(
+                        "scalar bit update would modify a resource descriptor",
+                    ));
+                }
+                let old = read_scalar(ScalarSource::Register(dst))?;
+                let index = read_scalar(index)?;
+                scalars[usize::from(dst)] = Some(scalar_bit_set(old, index, value));
+                continue;
+            }
+            Instruction::ScalarBitCompareB32 { src, index, value } => {
+                scc = Some(scalar_bit_test(
+                    read_scalar(src)?,
+                    read_scalar(index)?,
+                    value,
+                ));
+                continue;
+            }
+            Instruction::ScalarConditionalMoveB32 { dst, .. }
+            | Instruction::ScalarConditionalMoveImmediateI32 { dst, .. } => {
+                if dst < 8 {
+                    return Err(error(
+                        "scalar conditional move would modify a resource descriptor",
+                    ));
+                }
+                let take =
+                    scc.ok_or_else(|| error("scalar conditional move reads uninitialized SCC"))?;
+                if take {
+                    let value = match instruction.instruction {
+                        Instruction::ScalarConditionalMoveB32 { src, .. } => read_scalar(src)?,
+                        Instruction::ScalarConditionalMoveImmediateI32 { immediate, .. } => {
+                            immediate as i32 as u32
+                        }
+                        _ => unreachable!(),
+                    };
+                    scalars[usize::from(dst)] = Some(value);
+                }
                 continue;
             }
             Instruction::ScalarUnary { op, dst, src } => {

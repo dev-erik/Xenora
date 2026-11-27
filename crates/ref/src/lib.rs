@@ -33,6 +33,9 @@ pub enum Source {
     Immediate(u32),
 }
 
+/// Scalar operand spelling for APIs whose register bank is always SGPR.
+pub type ScalarSource = Source;
+
 /// Operations decoded independently by the reference interpreter.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Op {
@@ -51,6 +54,10 @@ pub enum Op {
     Move(u8, Source),
     Add(u8, u8, u8),
     ScalarMove(u8, Source),
+    ScalarBitSet(u8, ScalarSource, bool),
+    ScalarBitCompare(ScalarSource, ScalarSource, bool),
+    ScalarConditionalMove(u8, ScalarSource),
+    ScalarConditionalMoveImmediate(u8, i16),
     /// SOP1 unary operation writing an SGPR (s0-s105), and SCC for some.
     ScalarUnary(ScalarUnary, u8, Source),
     /// VOP1 move of a normal SGPR or `vcc_lo` (106) into a VGPR.
@@ -488,6 +495,33 @@ pub fn decode(code: &[u8]) -> Result<Vec<DecodedInstruction>, ReferenceError> {
                 let (source, length) = decode_scalar(*source, tail, offset)?;
                 (Op::ScalarMove(destination & 0x7f, source), length)
             }
+            [
+                source,
+                opcode @ (5 | 27 | 29),
+                destination @ 0x80..=0xe9,
+                0xbe,
+                tail @ ..,
+            ] => {
+                let (source, length) = decode_scalar(*source, tail, offset)?;
+                let dst = destination & 0x7f;
+                (
+                    if *opcode == 5 {
+                        Op::ScalarConditionalMove(dst, source)
+                    } else {
+                        Op::ScalarBitSet(dst, source, *opcode == 29)
+                    },
+                    length,
+                )
+            }
+            [src, index, opcode @ (12 | 13), 0xbf, tail @ ..] if (*src, *index) != (255, 255) => {
+                let (src, a) = decode_scalar(*src, tail, offset)?;
+                let (index, b) = decode_scalar(*index, tail, offset)?;
+                (Op::ScalarBitCompare(src, index, *opcode == 13), a.max(b))
+            }
+            [lo, hi, dst @ 0..=105, 0xb1, ..] => (
+                Op::ScalarConditionalMoveImmediate(*dst, i16::from_le_bytes([*lo, *hi])),
+                4,
+            ),
             // SOP1: ENCODING 0b10_1111101 in bits 23-31, SDST in 16-22 (s0-s105
             // only), OP in 8-15.
             [
@@ -1107,6 +1141,33 @@ fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32
                     lane_derived_vcc = false;
                 }
                 scalars[usize::from(dst)] = Some(value);
+            }
+            Op::ScalarBitSet(dst, index, value) => {
+                if dst < 8 {
+                    return Err(error(offset, "write to a reserved resource SGPR"));
+                }
+                let old = read_scalar(Source::Register(dst))?;
+                let mask = 1u32 << (read_scalar(index)? & 31);
+                scalars[usize::from(dst)] = Some(if value { old | mask } else { old & !mask });
+            }
+            Op::ScalarBitCompare(src, index, value) => {
+                scc = Some(((read_scalar(src)? >> (read_scalar(index)? & 31)) & 1 != 0) == value);
+            }
+            Op::ScalarConditionalMove(dst, src) => {
+                if dst < 8 {
+                    return Err(error(offset, "write to a reserved resource SGPR"));
+                }
+                if scc.ok_or_else(|| error(offset, "conditional move requires initialized SCC"))? {
+                    scalars[usize::from(dst)] = Some(read_scalar(src)?);
+                }
+            }
+            Op::ScalarConditionalMoveImmediate(dst, immediate) => {
+                if dst < 8 {
+                    return Err(error(offset, "write to a reserved resource SGPR"));
+                }
+                if scc.ok_or_else(|| error(offset, "conditional move requires initialized SCC"))? {
+                    scalars[usize::from(dst)] = Some(i32::from(immediate) as u32);
+                }
             }
             Op::ScalarUnary(kind, dst, src) => {
                 if dst < 8 {

@@ -209,6 +209,22 @@ pub enum Instruction {
     AddNoCarryU32 { dst: u8, src0: u8, src1: u8 },
     /// SOP1 32-bit move to a normal SGPR or an EXEC/VCC half.
     ScalarMoveB32 { dst: u8, src: ScalarSource },
+    /// SOP1 read/modify/write of one old-destination bit; preserves SCC.
+    ScalarBitSetB32 {
+        dst: u8,
+        index: ScalarSource,
+        value: bool,
+    },
+    /// SOPC tests a source bit against `value`, replacing SCC only.
+    ScalarBitCompareB32 {
+        src: ScalarSource,
+        index: ScalarSource,
+        value: bool,
+    },
+    /// SOP1 writes a normal SGPR only when incoming SCC is true; preserves SCC.
+    ScalarConditionalMoveB32 { dst: u8, src: ScalarSource },
+    /// SOPK conditionally writes a sign-extended immediate; preserves SCC.
+    ScalarConditionalMoveImmediateI32 { dst: u8, immediate: i16 },
     /// SOP1 32-bit unary integer operation writing a normal SGPR (s0-s105) and,
     /// for some operations, SCC.
     ScalarUnary {
@@ -381,6 +397,12 @@ impl Instruction {
             Self::MoveB32 { .. } => "v_mov_b32_e32",
             Self::AddNoCarryU32 { .. } => "v_add_nc_u32_e64",
             Self::ScalarMoveB32 { .. } => "s_mov_b32",
+            Self::ScalarBitSetB32 { value: false, .. } => "s_bitset0_b32",
+            Self::ScalarBitSetB32 { value: true, .. } => "s_bitset1_b32",
+            Self::ScalarBitCompareB32 { value: false, .. } => "s_bitcmp0_b32",
+            Self::ScalarBitCompareB32 { value: true, .. } => "s_bitcmp1_b32",
+            Self::ScalarConditionalMoveB32 { .. } => "s_cmov_b32",
+            Self::ScalarConditionalMoveImmediateI32 { .. } => "s_cmovk_i32",
             Self::ScalarUnary { op, .. } => op.mnemonic(),
             Self::ScalarAlu { op, .. } => op.mnemonic(),
             Self::ScalarCompare { op, .. } => op.mnemonic(),
@@ -451,7 +473,16 @@ impl fmt::Display for Instruction {
             | Self::VectorXorB32 { dst, src0, src1 } => {
                 write!(formatter, " v{dst}, {src0}, v{src1}")
             }
-            Self::ScalarMoveB32 { dst, src } | Self::ScalarUnary { dst, src, .. } => {
+            Self::ScalarBitSetB32 { dst, index, .. } => {
+                write!(formatter, " {}, {index}", ScalarDestination(dst))
+            }
+            Self::ScalarBitCompareB32 { src, index, .. } => write!(formatter, " {src}, {index}"),
+            Self::ScalarConditionalMoveImmediateI32 { dst, immediate } => {
+                write!(formatter, " {}, {immediate}", ScalarDestination(dst))
+            }
+            Self::ScalarMoveB32 { dst, src }
+            | Self::ScalarConditionalMoveB32 { dst, src }
+            | Self::ScalarUnary { dst, src, .. } => {
                 write!(formatter, " {}, {src}", ScalarDestination(dst))
             }
             Self::ScalarAlu {

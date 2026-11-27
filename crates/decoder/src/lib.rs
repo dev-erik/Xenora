@@ -43,13 +43,19 @@ const fn concat_forms<const N: usize>() -> [(&'static str, EncodingFamily); N] {
 }
 
 /// Decoded forms not yet described by the semantic registry.
-const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 52] = [
+const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 58] = [
     ("BUFFER_LOAD_DWORD", EncodingFamily::Mubuf),
     ("BUFFER_STORE_DWORD", EncodingFamily::Mubuf),
     ("EXP", EncodingFamily::Exp),
     ("IMAGE_SAMPLE_LZ", EncodingFamily::Mimg),
     ("IMAGE_STORE", EncodingFamily::Mimg),
     ("S_ADDK_I32", EncodingFamily::Sopk),
+    ("S_BITSET0_B32", EncodingFamily::Sop1),
+    ("S_BITSET1_B32", EncodingFamily::Sop1),
+    ("S_BITCMP0_B32", EncodingFamily::Sopc),
+    ("S_BITCMP1_B32", EncodingFamily::Sopc),
+    ("S_CMOV_B32", EncodingFamily::Sop1),
+    ("S_CMOVK_I32", EncodingFamily::Sopk),
     ("S_CMPK_EQ_I32", EncodingFamily::Sopk),
     ("S_CMPK_LG_I32", EncodingFamily::Sopk),
     ("S_CMPK_GT_I32", EncodingFamily::Sopk),
@@ -491,6 +497,68 @@ fn decode_gfx1030(bytes: &[u8], offset: usize) -> Result<(Instruction, u8), Deco
             }
         };
         return Ok((instruction, 4));
+    }
+    // SOP1 partial-bit writes and conditional move retain their own state effects.
+    let sop1 = first & 0xff80_ff00;
+    if matches!(sop1, 0xbe80_1b00 | 0xbe80_1d00 | 0xbe80_0500) {
+        let mnemonic = match sop1 {
+            0xbe80_1b00 => "s_bitset0_b32",
+            0xbe80_1d00 => "s_bitset1_b32",
+            _ => "s_cmov_b32",
+        };
+        let dst = ((first >> 16) & 127) as u8;
+        if dst > 105 {
+            return Err(unsupported(mnemonic, "expected a normal SGPR destination"));
+        }
+        let (src, len) = scalar_source(first as u8, bytes, mnemonic)?;
+        let instruction = if sop1 == 0xbe80_0500 {
+            Instruction::ScalarConditionalMoveB32 { dst, src }
+        } else {
+            Instruction::ScalarBitSetB32 {
+                dst,
+                index: src,
+                value: sop1 == 0xbe80_1d00,
+            }
+        };
+        return Ok((instruction, len));
+    }
+    if first & 0xff80_0000 == 0xb100_0000 {
+        let dst = ((first >> 16) & 127) as u8;
+        if dst > 105 {
+            return Err(unsupported(
+                "s_cmovk_i32",
+                "expected a normal SGPR destination",
+            ));
+        }
+        return Ok((
+            Instruction::ScalarConditionalMoveImmediateI32 {
+                dst,
+                immediate: first as i16,
+            },
+            4,
+        ));
+    }
+    if matches!(first >> 16, 0xbf0c | 0xbf0d) {
+        let value = first >> 16 == 0xbf0d;
+        let mnemonic = if value {
+            "s_bitcmp1_b32"
+        } else {
+            "s_bitcmp0_b32"
+        };
+        let src_bits = first as u8;
+        let index_bits = (first >> 8) as u8;
+        if src_bits == 255 && index_bits == 255 {
+            return Err(unsupported(
+                mnemonic,
+                "only one source may select a literal",
+            ));
+        }
+        let (src, src_len) = scalar_source(src_bits, bytes, mnemonic)?;
+        let (index, index_len) = scalar_source(index_bits, bytes, mnemonic)?;
+        return Ok((
+            Instruction::ScalarBitCompareB32 { src, index, value },
+            src_len.max(index_len),
+        ));
     }
     if S_MOV_B32.matches(first) {
         let dst = ((first >> 16) & 0x7f) as u8;

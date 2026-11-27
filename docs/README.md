@@ -47,6 +47,7 @@ either path. The [changelog](../CHANGELOG.md) records notable changes.
 - [Bounded graphics countdowns](interfaces.md#bounded-countdown-loops-in-original-graphics-stages) — Original unsigned and signed-positive constant/MIN-bounded nested loops and early exits, typed carried values, native evidence and explicit admission limits.
 - [Instruction coverage](shaders/instruction-coverage.md) — Desktop gfx1030 instruction forms, operand limits, and CPU and GPU results.
 - [Semantic coverage](shaders/semantic-coverage.md) — Generated per-family counts of identified, declared, decoded, lowered and verified gfx1030 forms.
+- [Scalar bit operations and conditional writes](shaders/scalar-conditional.md) — Masked bit updates/tests, lazy conditional writes and loop state.
 - [SOP2 scalar ALU](shaders/scalar-alu.md) — Supported scalar arithmetic, bitwise and half-word packing forms, their SCC rules and sources.
 - [Semantic registry](shaders/semantic-registry.md) — How to add an instruction form: registry fields, validation, generation and the independence rule.
 - [Integer vector unary instructions](shaders/vector-unary.md) — Bit operations, scan sentinels, sources and preserved execution state.

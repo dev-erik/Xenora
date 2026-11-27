@@ -388,6 +388,18 @@ fn reference_op(instruction: Instruction) -> Op {
         ),
         Instruction::AddNoCarryU32 { dst, src0, src1 } => Op::Add(dst, src0, src1),
         Instruction::ScalarMoveB32 { dst, src } => Op::ScalarMove(dst, reference_scalar(src)),
+        Instruction::ScalarBitSetB32 { dst, index, value } => {
+            Op::ScalarBitSet(dst, reference_scalar(index), value)
+        }
+        Instruction::ScalarBitCompareB32 { src, index, value } => {
+            Op::ScalarBitCompare(reference_scalar(src), reference_scalar(index), value)
+        }
+        Instruction::ScalarConditionalMoveB32 { dst, src } => {
+            Op::ScalarConditionalMove(dst, reference_scalar(src))
+        }
+        Instruction::ScalarConditionalMoveImmediateI32 { dst, immediate } => {
+            Op::ScalarConditionalMoveImmediate(dst, immediate)
+        }
         Instruction::ScalarUnary { op, dst, src } => Op::ScalarUnary(
             match op {
                 ScalarUnaryOp::NotB32 => ScalarUnary::Not,
@@ -571,13 +583,14 @@ fn compares_fixture_instructions_against_llvm() {
         include_bytes!("../../../fixtures/rdna2/scalar-pack.bin"),
         include_bytes!("../../../fixtures/rdna2/vector-integer.bin"),
         include_bytes!("../../../fixtures/rdna2/vector-unary.bin"),
+        include_bytes!("../../../fixtures/rdna2/scalar-conditional.bin"),
         include_bytes!("../../../fixtures/rdna2/vector-compare.bin"),
         high_registers,
         &matrix,
     ] {
         count += compare_against_llvm(fixture, &mut forms);
     }
-    assert_eq!(forms.len(), 108, "forms compared: {forms:?}");
+    assert_eq!(forms.len(), 114, "forms compared: {forms:?}");
     eprintln!(
         "{count} three-way instruction comparisons across {} forms",
         forms.len()
@@ -923,6 +936,14 @@ fn normalize_llvm_assembly(assembly: &str, next_offset: usize) -> String {
                 "{} {reg}, {source}",
                 mnemonic.replacen("s_cmpk_", "s_cmp_", 1)
             )
+        }
+        "s_cmovk_i32" => {
+            let (dst, immediate) = operands.split_once(", ").unwrap();
+            let raw = immediate
+                .strip_prefix("0x")
+                .map(|digits| u16::from_str_radix(digits, 16).unwrap())
+                .unwrap_or_else(|| immediate.parse::<i16>().unwrap() as u16);
+            format!("{mnemonic} {dst}, {}", raw as i16)
         }
         "s_movk_i32" | "s_addk_i32" | "s_mulk_i32" => {
             let (dst, immediate) = operands.split_once(", ").unwrap();
@@ -1508,6 +1529,107 @@ fn llvm_legacy_integer_vop2_source_matrix_matches_exact_bytes() {
     for (decoded, (line, expected, instruction)) in decoded.iter().zip(&rows) {
         assert_eq!(decoded.offset, offset, "{line}");
         assert_eq!(&decoded.instruction, instruction, "{line}");
+        offset += expected.len();
+    }
+    assert_eq!(offset, stream.len());
+}
+
+#[test]
+#[ignore = "requires LLVM with the gfx1030 AMDGPU target"]
+fn llvm_scalar_bit_and_conditional_source_matrix_matches_exact_bytes() {
+    let sources = [
+        ("s0", 0u32, None),
+        ("s105", 105, None),
+        ("0", 128, None),
+        ("64", 192, None),
+        ("-1", 193, None),
+        ("-16", 208, None),
+        ("0x3f000000", 240, None),
+        ("0xbf000000", 241, None),
+        ("0x3f800000", 242, None),
+        ("0xbf800000", 243, None),
+        ("0x40000000", 244, None),
+        ("0xc0000000", 245, None),
+        ("0x40800000", 246, None),
+        ("0xc0800000", 247, None),
+        ("0x3e22f983", 248, None),
+        ("0x12345678", 255, Some(0x12345678u32)),
+    ];
+    let mut rows = Vec::new();
+    let mut add = |line: String, word: u32, literal: Option<u32>| {
+        let mut expected = word.to_le_bytes().to_vec();
+        if let Some(value) = literal {
+            expected.extend(value.to_le_bytes());
+        }
+        rows.push((line, expected));
+    };
+    for (name, op) in [
+        ("s_cmov_b32", 5u32),
+        ("s_bitset0_b32", 27),
+        ("s_bitset1_b32", 29),
+    ] {
+        for dst in [0u32, 32, 105] {
+            for (spelling, selector, literal) in sources {
+                add(
+                    format!("{name} s{dst}, {spelling}"),
+                    0xbe800000 | dst << 16 | op << 8 | selector,
+                    literal,
+                );
+            }
+        }
+    }
+    for (name, op) in [("s_bitcmp0_b32", 12u32), ("s_bitcmp1_b32", 13)] {
+        for (spelling, selector, literal) in sources {
+            add(
+                format!("{name} {spelling}, s32"),
+                0xbf000000 | op << 16 | 32 << 8 | selector,
+                literal,
+            );
+            add(
+                format!("{name} s32, {spelling}"),
+                0xbf000000 | op << 16 | selector << 8 | 32,
+                literal,
+            );
+        }
+    }
+    for dst in [0u32, 32, 105] {
+        for immediate in [0i16, 1, 32767, -32768, -1] {
+            add(
+                format!("s_cmovk_i32 s{dst}, {immediate}"),
+                0xb1000000 | dst << 16 | u32::from(immediate as u16),
+                None,
+            );
+        }
+    }
+    assert_eq!(rows.len(), 223);
+    let assembly = rows
+        .iter()
+        .map(|(line, _)| format!("{line}\n"))
+        .collect::<String>();
+    let output = llvm_mc(&[], assembly.as_bytes());
+    assert_llvm_success(&output);
+    let text = String::from_utf8(output.stdout).unwrap();
+    let encoded: Vec<_> = text
+        .lines()
+        .filter_map(|line| line.split_once("; encoding: ["))
+        .map(|(_, encoding)| encoding_bytes(encoding))
+        .collect();
+    assert_eq!(encoded.len(), rows.len());
+    for (actual, (line, expected)) in encoded.iter().zip(&rows) {
+        assert_eq!(actual, expected, "{line}");
+        let decoded = decode_at(Architecture::Gfx1030, actual, 0).unwrap();
+        assert_eq!(usize::from(decoded.byte_len), expected.len(), "{line}");
+        let reference = xenora_ref::decode(actual).unwrap();
+        assert_eq!(reference.len(), 1);
+        assert_eq!(reference[0].byte_len, expected.len(), "{line}");
+        assert_eq!(reference[0].op, reference_op(decoded.instruction), "{line}");
+    }
+    let stream: Vec<_> = encoded.into_iter().flatten().collect();
+    let decoded = decode(Architecture::Gfx1030, &stream).unwrap();
+    assert_eq!(decoded.len(), rows.len());
+    let mut offset = 0;
+    for (decoded, (_, expected)) in decoded.iter().zip(&rows) {
+        assert_eq!(decoded.offset, offset);
         offset += expected.len();
     }
     assert_eq!(offset, stream.len());

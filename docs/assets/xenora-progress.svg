@@ -1,17 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="530" height="185" viewBox="0 0 530 185" role="img" aria-labelledby="title description">
 <title id="title">Xenora · recorded progress</title>
-<desc id="description">Decoded gfx1030 forms: 123 of 123. Accepted Metal forms: 41 of 123. Accepted guest milestones · X1–X4: 4 of 4</desc>
+<desc id="description">Decoded gfx1030 forms: 129 of 129. Accepted Metal forms: 47 of 129. Accepted guest milestones · X1–X4: 4 of 4</desc>
 <rect x="1" y="1" width="528" height="183" rx="10" fill="#18212a" stroke="#516171"/>
 <g font-family="system-ui,sans-serif" fill="#eaf0f5">
 <text x="20" y="29" font-size="13" font-weight="700">RECORDED FIXTURE PROGRESS</text>
 <text x="20" y="58" font-size="13">Decoded gfx1030 forms</text>
-<text x="510" y="58" font-size="13" text-anchor="end">123 / 123</text>
+<text x="510" y="58" font-size="13" text-anchor="end">129 / 129</text>
 <rect x="20" y="65" width="490" height="4" rx="2" fill="#3c4a58"/>
 <rect x="20" y="65" width="490.00" height="4" rx="2" fill="#88c6bd"/>
 <text x="20" y="96" font-size="13">Accepted Metal forms</text>
-<text x="510" y="96" font-size="13" text-anchor="end">41 / 123</text>
+<text x="510" y="96" font-size="13" text-anchor="end">47 / 129</text>
 <rect x="20" y="103" width="490" height="4" rx="2" fill="#3c4a58"/>
-<rect x="20" y="103" width="163.33" height="4" rx="2" fill="#88c6bd"/>
+<rect x="20" y="103" width="178.53" height="4" rx="2" fill="#88c6bd"/>
 <text x="20" y="134" font-size="13">Accepted guest milestones · X1–X4</text>
 <text x="510" y="134" font-size="13" text-anchor="end">4 / 4</text>
 <rect x="20" y="141" width="490" height="4" rx="2" fill="#3c4a58"/>

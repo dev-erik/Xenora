@@ -499,3 +499,6 @@ mod inline_float_sources;
 
 #[path = "native/vector_unary_graphics.rs"]
 mod vector_unary_graphics;
+
+#[path = "native/scalar_conditional_graphics.rs"]
+mod scalar_conditional_graphics;

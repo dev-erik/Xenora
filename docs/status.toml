@@ -1525,3 +1525,75 @@ gpu = "fixture verified"
 recognized = true
 decoded = true
 llvm = "three-way passed"
+
+[[instruction]]
+form = "s_bitset0_b32"
+encoding = "SOP1; normal SGPRs and checked scalar sources; special and wide forms excluded"
+representation = "4 B or 8 B with literal"
+lowering = "resolved compute and MSL graphics masked bit clear retaining old destination"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "s_bitset1_b32"
+encoding = "SOP1; normal SGPRs and checked scalar sources; special and wide forms excluded"
+representation = "4 B or 8 B with literal"
+lowering = "resolved compute and MSL graphics masked bit set retaining old destination"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "s_bitcmp0_b32"
+encoding = "SOPC; normal SGPRs and checked scalar sources; special and wide forms excluded"
+representation = "4 B or 8 B with literal"
+lowering = "resolved compute and MSL graphics masked bit-zero SCC test"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "s_bitcmp1_b32"
+encoding = "SOPC; normal SGPRs and checked scalar sources; special and wide forms excluded"
+representation = "4 B or 8 B with literal"
+lowering = "resolved compute and MSL graphics masked bit-one SCC test"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "s_cmov_b32"
+encoding = "SOP1; normal SGPRs and checked scalar sources; special and wide forms excluded"
+representation = "4 B or 8 B with literal"
+lowering = "resolved compute and MSL graphics conditional scalar assignment"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "s_cmovk_i32"
+encoding = "SOPK; normal SGPRs and checked scalar sources; special and wide forms excluded"
+representation = "4 B"
+lowering = "resolved compute and MSL graphics conditional sign-extended immediate assignment"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"

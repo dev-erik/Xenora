@@ -42,6 +42,8 @@ enum Op {
     VertexInput(Float4Input, u8),
     Compare(ScalarCompareOp, ScalarValue, ScalarValue),
     ScalarUnaryResult(ScalarUnaryOp, ScalarValue),
+    ScalarBitSet(bool, ScalarValue, ScalarValue),
+    ScalarBitCompare(bool, ScalarValue, ScalarValue),
     ScalarNonzeroFlag(Value),
     ScalarResult(ScalarAluOp, ScalarValue, ScalarValue, Condition),
     ScalarFlag(ScalarAluOp, ScalarValue, ScalarValue, Condition, Value),
@@ -717,7 +719,10 @@ fn lift(
             let destination = match decoded.instruction {
                 Instruction::ScalarMoveB32 { dst, .. }
                 | Instruction::ScalarUnary { dst, .. }
-                | Instruction::ScalarAlu { dst, .. } => Some(dst),
+                | Instruction::ScalarAlu { dst, .. }
+                | Instruction::ScalarBitSetB32 { dst, .. }
+                | Instruction::ScalarConditionalMoveB32 { dst, .. }
+                | Instruction::ScalarConditionalMoveImmediateI32 { dst, .. } => Some(dst),
                 _ => None,
             };
             if let Some(dst) = destination {
@@ -870,6 +875,88 @@ fn lift(
                 let value = read_scalar(src, &scalars, &mut ir.uniform_mask, offset)?;
                 scalars[usize::from(dst)] = Some(value);
                 // MOV neither initializes nor overwrites SCC.
+            }
+            Instruction::ScalarBitSetB32 { dst, index, value } if !exporting => {
+                scalar_destination(dst, offset)?;
+                let old = read_scalar(
+                    ScalarSource::Register(dst),
+                    &scalars,
+                    &mut ir.uniform_mask,
+                    offset,
+                )?;
+                let index = read_scalar(index, &scalars, &mut ir.uniform_mask, offset)?;
+                let result = match (old, index) {
+                    (ScalarValue::Constant(a), ScalarValue::Constant(b)) => {
+                        ScalarValue::Constant(super::scalar_bit_set(a, b, value))
+                    }
+                    _ => ScalarValue::Runtime(
+                        ir.push(Some(offset), Op::ScalarBitSet(value, old, index)),
+                    ),
+                };
+                scalars[usize::from(dst)] = Some(result);
+            }
+            Instruction::ScalarBitCompareB32 { src, index, value } if !exporting => {
+                let src = read_scalar(src, &scalars, &mut ir.uniform_mask, offset)?;
+                let index = read_scalar(index, &scalars, &mut ir.uniform_mask, offset)?;
+                scc = Some(match (src, index) {
+                    (ScalarValue::Constant(a), ScalarValue::Constant(b)) => {
+                        Condition::Constant(super::scalar_bit_test(a, b, value))
+                    }
+                    _ => Condition::Runtime(
+                        ir.push(Some(offset), Op::ScalarBitCompare(value, src, index)),
+                    ),
+                });
+            }
+            Instruction::ScalarConditionalMoveB32 { dst, .. }
+            | Instruction::ScalarConditionalMoveImmediateI32 { dst, .. }
+                if !exporting =>
+            {
+                scalar_destination(dst, offset)?;
+                let source = match instruction {
+                    Instruction::ScalarConditionalMoveB32 { src, .. } => src,
+                    Instruction::ScalarConditionalMoveImmediateI32 { immediate, .. } => {
+                        ScalarSource::Immediate(immediate as i32 as u32)
+                    }
+                    _ => unreachable!(),
+                };
+                // Validate ABI classes even on an untaken write, without reading
+                // a local or recording a uniform use that will not execute.
+                if matches!(source, ScalarSource::Register(0..=23 | 106..=255)) {
+                    return Err(error(
+                        "graphics conditional move source must be a uniform or local",
+                    ));
+                }
+                let condition =
+                    scc.ok_or_else(|| error("SCC is uninitialized on the selected graphics path"))?;
+                if !matches!(condition, Condition::Constant(false)) {
+                    let selected = read_scalar(source, &scalars, &mut ir.uniform_mask, offset)?;
+                    let result = match condition {
+                        Condition::Constant(true) => selected,
+                        Condition::Runtime(_) => {
+                            let old = read_scalar(
+                                ScalarSource::Register(dst),
+                                &scalars,
+                                &mut ir.uniform_mask,
+                                offset,
+                            )?;
+                            if selected.same(old) {
+                                selected
+                            } else {
+                                ScalarValue::Runtime(ir.push(
+                                    Some(offset),
+                                    Op::ScalarResult(
+                                        ScalarAluOp::CselectB32,
+                                        selected,
+                                        old,
+                                        condition,
+                                    ),
+                                ))
+                            }
+                        }
+                        Condition::Constant(false) => unreachable!(),
+                    };
+                    scalars[usize::from(dst)] = Some(result);
+                }
             }
             Instruction::ScalarUnary { op, dst, src } if !exporting => {
                 scalar_destination(dst, offset)?;
@@ -2032,10 +2119,14 @@ fn validate_resource_types(
 fn value_type(op: Op) -> &'static str {
     match op {
         Op::Compare(..)
+        | Op::ScalarBitCompare(..)
         | Op::ScalarFlag(..)
         | Op::ScalarNonzeroFlag(..)
         | Op::Phi(ValueType::Bool) => "bool",
-        Op::ScalarResult(..) | Op::ScalarUnaryResult(..) | Op::Phi(ValueType::U32) => "uint",
+        Op::ScalarResult(..)
+        | Op::ScalarUnaryResult(..)
+        | Op::ScalarBitSet(..)
+        | Op::Phi(ValueType::U32) => "uint",
         _ => "float",
     }
 }
@@ -2247,6 +2338,24 @@ fn emit_range(
             Op::Compare(operator, left, right) => {
                 let expression = compare_expression(operator, left, right);
                 (format!("compare.u32 {expression}"), expression)
+            }
+            Op::ScalarBitSet(value, old, index) => {
+                let old = old.expression();
+                let index = index.expression();
+                let mask = format!("(1u << ({index} & 31u))");
+                let expression = if value {
+                    format!("{old} | {mask}")
+                } else {
+                    format!("{old} & ~{mask}")
+                };
+                (format!("bitset.u32 {expression}"), expression)
+            }
+            Op::ScalarBitCompare(value, source, index) => {
+                let source = source.expression();
+                let index = index.expression();
+                let bit = u8::from(value);
+                let expression = format!("(({source} >> ({index} & 31u)) & 1u) == {bit}u");
+                (format!("bitcmp.u32 {expression}"), expression)
             }
             Op::ScalarUnaryResult(operator, source) => {
                 let expression = scalar_unary_expression(operator, source);

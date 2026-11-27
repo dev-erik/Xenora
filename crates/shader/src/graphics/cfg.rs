@@ -139,7 +139,11 @@ pub(super) fn analyze(decoded: &[DecodedInstruction]) -> Result<Vec<CountedLoop>
         let mut decrement = None;
         for (i, item) in decoded.iter().enumerate().take(latch).skip(header + 2) {
             match item.instruction {
-                Instruction::ScalarMoveB32 { dst, .. } | Instruction::ScalarAlu { dst, .. } => {
+                Instruction::ScalarMoveB32 { dst, .. }
+                | Instruction::ScalarAlu { dst, .. }
+                | Instruction::ScalarBitSetB32 { dst, .. }
+                | Instruction::ScalarConditionalMoveB32 { dst, .. }
+                | Instruction::ScalarConditionalMoveImmediateI32 { dst, .. } => {
                     if usize::from(dst) < scalar_writes.len() {
                         scalar_writes[usize::from(dst)] = true;
                     }
@@ -294,7 +298,11 @@ pub(super) fn analyze(decoded: &[DecodedInstruction]) -> Result<Vec<CountedLoop>
             .take(loops[index].latch)
             .skip(loops[index].header + 2)
         {
-            if let Instruction::ScalarMoveB32 { dst, .. } | Instruction::ScalarAlu { dst, .. } =
+            if let Instruction::ScalarMoveB32 { dst, .. }
+            | Instruction::ScalarAlu { dst, .. }
+            | Instruction::ScalarBitSetB32 { dst, .. }
+            | Instruction::ScalarConditionalMoveB32 { dst, .. }
+            | Instruction::ScalarConditionalMoveImmediateI32 { dst, .. } =
                 decoded_instruction.instruction
                 && usize::from(dst) < nonincreasing.len()
             {

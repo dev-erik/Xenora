@@ -97,6 +97,9 @@ enum Insn {
     SMov(u8, Src),
     /// SOP1 unary opcode 7, 11, 13, 15, 17, 19, 21, 23, 25, 26 or 52.
     SUnary(u32, u8, Src),
+    SBitWrite(u8, Src, bool),
+    SBitTest(Src, Src, bool),
+    SConditional(u8, Src),
     /// SOP2 opcode 0-10, 14, 16, 18, an even opcode 20-36, 38-40, 44, 46-54.
     SAlu(u32, u8, Src, Src),
     /// SOPC opcode 0-11: `s_cmp_{eq,lg,gt,ge,lt,le}_i32` then `_u32`.
@@ -255,6 +258,45 @@ fn run_wave(program: &[(usize, Insn)], wave: &[u32]) -> Result<Vec<u32>, String>
                     vcc_lane_derived = execution_mask != 0;
                     None
                 })
+            }
+            Insn::SBitWrite(dst, index, set) => {
+                if dst < 8 {
+                    Err(format!("{offset:#x}: write to a resource SGPR"))
+                } else {
+                    read_s(&sgpr, Src::Reg(dst)).and_then(|old| {
+                        read_s(&sgpr, index).map(|index| {
+                            let bit = 2u32.pow(index % 32);
+                            let present = !(old / bit).is_multiple_of(2);
+                            sgpr[dst as usize] = Some(match (present, set) {
+                                (false, true) => old + bit,
+                                (true, false) => old - bit,
+                                _ => old,
+                            });
+                            None
+                        })
+                    })
+                }
+            }
+            Insn::SBitTest(src, index, set) => read_s(&sgpr, src).and_then(|word| {
+                read_s(&sgpr, index).map(|index| {
+                    scc = Some((word / 2u32.pow(index % 32)) % 2 == u32::from(set));
+                    None
+                })
+            }),
+            Insn::SConditional(dst, src) => {
+                if dst < 8 {
+                    Err(format!("{offset:#x}: write to a resource SGPR"))
+                } else {
+                    scc.ok_or_else(|| {
+                        format!("{offset:#x}: conditional move requires initialized SCC")
+                    })
+                    .and_then(|take| {
+                        if take {
+                            sgpr[dst as usize] = Some(read_s(&sgpr, src)?);
+                        }
+                        Ok(None)
+                    })
+                }
             }
             Insn::SUnary(opcode, dst, src) => {
                 if dst < 8 {
@@ -1170,6 +1212,40 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
         }
         return Ok((Insn::VAddNc(first as u8, src0 as u8, src1 as u8), 8));
     }
+    let bit_opcode = (first >> 8) & 255;
+    if first >> 23 == 0b1_0111_1101 && matches!(bit_opcode, 5 | 27 | 29) {
+        let dst = ((first >> 16) & 127) as u8;
+        if dst > 105 {
+            return Err(fail("unsupported SOP1 destination"));
+        }
+        let (src, len) = scalar_source(code, offset, first as u8)?;
+        return Ok((
+            if bit_opcode == 5 {
+                Insn::SConditional(dst, src)
+            } else {
+                Insn::SBitWrite(dst, src, bit_opcode == 29)
+            },
+            len,
+        ));
+    }
+    if first >> 23 == 0b1_0111_1110 && matches!((first >> 16) & 127, 12 | 13) {
+        let (a, b) = (first as u8, (first >> 8) as u8);
+        if a == 255 && b == 255 {
+            return Err(fail("two scalar literals"));
+        }
+        let (a, la) = scalar_source(code, offset, a)?;
+        let (b, lb) = scalar_source(code, offset, b)?;
+        return Ok((Insn::SBitTest(a, b, (first >> 16) & 127 == 13), la.max(lb)));
+    }
+    if first >> 23 == 0x162 {
+        let dst = ((first >> 16) & 127) as u8;
+        if dst > 105 {
+            return Err(fail("unsupported SOPK register"));
+        }
+        let low = first & 65535;
+        let bits = if low >= 32768 { low + 0xffff0000 } else { low };
+        return Ok((Insn::SConditional(dst, Src::Imm(bits)), 4));
+    }
     // SOP1: ENCODING 0b10_1111101 in bits 23-31, SDST 16-22, OP 8-15.
     let sop1_op = (first >> 8) & 0xff;
     if first >> 23 == 0b1_0111_1101
@@ -1411,7 +1487,15 @@ fn scalar_source(code: &[u8], offset: usize, selector: u8) -> Result<(Src, usize
             ),
             4,
         )),
-        255 => Ok((Src::Imm(word(code, offset + 4)?), 8)),
+        // Attribute an incomplete extension to its owning instruction, as in
+        // vector_src0; word() itself reports the address it was asked to read.
+        255 => Ok((
+            Src::Imm(
+                word(code, offset + 4)
+                    .map_err(|_| format!("{offset:#x}: truncated scalar literal"))?,
+            ),
+            8,
+        )),
         _ => Err(format!("{offset:#x}: bad scalar source")),
     }
 }
