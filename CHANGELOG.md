@@ -23,6 +23,10 @@ remains unsupported.
 - Extended the read-only RDNA2 planning CLI (`python3 -m qa rdna2`) with family/status filters, compact summaries, Codex-ready manifests under `artifacts/`, active-claim exclusion (family claims exclude those families; path-only claims block overlapping permitted files), coverage reconcile against `semantic_coverage` without inflating counts, and inventory diffs. Covered by `tests/qa/test_rdna2_plan.py`; planning only, no GPU production edits.
 
 ### Added
+- Added six MAD24/SAD operations in wrapping and integer-clamp modes, with
+  full-product accumulation before signed saturation and unsigned packed-word
+  differences. Both independent reviewers accepted the bounded implementation.
+
 - Added integer clamp modes for 24-bit signed/unsigned multiply and unsigned
   add/subtract/reverse-subtract, with saturation before narrowing. Both independent
   reviewers accepted the implementation; multiplication semantics are spec-derived.

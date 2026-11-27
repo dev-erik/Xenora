@@ -5,7 +5,8 @@ use std::fmt;
 pub use xenora_isa::{
     Architecture, CompareRelation, ExportTarget, Instruction, InterpolationPhase, ScalarAluOp,
     ScalarCompareOp, ScalarSource, ScalarUnaryOp, VectorAluOp, VectorBinaryOp, VectorBitBinaryOp,
-    VectorClampOp, VectorCompareOp, VectorProductOp, VectorSource, VectorTernaryOp, VectorUnaryOp,
+    VectorClampOp, VectorCompareOp, VectorMadSadOp, VectorProductOp, VectorSource, VectorTernaryOp,
+    VectorUnaryOp,
 };
 use xenora_isa::{
     BUFFER_LOAD_DWORD, BUFFER_STORE_DWORD, EXP, IMAGE_SAMPLE_LZ, IMAGE_STORE, S_BRANCH,
@@ -43,7 +44,13 @@ const fn concat_forms<const N: usize>() -> [(&'static str, EncodingFamily); N] {
 }
 
 /// Decoded forms not yet described by the semantic registry.
-const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 102] = [
+const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 108] = [
+    ("V_MAD_I32_I24", EncodingFamily::Vop3),
+    ("V_MAD_U32_U24", EncodingFamily::Vop3),
+    ("V_SAD_U8", EncodingFamily::Vop3),
+    ("V_SAD_HI_U8", EncodingFamily::Vop3),
+    ("V_SAD_U16", EncodingFamily::Vop3),
+    ("V_SAD_U32", EncodingFamily::Vop3),
     ("V_MUL_I32_I24", EncodingFamily::Vop3),
     ("V_MUL_HI_I32_I24", EncodingFamily::Vop3),
     ("V_MUL_U32_U24", EncodingFamily::Vop3),
@@ -1050,6 +1057,7 @@ fn move_b32(first: u32, bytes: &[u8]) -> Result<(Instruction, u8), DecodeErrorKi
 
 // Explicit identities keep arity independent of arithmetic category.
 enum CheckedVectorOp {
+    MadSad(VectorMadSadOp),
     BinaryAlias(VectorBinaryOp),
     UnaryAlias(VectorUnaryOp),
     Product(VectorProductOp),
@@ -1059,6 +1067,13 @@ enum CheckedVectorOp {
 impl CheckedVectorOp {
     fn from_word(first: u32) -> Option<Self> {
         Some(match first & 0xffff0000 {
+            0xd5420000 => Self::MadSad(VectorMadSadOp::MadI32I24),
+            0xd5430000 => Self::MadSad(VectorMadSadOp::MadU32U24),
+            0xd55a0000 => Self::MadSad(VectorMadSadOp::SadU8),
+            0xd55b0000 => Self::MadSad(VectorMadSadOp::SadHiU8),
+            0xd55c0000 => Self::MadSad(VectorMadSadOp::SadU16),
+            0xd55d0000 => Self::MadSad(VectorMadSadOp::SadU32),
+
             0xd5090000 => Self::BinaryAlias(VectorBinaryOp::Alu(VectorAluOp::MulI32I24)),
             0xd50a0000 => Self::BinaryAlias(VectorBinaryOp::Alu(VectorAluOp::MulHiI32I24)),
             0xd50b0000 => Self::BinaryAlias(VectorBinaryOp::Alu(VectorAluOp::MulU32U24)),
@@ -1125,7 +1140,7 @@ impl CheckedVectorOp {
         match self {
             Self::Product(_) | Self::BitBinary(_) | Self::BinaryAlias(_) => 2,
             Self::UnaryAlias(_) => 1,
-            Self::Ternary(_) => 3,
+            Self::Ternary(_) | Self::MadSad(_) => 3,
         }
     }
     fn mnemonic(&self) -> &'static str {
@@ -1141,6 +1156,7 @@ impl CheckedVectorOp {
             Self::Product(op) => op.mnemonic(),
             Self::BitBinary(op) => op.mnemonic(),
             Self::Ternary(op) => op.mnemonic(),
+            Self::MadSad(op) => op.mnemonic(),
         }
     }
 }
@@ -1158,7 +1174,11 @@ fn vector_integer_vop3(
     } else {
         None
     };
-    let forbidden_first = if clamped.is_some() { 0x7f00 } else { 0xff00 };
+    let forbidden_first = if clamped.is_some() || matches!(&op, CheckedVectorOp::MadSad(_)) {
+        0x7f00
+    } else {
+        0xff00
+    };
     if first & forbidden_first != 0 || second & 0xf8000000 != 0 {
         return Err(unsupported(
             mnemonic,
@@ -1222,6 +1242,14 @@ fn vector_integer_vop3(
         ));
     }
     let instruction = match op {
+        CheckedVectorOp::MadSad(op) => Instruction::VectorMadSad {
+            op,
+            clamp: first & 0x8000 != 0,
+            dst,
+            src0,
+            src1,
+            src2,
+        },
         CheckedVectorOp::BinaryAlias(VectorBinaryOp::Alu(VectorAluOp::AddNcU32))
             if matches!(
                 (src0, src1),

@@ -121,6 +121,33 @@ native tests cover order permutations, ties, sign boundaries and NaN-shaped raw
 words. Both independent reviewers accepted this increment after separate
 full and focused validation recorded in the local checkpoint.
 
+## Multiply-add and packed absolute differences
+
+Six three-source forms accept both wrapping and integer-clamp modes (bit 15):
+
+| Instruction | OP | Full result before wrapping or saturation |
+| --- | ---: | --- |
+| `V_MAD_I32_I24` | 322 | signed24(a) × signed24(b) + signed32(c) |
+| `V_MAD_U32_U24` | 323 | unsigned24(a) × unsigned24(b) + unsigned32(c) |
+| `V_SAD_U8` | 346 | c + sum of four unsigned byte absolute differences |
+| `V_SAD_HI_U8` | 347 | c + (sum of four unsigned byte differences shifted left 16) |
+| `V_SAD_U16` | 348 | c + sum of two unsigned halfword absolute differences |
+| `V_SAD_U32` | 349 | c + unsigned32 absolute difference |
+
+Wrapping returns the low 32 bits. Clamp saturates the final signed MAD result
+into the signed 32-bit range and every other result into the unsigned 32-bit
+range. MAD retains the full product before adding the accumulator: a product
+outside the destination range can return into range through cancellation.
+Only MAD multiplicands discard their high eight input bits. Every accumulator
+uses all 32 bits, including the low half for SAD_HI. Saturation is spec-derived
+from the public integer clamp rule and each operation's result type.
+
+The three-source admission, scalar-bus, source capture, mask, flag and graphics
+provenance rules above apply. These six forms permit bit 15; their other
+modifiers remain rejected. They do not extend runtime VCC branch regions.
+The fixture is `fixtures/rdna2/vop3-mad-sad.s`. Both independent reviewers accepted
+this extension; the local checkpoint records validation counts and limits.
+
 ## Evidence and acceptance
 
 Semantics and fields follow the public [AMD RDNA2 ISA, sections 6.2.1, 12.12

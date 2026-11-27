@@ -143,6 +143,36 @@ impl VectorClampOp {
     }
 }
 
+/// Three-source 32-bit multiply-add or sum-of-absolute-differences operation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum VectorMadSadOp {
+    /// `v_mad_i32_i24`.
+    MadI32I24,
+    /// `v_mad_u32_u24`.
+    MadU32U24,
+    /// `v_sad_u8`.
+    SadU8,
+    /// `v_sad_hi_u8`.
+    SadHiU8,
+    /// `v_sad_u16`.
+    SadU16,
+    /// `v_sad_u32`.
+    SadU32,
+}
+impl VectorMadSadOp {
+    /// Canonical mnemonic; the instruction carries the optional clamp suffix.
+    pub const fn mnemonic(self) -> &'static str {
+        match self {
+            Self::MadI32I24 => "v_mad_i32_i24",
+            Self::MadU32U24 => "v_mad_u32_u24",
+            Self::SadU8 => "v_sad_u8",
+            Self::SadHiU8 => "v_sad_hi_u8",
+            Self::SadU16 => "v_sad_u16",
+            Self::SadU32 => "v_sad_u32",
+        }
+    }
+}
+
 /// Full-width, value-only 32-bit vector product.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum VectorProductOp {
@@ -416,6 +446,15 @@ pub enum Instruction {
         src0: VectorSource,
         src1: VectorSource,
     },
+    /// MAD24/SAD with optional final destination saturation; preserves flags.
+    VectorMadSad {
+        op: VectorMadSadOp,
+        clamp: bool,
+        dst: u8,
+        src0: VectorSource,
+        src1: VectorSource,
+        src2: VectorSource,
+    },
     /// Unmodified three-source integer operation; preserves SCC, VCC and EXEC.
     VectorTernary {
         op: VectorTernaryOp,
@@ -624,6 +663,7 @@ impl Instruction {
                 VectorUnaryOp::FfbhI32 => "v_ffbh_i32_e64",
             },
             Self::VectorBitBinary { op, .. } => op.mnemonic(),
+            Self::VectorMadSad { op, .. } => op.mnemonic(),
             Self::VectorTernary { op, .. } => op.mnemonic(),
             Self::ScalarMoveB32 { .. } => "s_mov_b32",
             Self::ScalarBitSetB32 { value: false, .. } => "s_bitset0_b32",
@@ -737,6 +777,18 @@ impl fmt::Display for Instruction {
                 src2,
                 ..
             } => write!(formatter, " v{dst}, {src0}, {src1}, {src2}"),
+            Self::VectorMadSad {
+                clamp,
+                dst,
+                src0,
+                src1,
+                src2,
+                ..
+            } => write!(
+                formatter,
+                " v{dst}, {src0}, {src1}, {src2}{}",
+                if clamp { " clamp" } else { "" }
+            ),
             Self::VectorClampedE64 {
                 dst, src0, src1, ..
             } => write!(formatter, " v{dst}, {src0}, {src1} clamp"),

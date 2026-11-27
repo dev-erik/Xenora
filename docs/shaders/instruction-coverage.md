@@ -186,6 +186,12 @@ The wider LLVM operand matrix exercises decoding only. ABI means application bin
 | `v_ffbh_u32_e64` | VOP3; checked active sources and canonical unused inline-zero fields; modifiers excluded | 8 B or 12 B with shared literal | yes | yes | three-way passed | existing integer primitive; compute and graphics | implemented | fixture verified | fixture verified |
 | `v_ffbl_b32_e64` | VOP3; checked active sources and canonical unused inline-zero fields; modifiers excluded | 8 B or 12 B with shared literal | yes | yes | three-way passed | existing integer primitive; compute and graphics | implemented | fixture verified | fixture verified |
 | `v_ffbh_i32_e64` | VOP3; checked active sources and canonical unused inline-zero fields; modifiers excluded | 8 B or 12 B with shared literal | yes | yes | three-way passed | existing integer primitive; compute and graphics | implemented | fixture verified | fixture verified |
+| `v_mad_i32_i24` | VOP3; checked three sources; wrap and integer clamp | 8 B or 12 B with shared literal | yes | yes | three-way passed | integer compute and graphics; wrap and final saturation | implemented | fixture verified | fixture verified |
+| `v_mad_u32_u24` | VOP3; checked three sources; wrap and integer clamp | 8 B or 12 B with shared literal | yes | yes | three-way passed | integer compute and graphics; wrap and final saturation | implemented | fixture verified | fixture verified |
+| `v_sad_u8` | VOP3; checked three sources; wrap and integer clamp | 8 B or 12 B with shared literal | yes | yes | three-way passed | integer compute and graphics; wrap and final saturation | implemented | fixture verified | fixture verified |
+| `v_sad_hi_u8` | VOP3; checked three sources; wrap and integer clamp | 8 B or 12 B with shared literal | yes | yes | three-way passed | integer compute and graphics; wrap and final saturation | implemented | fixture verified | fixture verified |
+| `v_sad_u16` | VOP3; checked three sources; wrap and integer clamp | 8 B or 12 B with shared literal | yes | yes | three-way passed | integer compute and graphics; wrap and final saturation | implemented | fixture verified | fixture verified |
+| `v_sad_u32` | VOP3; checked three sources; wrap and integer clamp | 8 B or 12 B with shared literal | yes | yes | three-way passed | integer compute and graphics; wrap and final saturation | implemented | fixture verified | fixture verified |
 <!-- status:instructions:end -->
 
 ## Automated three-way comparison

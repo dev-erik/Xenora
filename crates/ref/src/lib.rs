@@ -76,6 +76,14 @@ pub enum Op {
         condition: BranchCondition,
     },
     Vector(VectorAlu, u8, CompareSource, u8),
+    MadSad(
+        MadSadOp,
+        bool,
+        u8,
+        CompareSource,
+        CompareSource,
+        CompareSource,
+    ),
     Clamped(ClampOp, u8, CompareSource, CompareSource),
     /// VOP2 32-bit integer form: VDST, SRC0 (VGPR, SGPR, `vcc_lo`, inline
     /// integer or literal) and VSRC1. Writes neither VCC nor SCC.
@@ -334,6 +342,16 @@ pub enum VectorAlu {
     FloatMultiply,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MadSadOp {
+    MadI32I24,
+    MadU32U24,
+    SadU8,
+    SadHiU8,
+    SadU16,
+    SadU32,
+}
+
 /// Saturate the mathematical result before narrowing to its 32-bit destination.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ClampOp {
@@ -565,6 +583,12 @@ pub fn decode(code: &[u8]) -> Result<Vec<DecodedInstruction>, ReferenceError> {
                                 | 441
                                 | 442
                                 | 443
+                                | 322
+                                | 323
+                                | 346
+                                | 347
+                                | 348
+                                | 349
                         )
                 } =>
             {
@@ -981,7 +1005,11 @@ fn decode_vop3_integer(bytes: &[u8], offset: usize) -> Result<(Op, usize), Refer
     let opcode = (first >> 16) & 1023;
     if first & 0x7f00 != 0
         || second >> 27 != 0
-        || (clamp && !matches!(opcode, 265 | 267 | 293 | 294 | 295))
+        || (clamp
+            && !matches!(
+                opcode,
+                265 | 267 | 293 | 294 | 295 | 322 | 323 | 346 | 347 | 348 | 349
+            ))
     {
         return Err(error(offset, "unsupported VOP3 modifiers"));
     }
@@ -1056,6 +1084,21 @@ fn decode_vop3_integer(bytes: &[u8], offset: usize) -> Result<(Op, usize), Refer
         .0;
     }
     let dst = first as u8;
+    let mad_sad = match opcode {
+        322 => Some(MadSadOp::MadI32I24),
+        323 => Some(MadSadOp::MadU32U24),
+        346 => Some(MadSadOp::SadU8),
+        347 => Some(MadSadOp::SadHiU8),
+        348 => Some(MadSadOp::SadU16),
+        349 => Some(MadSadOp::SadU32),
+        _ => None,
+    };
+    if let Some(kind) = mad_sad {
+        return Ok((
+            Op::MadSad(kind, clamp, dst, args[0], args[1], args[2]),
+            if literal { 12 } else { 8 },
+        ));
+    }
     if clamp {
         let kind = match opcode {
             265 => ClampOp::MulI24,
@@ -1357,6 +1400,7 @@ fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32
                 | Op::BitBinary(_, dst, ..)
                 | Op::VectorProduct(_, dst, ..)
                 | Op::VectorTernary(_, dst, ..)
+                | Op::MadSad(_, _, dst, ..)
                 | Op::Clamped(_, dst, ..)
                 | Op::VectorBinaryAlias(_, dst, ..)
                 | Op::VectorInteger(_, dst, ..)
@@ -1484,13 +1528,14 @@ fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32
                     results[lane] = Some((dst, kind.apply(value)));
                 }
             }
-            Op::Clamped(_, dst, a, b)
+            Op::MadSad(_, _, dst, a, b, _)
+            | Op::Clamped(_, dst, a, b)
             | Op::VectorBinaryAlias(_, dst, a, b)
             | Op::VectorProduct(_, dst, a, b)
             | Op::BitBinary(_, dst, a, b)
             | Op::VectorTernary(_, dst, a, b, _) => {
                 let c = match op {
-                    Op::VectorTernary(_, _, _, _, c) => c,
+                    Op::MadSad(_, _, _, _, _, c) | Op::VectorTernary(_, _, _, _, c) => c,
                     _ => CompareSource::Immediate(0),
                 };
                 let source = |lane, src| match src {
@@ -1508,6 +1553,45 @@ fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32
                 for lane in (0..lanes).filter(|&lane| executes(lane)) {
                     let (a, b, c) = (source(lane, a)?, source(lane, b)?, source(lane, c)?);
                     let value = match op {
+                        Op::MadSad(kind, clamp, ..) => {
+                            let signed24 = |x: u32| i64::from(((x << 8) as i32) >> 8);
+                            let result = match kind {
+                                MadSadOp::MadI32I24 => {
+                                    signed24(a) * signed24(b) + i64::from(c as i32)
+                                }
+                                MadSadOp::MadU32U24 => {
+                                    i64::from(a & 0xffffff) * i64::from(b & 0xffffff) + i64::from(c)
+                                }
+                                _ => {
+                                    let width = match kind {
+                                        MadSadOp::SadU8 | MadSadOp::SadHiU8 => 8,
+                                        MadSadOp::SadU16 => 16,
+                                        _ => 32,
+                                    };
+                                    let mask = u32::MAX >> (32 - width);
+                                    let sum: i64 = (0..32 / width)
+                                        .map(|i| {
+                                            i64::from(
+                                                ((a >> (i * width)) & mask)
+                                                    .abs_diff((b >> (i * width)) & mask),
+                                            )
+                                        })
+                                        .sum();
+                                    (if kind == MadSadOp::SadHiU8 {
+                                        sum << 16
+                                    } else {
+                                        sum
+                                    }) + i64::from(c)
+                                }
+                            };
+                            if !clamp {
+                                result as u32
+                            } else if kind == MadSadOp::MadI32I24 {
+                                result.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as u32
+                            } else {
+                                result.clamp(0, i64::from(u32::MAX)) as u32
+                            }
+                        }
                         Op::Clamped(kind, ..) => {
                             let signed24 = |x: u32| i64::from(((x << 8) as i32) >> 8);
                             let result = match kind {

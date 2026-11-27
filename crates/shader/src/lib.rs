@@ -15,8 +15,8 @@ pub use graphics::{
 pub use xenora_decoder::Architecture;
 use xenora_decoder::{
     DecodeError, DecodedInstruction, Instruction, ScalarSource, VectorBinary, VectorBinaryOp,
-    VectorBitBinaryOp, VectorClampOp, VectorCompareOp, VectorProductOp, VectorSource,
-    VectorTernaryOp, VectorUnaryOp,
+    VectorBitBinaryOp, VectorClampOp, VectorCompareOp, VectorMadSadOp, VectorProductOp,
+    VectorSource, VectorTernaryOp, VectorUnaryOp,
 };
 
 /// SGPR index of `vcc_lo`.
@@ -102,6 +102,7 @@ enum Op {
     Product(VectorProductOp, Value, Value),
     BitBinary(VectorBitBinaryOp, Value, Value),
     Ternary(VectorTernaryOp, Value, Value, Value),
+    MadSad(VectorMadSadOp, bool, Value, Value, Value),
     MergeLanes {
         mask: u32,
         active: Value,
@@ -143,6 +144,7 @@ impl Op {
             Self::Product(_, a, b) => vec![a, b],
             Self::BitBinary(_, a, b) => vec![a, b],
             Self::Ternary(_, a, b, c) => vec![a, b, c],
+            Self::MadSad(_, _, a, b, c) => vec![a, b, c],
             Self::MergeLanes {
                 active, inactive, ..
             } => vec![active, inactive],
@@ -168,6 +170,9 @@ impl Op {
             Self::BitBinary(op, a, b) => vector_bit_binary_expression(op, &name(a), &name(b)),
             Self::Ternary(op, a, b, c) => {
                 vector_ternary_expression(op, &name(a), &name(b), &name(c))
+            }
+            Self::MadSad(op, clamp, a, b, c) => {
+                mad_sad_expression(op, clamp, &name(a), &name(b), &name(c))
             }
             Self::Binary(operator, left, right) => {
                 let (left, right) = (name(left), name(right));
@@ -419,6 +424,76 @@ fn vector_ternary_expression(op: VectorTernaryOp, a: &str, b: &str, c: &str) -> 
     }
 }
 
+// Preserve the complete product through accumulator addition before saturation.
+fn mad_sad_expression(op: VectorMadSadOp, clamp: bool, a: &str, b: &str, c: &str) -> String {
+    use VectorMadSadOp::*;
+    if matches!(op, MadI32I24 | MadU32U24) {
+        let signed = matches!(op, MadI32I24);
+        let low = vector_expression(
+            if signed {
+                VectorBinary::Mul24Signed
+            } else {
+                VectorBinary::Mul24Unsigned
+            },
+            a,
+            b,
+        );
+        let sum = format!("(({low}) + ({c}))");
+        if !clamp {
+            return sum;
+        }
+        let high = vector_expression(
+            if signed {
+                VectorBinary::MulHi24Signed
+            } else {
+                VectorBinary::MulHi24Unsigned
+            },
+            a,
+            b,
+        );
+        let carry = format!("uint(({sum}) < ({low}))");
+        if signed {
+            let high_sum = format!("(({high}) + (0u - (({c}) >> 31u)) + {carry})");
+            format!(
+                "(({high_sum}) == (0u - (({sum}) >> 31u)) ? ({sum}) : ((({high_sum}) & 0x80000000u) != 0u ? 0x80000000u : 0x7fffffffu))"
+            )
+        } else {
+            format!("((({high}) + {carry}) != 0u ? 0xffffffffu : ({sum}))")
+        }
+    } else {
+        let (bits, count, shift) = match op {
+            SadU8 => (8, 4, 0),
+            SadHiU8 => (8, 4, 16),
+            SadU16 => (16, 2, 0),
+            SadU32 => (32, 1, 0),
+            _ => unreachable!("products handled above"),
+        };
+        let terms: Vec<_> = (0..count)
+            .map(|lane| {
+                let part = |value: &str| {
+                    if bits == 32 {
+                        format!("({value})")
+                    } else {
+                        format!(
+                            "((({value}) >> {}u) & 0x{:x}u)",
+                            lane * bits,
+                            (1u32 << bits) - 1
+                        )
+                    }
+                };
+                let (left, right) = (part(a), part(b));
+                format!("(max({left}, {right}) - min({left}, {right}))")
+            })
+            .collect();
+        let sum = format!("(({}) << {shift}u)", terms.join(" + "));
+        if clamp {
+            clamped_expression(VectorClampOp::AddU32, &sum, c)
+        } else {
+            format!("({sum}) + ({c})")
+        }
+    }
+}
+
 fn scalar_bit_set(old: u32, index: u32, value: bool) -> u32 {
     let mask = 1u32 << (index & 31);
     if value { old | mask } else { old & !mask }
@@ -600,6 +675,10 @@ pub fn compile(architecture: Architecture, bytes: &[u8]) -> Result<CompiledShade
             ),
             Op::Ternary(op, a, b, c) => (
                 format!("{dest} = {} {a}, {b}, {c}", op.mnemonic()),
+                format!("uint {dest} = {};", operation.expression(&thread, "", "")),
+            ),
+            Op::MadSad(op, clamp, a, b, c) => (
+                format!("{dest} = {} clamp={clamp} {a}, {b}, {c}", op.mnemonic()),
                 format!("uint {dest} = {};", operation.expression(&thread, "", "")),
             ),
             Op::ScalarBranch { target, taken } => {
@@ -899,6 +978,7 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
                 | Instruction::VectorClampedE64 { .. }
                 | Instruction::VectorProduct { .. }
                 | Instruction::VectorBitBinary { .. }
+                | Instruction::VectorMadSad { .. }
                 | Instruction::VectorTernary { .. } => continue,
                 _ => {}
             }
@@ -1397,6 +1477,43 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
                     };
                 }
                 (Some(dst), Op::Ternary(op, values[0], values[1], values[2]))
+            }
+            Instruction::VectorMadSad {
+                op,
+                clamp,
+                dst,
+                src0,
+                src1,
+                src2,
+            } => {
+                let mut values = [Value(0); 3];
+                for (slot, src) in values.iter_mut().zip([src0, src1, src2]) {
+                    *slot = match src {
+                        VectorSource::Register(register) => read(register)?,
+                        VectorSource::Scalar(register) if usize::from(register) == VCC_LO => {
+                            match (lane_vcc, scalars[VCC_LO]) {
+                                (Some(mask), _) => mask,
+                                (None, Some(bits)) => {
+                                    constant(&mut operations, &mut facts, offset, bits)
+                                }
+                                (None, None) => {
+                                    return Err(error("VOP3 integer reads uninitialized VCC_LO"));
+                                }
+                            }
+                        }
+                        VectorSource::Scalar(register) => {
+                            let bits = read_scalar(ScalarSource::Register(register))?;
+                            constant(&mut operations, &mut facts, offset, bits)
+                        }
+                        VectorSource::Immediate(bits) => {
+                            constant(&mut operations, &mut facts, offset, bits)
+                        }
+                    };
+                }
+                (
+                    Some(dst),
+                    Op::MadSad(op, clamp, values[0], values[1], values[2]),
+                )
             }
             Instruction::VectorUnary { op, dst, src }
             | Instruction::VectorUnaryE64 { op, dst, src } => {

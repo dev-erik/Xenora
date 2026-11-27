@@ -6,6 +6,31 @@ claim of Xbox hardware equivalence. Supporting raw logs, mutation records and
 source manifests remain local and are not distributed with the repository.
 The array-range descriptor increment below was validated on 26 November 2026.
 
+## Stage 3.1 increment: multiply-add and absolute differences
+
+27 November 2026. Six MAD24/SAD forms now support wrapping and integer-clamp
+modes. Signed MAD accumulates the full product before saturation; packed SAD
+uses unsigned component differences and retains all accumulator bits. Both
+independent reviewers accepted the bounded implementation. Saturation semantics
+are spec-derived; these tests do not establish AMD/Xbox hardware equivalence.
+
+Final unchanged-source checks passed 353 CPU tests (15 ignored), 28 LLVM tests
+including 996 new source/mode rows and 1,182 three-way comparisons across 164
+forms, 15 compute tests including 75 native dispatches, and two native graphics
+tests covering 312 draws. Graphics admission tests cover 62 operation/mode
+combinations. Native execution used Apple M4 Max with API and shader validation.
+Dispatch/draw counts derive from test loops; overlapping suites are not unique
+case counts.
+
+Three deliberate mutations triggered assertion failures and were restored:
+early product saturation, missing SAD_HI shift, and byte differences replacing
+halfword differences. All nine gates passed in `artifacts/validation-full.zSgbSH`:
+workspace 1,300 passed/0 failed/172 ignored; GPU 509 passed/0 failed/1 ignored.
+Native audit checked 145 executables. The final 28-file source manifest and five
+logs are in `artifacts/s31-mad-sad/`; independent reports are
+`artifacts/s31-mad-sad-r1-review.md` and `s31-mad-sad-r2-review.md`.
+Only acceptance documentation changed afterward. Full S3.1 remains open.
+
 ## Stage 3.1 increment: five integer saturation modes
 
 27 November 2026. Integer clamp bit15 now saturates signed/unsigned24 multiply,

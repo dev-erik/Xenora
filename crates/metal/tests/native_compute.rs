@@ -520,3 +520,6 @@ mod vop3_alias_graphics;
 
 #[path = "native/vop3_clamp_graphics.rs"]
 mod vop3_clamp_graphics;
+
+#[path = "native/vop3_mad_sad_graphics.rs"]
+mod vop3_mad_sad_graphics;

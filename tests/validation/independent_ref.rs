@@ -121,6 +121,7 @@ enum Insn {
         src0: CmpSrc,
         src1: u8,
     },
+    VMadSad(u32, bool, u8, CmpSrc, CmpSrc, CmpSrc),
     VSaturate(u32, u8, CmpSrc, CmpSrc),
     VAlias(u32, u8, CmpSrc, CmpSrc),
     VAddNc(u8, u8, u8),
@@ -798,7 +799,8 @@ fn lane_step(
         | Insn::VMask(d, a, b)
         | Insn::VCountAdd(d, a, b)
         | Insn::VMulHighSigned(d, a, b) => Some((d, [a, b, CmpSrc::Imm(0)])),
-        Insn::VLeastSigned(d, a, b, c)
+        Insn::VMadSad(_, _, d, a, b, c)
+        | Insn::VLeastSigned(d, a, b, c)
         | Insn::VLeastUnsigned(d, a, b, c)
         | Insn::VGreatestSigned(d, a, b, c)
         | Insn::VGreatestUnsigned(d, a, b, c)
@@ -850,6 +852,54 @@ fn lane_step(
                     _ => high
                         .wrapping_sub(if a >= 0x80000000 { b } else { 0 })
                         .wrapping_sub(if b >= 0x80000000 { a } else { 0 }),
+                }
+            }
+            Insn::VMadSad(kind, clamp, ..) => {
+                let total = if kind == 322 || kind == 323 {
+                    let product = multiply_field(a, b, 24, kind == 322);
+                    if kind == 322 && c >= 0x80000000 {
+                        product - (0x100000000i128 - i128::from(c))
+                    } else {
+                        product + i128::from(c)
+                    }
+                } else {
+                    let component_bits = match kind {
+                        346 | 347 => 8,
+                        348 => 16,
+                        _ => 32,
+                    };
+                    let radix = 2u64.pow(component_bits);
+                    let mut left = u64::from(a);
+                    let mut right = u64::from(b);
+                    let mut sum = 0i128;
+                    for _ in 0..32 / component_bits {
+                        let x = (left % radix) as u32;
+                        let y = (right % radix) as u32;
+                        let difference = if x >= y {
+                            ripple(x, !y, true).0
+                        } else {
+                            ripple(y, !x, true).0
+                        };
+                        sum += i128::from(difference);
+                        left /= radix;
+                        right /= radix;
+                    }
+                    sum * (if kind == 347 { 65536 } else { 1 }) + i128::from(c)
+                };
+                if !clamp {
+                    total.rem_euclid(0x100000000) as u32
+                } else if kind == 322 {
+                    if total < -2147483648 {
+                        0x80000000
+                    } else if total > 2147483647 {
+                        0x7fffffff
+                    } else {
+                        total as u32
+                    }
+                } else if total > 4294967295 {
+                    u32::MAX
+                } else {
+                    total as u32
                 }
             }
             Insn::VSaturate(kind, ..) => match kind {
@@ -1458,13 +1508,23 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
                 | 441
                 | 442
                 | 443
+                | 322
+                | 323
+                | 346
+                | 347
+                | 348
+                | 349
         )
     {
         let next = word(code, offset + 4).map_err(|_| fail("truncated VOP3 instruction"))?;
         let clamp = (first / 32768) % 2 != 0;
         if (first / 256) % 128 != 0
             || next / (1 << 27) != 0
-            || (clamp && !matches!(opcode, 265 | 267 | 293 | 294 | 295))
+            || (clamp
+                && !matches!(
+                    opcode,
+                    265 | 267 | 293 | 294 | 295 | 322 | 323 | 346 | 347 | 348 | 349
+                ))
         {
             return Err(fail("unsupported VOP3 modifiers"));
         }
@@ -1538,6 +1598,12 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
             };
         }
         let dst = first as u8;
+        if matches!(opcode, 322 | 323 | 346 | 347 | 348 | 349) {
+            return Ok((
+                Insn::VMadSad(opcode, clamp, dst, args[0], args[1], args[2]),
+                if has_literal { 12 } else { 8 },
+            ));
+        }
         if clamp {
             return Ok((
                 Insn::VSaturate(opcode, dst, args[0], args[1]),

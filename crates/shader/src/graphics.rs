@@ -6,8 +6,8 @@ mod cfg;
 
 use xenora_decoder::{
     DecodedInstruction, ExportTarget, Instruction, InterpolationPhase, ScalarAluOp,
-    ScalarCompareOp, ScalarSource, ScalarUnaryOp, VectorBitBinaryOp, VectorProductOp, VectorSource,
-    VectorTernaryOp, VectorUnaryOp,
+    ScalarCompareOp, ScalarSource, ScalarUnaryOp, VectorBitBinaryOp, VectorMadSadOp,
+    VectorProductOp, VectorSource, VectorTernaryOp, VectorUnaryOp,
 };
 
 use super::{Architecture, Binary, CompileError, CompiledShader, Value, decode_fixture};
@@ -65,6 +65,7 @@ enum Op {
     IntegerProduct(VectorProductOp, Value, Value),
     IntegerBitBinary(VectorBitBinaryOp, Value, Value),
     IntegerTernary(VectorTernaryOp, Value, Value, Value),
+    IntegerMadSad(VectorMadSadOp, bool, Value, Value, Value),
     ScalarBits(ScalarValue),
     SampleLodZero {
         u: Value,
@@ -763,6 +764,7 @@ fn lift(
                 | Instruction::VectorClampedE64 { dst, .. }
                 | Instruction::VectorProduct { dst, .. }
                 | Instruction::VectorBitBinary { dst, .. }
+                | Instruction::VectorMadSad { dst, .. }
                 | Instruction::VectorTernary { dst, .. }
                 | Instruction::AddNoCarryU32 { dst, .. }
                 | Instruction::VectorAndB32 { dst, .. }
@@ -1292,6 +1294,41 @@ fn lift(
                 let result = ir.push(
                     Some(offset),
                     Op::IntegerTernary(op, values[0], values[1], values[2]),
+                );
+                registers[usize::from(dst)] = Some(result);
+            }
+            Instruction::VectorMadSad {
+                op,
+                clamp,
+                dst,
+                src0,
+                src1,
+                src2,
+            } if !exporting => {
+                if stage == Stage::Pixel && dst < 2 {
+                    return Err(error("pixel VGPRs 0 and 1 are reserved for interpolation"));
+                }
+                let mut values = [Value(0); 3];
+                for (slot, src) in values.iter_mut().zip([src0, src1, src2]) {
+                    *slot = match src {
+                        VectorSource::Register(register) => read(register)?,
+                        VectorSource::Immediate(bits) => {
+                            ir.push(Some(offset), Op::ScalarBits(ScalarValue::Constant(bits)))
+                        }
+                        VectorSource::Scalar(register) => {
+                            let source = read_scalar(
+                                ScalarSource::Register(register),
+                                &scalars,
+                                &mut ir.uniform_mask,
+                                offset,
+                            )?;
+                            ir.push(Some(offset), Op::ScalarBits(source))
+                        }
+                    };
+                }
+                let result = ir.push(
+                    Some(offset),
+                    Op::IntegerMadSad(op, clamp, values[0], values[1], values[2]),
                 );
                 registers[usize::from(dst)] = Some(result);
             }
@@ -2020,6 +2057,7 @@ fn validate_vertex_integer_bits(vertex: &StageIr) -> Result<(), CompileError> {
                     | Op::IntegerUnary(..)
                     | Op::IntegerProduct(..)
                     | Op::IntegerBitBinary(..)
+                    | Op::IntegerMadSad(..)
                     | Op::IntegerTernary(..)
                     | Op::ScalarBits(_)
             )
@@ -2131,6 +2169,7 @@ fn validate_resource_types(
                     | Op::IntegerUnary(..)
                     | Op::IntegerProduct(..)
                     | Op::IntegerBitBinary(..)
+                    | Op::IntegerMadSad(..)
                     | Op::IntegerTernary(..)
                     | Op::ScalarBits(_)
             ) || matches!(op, Op::SampleLodZero { texture_index, .. }
@@ -2187,7 +2226,7 @@ fn validate_resource_types(
             Op::IntegerUnary(_, source) => pixel_coordinates[source.0],
             Op::IntegerProduct(_, a, b) => pixel_coordinates[a.0] || pixel_coordinates[b.0],
             Op::IntegerBitBinary(_, a, b) => pixel_coordinates[a.0] || pixel_coordinates[b.0],
-            Op::IntegerTernary(_, a, b, c) => {
+            Op::IntegerTernary(_, a, b, c) | Op::IntegerMadSad(_, _, a, b, c) => {
                 pixel_coordinates[a.0] || pixel_coordinates[b.0] || pixel_coordinates[c.0]
             }
             Op::SampleLodZero { u, v, layer, .. } => {
@@ -2255,7 +2294,7 @@ fn validate_resource_types(
             Op::IntegerUnary(_, source) => uniform_floats[source.0],
             Op::IntegerProduct(_, a, b) => uniform_floats[a.0] || uniform_floats[b.0],
             Op::IntegerBitBinary(_, a, b) => uniform_floats[a.0] || uniform_floats[b.0],
-            Op::IntegerTernary(_, a, b, c) => {
+            Op::IntegerTernary(_, a, b, c) | Op::IntegerMadSad(_, _, a, b, c) => {
                 uniform_floats[a.0] || uniform_floats[b.0] || uniform_floats[c.0]
             }
             Op::Store2D { data, .. } => data.iter().flatten().any(|v| uniform_floats[v.0]),
@@ -2631,6 +2670,19 @@ fn emit_range(
                 );
                 (
                     format!("{}.bits {a}, {b}, {c}", op.mnemonic()),
+                    format!("as_type<float>({expression})"),
+                )
+            }
+            Op::IntegerMadSad(op, clamp, a, b, c) => {
+                let expression = super::mad_sad_expression(
+                    op,
+                    clamp,
+                    &format!("as_type<uint>({a})"),
+                    &format!("as_type<uint>({b})"),
+                    &format!("as_type<uint>({c})"),
+                );
+                (
+                    format!("{}.bits clamp={clamp} {a}, {b}, {c}", op.mnemonic()),
                     format!("as_type<float>({expression})"),
                 )
             }

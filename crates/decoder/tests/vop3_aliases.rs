@@ -157,8 +157,17 @@ fn exact_opcode_scope_and_each_modifier_bit() {
             ));
         }
     }
+    assert!(matches!(
+        decode_at(Gfx1030, &code(346, 5, [257, 258, 259], 0), 0)
+            .unwrap()
+            .instruction,
+        Instruction::VectorMadSad {
+            op: xenora_decoder::VectorMadSadOp::SadU8,
+            ..
+        }
+    ));
     // Nearby full-width/ternary opcodes are not admitted by a family catch-all.
-    for op in [335, 336, 337, 340, 343, 346, 837, 840, 878, 880] {
+    for op in [335, 336, 337, 340, 343, 350, 837, 840, 878, 880] {
         assert!(decode_at(Gfx1030, &code(op, 5, [257, 258, 259], 0), 0).is_err());
     }
 }

@@ -2130,3 +2130,75 @@ gpu = "fixture verified"
 recognized = true
 decoded = true
 llvm = "three-way passed"
+
+[[instruction]]
+form = "v_mad_i32_i24"
+encoding = "VOP3; checked three sources; wrap and integer clamp"
+representation = "8 B or 12 B with shared literal"
+lowering = "integer compute and graphics; wrap and final saturation"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_mad_u32_u24"
+encoding = "VOP3; checked three sources; wrap and integer clamp"
+representation = "8 B or 12 B with shared literal"
+lowering = "integer compute and graphics; wrap and final saturation"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_sad_u8"
+encoding = "VOP3; checked three sources; wrap and integer clamp"
+representation = "8 B or 12 B with shared literal"
+lowering = "integer compute and graphics; wrap and final saturation"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_sad_hi_u8"
+encoding = "VOP3; checked three sources; wrap and integer clamp"
+representation = "8 B or 12 B with shared literal"
+lowering = "integer compute and graphics; wrap and final saturation"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_sad_u16"
+encoding = "VOP3; checked three sources; wrap and integer clamp"
+representation = "8 B or 12 B with shared literal"
+lowering = "integer compute and graphics; wrap and final saturation"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_sad_u32"
+encoding = "VOP3; checked three sources; wrap and integer clamp"
+representation = "8 B or 12 B with shared literal"
+lowering = "integer compute and graphics; wrap and final saturation"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
