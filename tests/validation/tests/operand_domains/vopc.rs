@@ -65,9 +65,8 @@ pub const COUNTS: &[(&str, usize)] = &[
     ("vopc exec mask", 12 * 5),
     ("vopc vccz", 12 * 11),
 ];
-/// A missing literal word and 9 float inline codes (defined by the guide, outside
-/// Xenora's subset for integer compares), for each of the 12 forms.
-pub const REJECTIONS: usize = 12 * (1 + 9);
+/// A missing literal word for each of the 12 forms.
+pub const REJECTIONS: usize = 12;
 /// The compare's offset: load 8, wait 4, v_mov with literal 8.
 const COMPARE_OFFSET: usize = 0x14;
 
@@ -266,15 +265,6 @@ pub fn rejections() -> Vec<Rejection> {
             code,
             offset: COMPARE_OFFSET,
         });
-        for selector in 240..=248 {
-            rejections.push(Rejection {
-                family: "vopc float inline",
-                truncated: false,
-                label: format!("{} float inline {selector}", form.name),
-                code: program(3, 0, &[], &[vopc(form.opcode, selector, 1)], &[]),
-                offset: COMPARE_OFFSET,
-            });
-        }
     }
     rejections
 }

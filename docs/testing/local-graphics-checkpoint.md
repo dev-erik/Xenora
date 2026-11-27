@@ -6,6 +6,35 @@ claim of Xbox hardware equivalence. Supporting raw logs, mutation records and
 source manifests remain local and are not distributed with the repository.
 The array-range descriptor increment below was validated on 26 November 2026.
 
+## Stage 3.1 increment: inline floating source words
+
+27 November 2026. Selectors 240-248 now decode to their exact 32-bit words in
+scalar source readers, vector moves and registry-backed vector integer/comparison
+readers. Both independent reference interpreters decode the original bytes with
+their own mappings. The [operand contract](../shaders/scalar-alu.md#inline-floating-source-words)
+retains literal lengths, reserved selectors, register bounds and unsupported
+legacy instruction forms. Decoder instruction counts do not increase from this
+operand-domain extension; full S3.1 remains open.
+
+Literal decoder tests cover all nine words across nine operand positions,
+four/eight-byte encodings, mixed sources, truncation and v240-v248 separation.
+The LLVM suite passed 18 tests, including an 81-instruction gfx1030 inline matrix.
+Independent known answers cover both reference interpreters. Native execution
+passed 288 scalar graphics draws, nine exact R32Uint vector exports and 54 compute
+programs (counts derived from the tested loops), with Metal API and shader
+validation on Apple M4 Max. These synthetic results do not demonstrate AMD/Xbox
+hardware equivalence or expanded FP precision modes.
+
+All nine gates passed in `validation-full.neXVni`: workspace 1,079 passed/0
+failed/152 ignored; GPU script 474 passed/0 failed/1 ignored. Counts overlap.
+Registry-generator tests passed 111 cases and coverage tests passed ten. Local
+logs are under `artifacts/s31-inline-sources/`. Three isolated mutations were
+detected: the inverse-two-pi low bit, the ninth vector selector bit and one
+reference-only mapping. Exact restoration hashes matched. The native audit
+checked 121 ARM64 executables/loadable dependencies. Both independent reviewers
+accepted the final 26-file source manifest and evidence; a stale rejection-list
+phrase in the comparison documentation was corrected afterward.
+
 ## Stage 3.1 increment: graphics scalar arithmetic and unary operations
 
 27 November 2026. Graphics lowering now handles all 36 existing 32-bit SOP2

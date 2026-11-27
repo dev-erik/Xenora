@@ -117,9 +117,9 @@ const COUNTS: [(&str, usize); 5] = [
     ("sopc aliasing", 12 * 3),
     ("sopc no sgpr write", 12 * 5),
 ];
-/// Per form: two literals, 5 special registers and 9 float inline constants in
+/// Per form: two literals, 5 special registers in
 /// each slot.
-const REJECTIONS: usize = 12 * (1 + (5 + 9) * 2);
+const REJECTIONS: usize = 12 * (1 + 5 * 2);
 
 /// ENCODING 0b10_1111110 in bits 23-31, OP 16-22, SSRC1 8-15, SSRC0 0-7
 /// (guide 13.1.4).
@@ -271,9 +271,8 @@ fn rejections() -> Vec<(String, Vec<u8>, usize)> {
         let op = form as u32;
         let code = program(&[], false, &[sopc(op, LITERAL, LITERAL), 1], 10);
         all.push((format!("{name} two literals"), code, 0));
-        // VCC_LO, VCC_HI, M0, EXEC_LO, EXEC_HI, and the float inline
-        // constants 240-248 (0.5 .. 1/(2*pi)).
-        for selector in [106, 107, 124, 126, 127].into_iter().chain(240..=248) {
+        // VCC_LO, VCC_HI, M0, EXEC_LO and EXEC_HI remain excluded.
+        for selector in [106, 107, 124, 126, 127] {
             for slot in 0..2 {
                 let alu = if slot == 0 {
                     sopc(op, selector, 8)

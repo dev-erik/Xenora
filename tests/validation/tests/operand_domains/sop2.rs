@@ -41,9 +41,9 @@ pub const COUNTS: &[(&str, usize)] = &[
     ("sop2 literal", 9 * 6 * 2 * 2),
     ("sop2 max register", 9 * 4),
 ];
-/// Two literals, 21 special destinations, 9 float inline codes in two slots,
+/// Two literals, 21 special destinations,
 /// and a missing literal word in two slots, for each of the 9 forms.
-pub const REJECTIONS: usize = 9 * (1 + 21 + 9 * 2 + 2);
+pub const REJECTIONS: usize = 9 * (1 + 21 + 2);
 /// The SOP2 word's offset: load 8, wait 4, two literal moves 8 each, s_cmp 4.
 const ALU_OFFSET: usize = 0x20;
 
@@ -267,21 +267,6 @@ pub fn rejections() -> Vec<Rejection> {
                 "sop2 special destination",
                 format!("{name} dst {dst}"),
                 &[sop2(op, dst, 8, 9)],
-            ));
-        }
-        // Float inline constants 0.5 .. -4.0 and 1/(2*pi) (codes 240-248). The
-        // guide defines them for every source; Xenora's subset rejects them for
-        // these integer forms.
-        for selector in 240..=248 {
-            rejections.push(reject(
-                "sop2 float inline",
-                format!("{name} float inline {selector} src0"),
-                &[sop2(op, 10, selector, 8)],
-            ));
-            rejections.push(reject(
-                "sop2 float inline",
-                format!("{name} float inline {selector} src1"),
-                &[sop2(op, 10, 8, selector)],
             ));
         }
         // The stream ends where the literal word should be.

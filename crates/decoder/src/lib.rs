@@ -692,6 +692,24 @@ fn scalar_alu(
     ))
 }
 
+// AMD RDNA2 sections 5.2/6.2 (source selectors): exact single-precision
+// bit patterns, also used as raw words by integer instructions. Callers match
+// the full selector to 240..=248 before indexing; these consume no literal word.
+fn inline_float_bits(selector: u32) -> u32 {
+    const BITS: [u32; 9] = [
+        0x3f00_0000, // 0.5
+        0xbf00_0000, // -0.5
+        0x3f80_0000, // 1.0
+        0xbf80_0000, // -1.0
+        0x4000_0000, // 2.0
+        0xc000_0000, // -2.0
+        0x4080_0000, // 4.0
+        0xc080_0000, // -4.0
+        0x3e22_f983, // 1/(2*pi)
+    ];
+    BITS[(selector - 240) as usize]
+}
+
 fn scalar_source(
     bits: u8,
     bytes: &[u8],
@@ -702,10 +720,11 @@ fn scalar_source(
         0..=105 => Ok((ScalarSource::Register(bits), 4)),
         128..=192 => Ok((ScalarSource::Immediate(value - 128), 4)),
         193..=208 => Ok((ScalarSource::Immediate(192u32.wrapping_sub(value)), 4)),
+        240..=248 => Ok((ScalarSource::Immediate(inline_float_bits(value)), 4)),
         255 => Ok((ScalarSource::Immediate(word(bytes, 8)?), 8)),
         _ => Err(unsupported(
             mnemonic,
-            "expected a normal SGPR, inline integer or literal",
+            "expected a normal SGPR, inline integer, inline float bits or literal",
         )),
     }
 }
@@ -846,8 +865,8 @@ fn buffer_operands(
 }
 
 /// VOPC: SRC0 in bits 0-8, VSRC1 in bits 9-16 (RDNA 2 ISA section 12.9). The
-/// destination is implicitly `vcc_lo`. SRC0 excludes inline float constants,
-/// `vcc_hi`, EXEC, M0, TTMPs and the condition selectors (SDWA 249, DPP 250/233).
+/// destination is implicitly `vcc_lo`. SRC0 excludes `vcc_hi`, EXEC, M0, TTMPs
+/// and the condition selectors (SDWA 249, DPP 250/233).
 fn vector_compare(
     op: VectorCompareOp,
     first: u32,
@@ -859,7 +878,8 @@ fn vector_compare(
 }
 
 /// The 9-bit SRC0 of a VOPC or VOP2 word: a VGPR, `s0-s105`, `vcc_lo`, an
-/// inline integer -16..64 or a literal word; everything else is unsupported.
+/// inline integer -16..64, inline float bits (240..248), or a literal word;
+/// everything else is unsupported.
 fn vector_src0(
     first: u32,
     bytes: &[u8],
@@ -874,6 +894,7 @@ fn vector_src0(
             VectorSource::Immediate(192u32.wrapping_sub(source)),
             base_len,
         ),
+        240..=248 => (VectorSource::Immediate(inline_float_bits(source)), base_len),
         255 => {
             let len = base_len + 4;
             (VectorSource::Immediate(word(bytes, len)?), len)
@@ -882,7 +903,7 @@ fn vector_src0(
         _ => {
             return Err(unsupported(
                 mnemonic,
-                "expected a VGPR, normal SGPR, vcc_lo, inline integer or literal",
+                "expected a VGPR, normal SGPR, vcc_lo, inline integer, inline float bits or literal",
             ));
         }
     })
@@ -901,8 +922,7 @@ fn move_b32(first: u32, bytes: &[u8]) -> Result<(Instruction, u8), DecodeErrorKi
             VectorSource::Immediate(192u32.wrapping_sub(source)),
             base_len,
         ),
-        // AMD RDNA 2 ISA Table 77: VOP1 source selector 242 supplies +1.0f.
-        242 => (VectorSource::Immediate(0x3f80_0000), base_len),
+        240..=248 => (VectorSource::Immediate(inline_float_bits(source)), base_len),
         255 => {
             let len = base_len + 4;
             (VectorSource::Immediate(word(bytes, len)?), len)
@@ -911,7 +931,7 @@ fn move_b32(first: u32, bytes: &[u8]) -> Result<(Instruction, u8), DecodeErrorKi
         _ => {
             return Err(unsupported(
                 "v_mov_b32_e32",
-                "expected a VGPR, normal SGPR, vcc_lo, inline integer, inline +1.0f or literal",
+                "expected a VGPR, normal SGPR, vcc_lo, inline integer, inline float bits or literal",
             ));
         }
     };

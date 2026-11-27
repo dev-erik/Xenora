@@ -1252,6 +1252,22 @@ fn vector_src0(
         106 => (CmpSrc::Vcc, 4),
         128..=192 => (CmpSrc::Imm(selector - 128), 4),
         193..=208 => (CmpSrc::Imm(192u32.wrapping_sub(selector)), 4),
+        240..=248 => (
+            CmpSrc::Imm(
+                [
+                    0x3f00_0000,
+                    0xbf00_0000,
+                    0x3f80_0000,
+                    0xbf80_0000,
+                    0x4000_0000,
+                    0xc000_0000,
+                    0x4080_0000,
+                    0xc080_0000,
+                    0x3e22_f983,
+                ][(selector - 240) as usize],
+            ),
+            4,
+        ),
         255 => (
             CmpSrc::Imm(
                 word(code, offset + 4)
@@ -1268,7 +1284,19 @@ fn vector_source(selector: u32) -> Option<Src> {
     match selector {
         128..=192 => Some(Src::Imm(selector - 128)),
         193..=208 => Some(Src::Imm(192u32.wrapping_sub(selector))),
-        242 => Some(Src::Imm(0x3f80_0000)),
+        240..=248 => Some(Src::Imm(
+            [
+                0x3f00_0000,
+                0xbf00_0000,
+                0x3f80_0000,
+                0xbf80_0000,
+                0x4000_0000,
+                0xc000_0000,
+                0x4080_0000,
+                0xc080_0000,
+                0x3e22_f983,
+            ][(selector - 240) as usize],
+        )),
         256..=511 => Some(Src::Reg(selector as u8)),
         _ => None,
     }
@@ -1279,6 +1307,22 @@ fn scalar_source(code: &[u8], offset: usize, selector: u8) -> Result<(Src, usize
         0..=105 => Ok((Src::Reg(selector), 4)),
         128..=192 => Ok((Src::Imm(u32::from(selector - 128)), 4)),
         193..=208 => Ok((Src::Imm(192u32.wrapping_sub(u32::from(selector))), 4)),
+        240..=248 => Ok((
+            Src::Imm(
+                [
+                    0x3f00_0000,
+                    0xbf00_0000,
+                    0x3f80_0000,
+                    0xbf80_0000,
+                    0x4000_0000,
+                    0xc000_0000,
+                    0x4080_0000,
+                    0xc080_0000,
+                    0x3e22_f983,
+                ][(selector - 240) as usize],
+            ),
+            4,
+        )),
         255 => Ok((Src::Imm(word(code, offset + 4)?), 8)),
         _ => Err(format!("{offset:#x}: bad scalar source")),
     }

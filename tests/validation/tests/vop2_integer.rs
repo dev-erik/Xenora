@@ -250,11 +250,11 @@ const COUNTS: [(&str, usize); 11] = [
     ("vop2 partial wave", 12 * 3),
     ("vop2 no vcc or scc write", 12 * 5),
 ];
-/// Per form: a missing literal, 9 float inline constants, 8 other special
+/// Per form: a missing literal, 8 special
 /// SRC0 selectors, the 24 reserved selectors 209-232, SDWA, DPP16 and two DPP8 forms, and the VOP3 form with
 /// clamp; and for each form but ADD_NC (whose plain VOP3 form is supported
 /// already) the plain VOP3 form.
-const REJECTIONS: usize = 12 * (1 + 9 + 8 + 24 + 4 + 1) + 11;
+const REJECTIONS: usize = 12 * (1 + 8 + 24 + 4 + 1) + 11;
 
 const LITERAL: u32 = 255;
 const VCC_LO: u32 = 106;
@@ -606,11 +606,11 @@ fn rejections() -> Vec<(String, Vec<u8>, usize)> {
         code.extend(setup);
         code.push(vop2(op, 2, LITERAL, 1));
         all.push((format!("{name} missing literal"), words(&code), offset));
-        // Float inline constants 240-248 (0.5 to -4.0 and 1/(2*pi)), VCC_HI,
+        // VCC_HI,
         // M0, NULL, EXEC_LO, EXEC_HI, VCCZ, EXECZ and SCC (outside the
         // supported SRC0 subset), and the reserved selectors 209-232.
         let special = [107, 124, 125, 126, 127, 251, 252, 253];
-        for src0 in (240..=248).chain(special).chain(209..=232) {
+        for src0 in special.into_iter().chain(209..=232) {
             let code = program(&setup, &[vop2(op, 2, src0, 1)], &[], 2);
             all.push((format!("{name} src0 {src0}"), code, offset));
         }

@@ -884,6 +884,10 @@ Graphics scalar locals s32..s105 start undefined independently in each stage.
 SOP1 unary forms operate on exact 32-bit integer bits. The
 [scalar contract](shaders/scalar-alu.md#graphics-scalar-execution) lists their
 arithmetic, shift, bit-field, bit-scan and condition-code behavior.
+Inline floating selectors 240..248 supply exact 32-bit words in the existing
+scalar source readers, vector moves and registry-backed vector integer/compare
+readers. They consume no literal word; integer inline one remains distinct from
+the floating 1.0 bit pattern. Other operand and precision restrictions remain.
 Descriptor registers s0..s23 and uniform inputs s24..s31 cannot be destinations;
 special registers and scalar-to-vector transfers remain unsupported. Every source,
 including both CSELECT operands, must be defined on every feasible incoming path.

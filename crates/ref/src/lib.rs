@@ -663,7 +663,15 @@ pub fn decode(code: &[u8]) -> Result<Vec<DecodedInstruction>, ReferenceError> {
                         Source::Immediate(0_u32.wrapping_sub(u32::from(selector - 192))),
                         4,
                     ),
-                    242 => (Source::Immediate(1.0f32.to_bits()), 4),
+                    240 => (Source::Immediate(0x3f000000), 4),
+                    241 => (Source::Immediate(0xbf000000), 4),
+                    242 => (Source::Immediate(0x3f800000), 4),
+                    243 => (Source::Immediate(0xbf800000), 4),
+                    244 => (Source::Immediate(0x40000000), 4),
+                    245 => (Source::Immediate(0xc0000000), 4),
+                    246 => (Source::Immediate(0x40800000), 4),
+                    247 => (Source::Immediate(0xc0800000), 4),
+                    248 => (Source::Immediate(0x3e22f983), 4),
                     255 => {
                         let literal = tail
                             .first_chunk::<4>()
@@ -716,6 +724,15 @@ fn decode_scalar(
             Source::Immediate(0u32.wrapping_sub(u32::from(selector - 192))),
             4,
         )),
+        240 => Ok((Source::Immediate(0x3f000000), 4)),
+        241 => Ok((Source::Immediate(0xbf000000), 4)),
+        242 => Ok((Source::Immediate(0x3f800000), 4)),
+        243 => Ok((Source::Immediate(0xbf800000), 4)),
+        244 => Ok((Source::Immediate(0x40000000), 4)),
+        245 => Ok((Source::Immediate(0xc0000000), 4)),
+        246 => Ok((Source::Immediate(0x40800000), 4)),
+        247 => Ok((Source::Immediate(0xc0800000), 4)),
+        248 => Ok((Source::Immediate(0x3e22f983), 4)),
         255 => {
             let literal = tail
                 .first_chunk::<4>()
@@ -743,6 +760,15 @@ fn decode_vector_source(
             CompareSource::Immediate(0_u32.wrapping_sub(u32::from(selector - 192))),
             4,
         ),
+        240 => (CompareSource::Immediate(0x3f000000), 4),
+        241 => (CompareSource::Immediate(0xbf000000), 4),
+        242 => (CompareSource::Immediate(0x3f800000), 4),
+        243 => (CompareSource::Immediate(0xbf800000), 4),
+        244 => (CompareSource::Immediate(0x40000000), 4),
+        245 => (CompareSource::Immediate(0xc0000000), 4),
+        246 => (CompareSource::Immediate(0x40800000), 4),
+        247 => (CompareSource::Immediate(0xc0800000), 4),
+        248 => (CompareSource::Immediate(0x3e22f983), 4),
         255 => {
             let literal = tail
                 .first_chunk::<4>()

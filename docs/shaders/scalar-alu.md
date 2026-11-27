@@ -30,7 +30,7 @@ each, with no hand-written Rust per form. Shifts use only the low five bits of
 S1 as the count, as the guide's pseudocode states (section 12.1); higher bits are
 ignored.
 
-Sources are normal SGPRs, inline integers (-16 to 64) or one literal word.
+Sources are normal SGPRs, inline integers (-16 to 64), inline floating bit patterns (selectors 240-248), or one literal word.
 
 These forms are declared as data in the semantic registry,
 `crates/isa/semantics/rdna2.toml`: opcode, operation, signedness, carry-in,
@@ -44,6 +44,26 @@ evaluation through the shared primitives in `crates/isa/src/primitive.rs`. Run
 (Python 3.11 or newer). The reference and independent interpreters do not use
 the registry.
 `v_mov_b32_e32` may read a normal SGPR, so the results can reach vector code.
+
+## Inline floating source words
+
+The existing 32-bit scalar source readers, vector moves and registry-backed
+vector integer/comparison readers accept selectors 240 through 248. They supply
+exact bits, even when an integer instruction consumes them:
+
+| Selectors | Values | Raw words |
+| --- | --- | --- |
+| 240 / 241 | +0.5 / -0.5 | `3f000000` / `bf000000` |
+| 242 / 243 | +1.0 / -1.0 | `3f800000` / `bf800000` |
+| 244 / 245 | +2.0 / -2.0 | `40000000` / `c0000000` |
+| 246 / 247 | +4.0 / -4.0 | `40800000` / `c0800000` |
+| 248 | 1/(2*pi) | `3e22f983` |
+
+These consume no trailing literal word. Selector 255 still requires one; two
+literal selectors remain outside the supported subset. Nine-bit vector source
+selectors 496-504 still name v240-v248. This extends operand decoding, not the
+set of arithmetic opcodes, precision modes or 16/64-bit operands. Register-only
+legacy vector instruction readers retain their restrictions.
 
 ## Graphics scalar execution
 
@@ -95,7 +115,7 @@ SCC. `s_pack_ll_b32_b16` places S0's low half below S1's low half;
 `s_pack_lh_b32_b16` places S0's low half below S1's high half;
 `s_pack_hh_b32_b16` places S0's high half below S1's high half.
 These follow the [AMD RDNA 2 guide, section 12.1](https://docs.amd.com/v/u/en-US/rdna2-shader-instruction-set-architecture).
-Normal SGPR destinations/sources, inline integers and at most one literal retain
+Normal SGPR destinations/sources, inline integers, inline floating bit patterns and at most one literal retain
 the existing operand restrictions. Aliased sources are read before the destination
 changes. An unset SCC remains unset.
 
@@ -115,7 +135,7 @@ the local graphics checkpoint after validation.
 
 - Every other SOP2 form, including the 64-bit bitwise forms and `s_cselect_b64`.
 - Destinations other than s0-s105 (VCC, EXEC, TTMP and M0).
-- Sources other than normal SGPRs, inline integers and one literal.
+- Sources other than normal SGPRs, inline integers, inline floating bit patterns and one literal.
 - Both sources selecting a literal.
 - ADDC, SUBB or CSELECT before SCC is set.
 - Writes to the fixture's resource descriptors s0-s7.
@@ -210,7 +230,7 @@ are declared in the same registry (operand rule `sopc_scalar`). Each sets only
 SCC, to whether the relation holds with SSRC0 on the left; LG means not equal.
 EQ and LG give the same result for `_i32` and `_u32`; GT, GE, LT and LE compare
 two's-complement values for `_i32` and unsigned values for `_u32` (guide section
-12.4). Sources follow the SOP2 rule: normal SGPRs, inline integers or one
+12.4). Sources follow the SOP2 rule: normal SGPRs, inline integers, inline floating bit patterns or one
 literal. Both sources selecting the literal encoding (255) is rejected for SOPC
 as for SOP2; whether the guide allows one shared literal there was not settled.
 
@@ -234,7 +254,8 @@ S0[7:0] or S0[15:0]; `s_abs_i32` of 0x80000000 is 0x80000000. Only NOT, BCNT0,
 BCNT1 and ABS write SCC, as D != 0; the other seven leave it unchanged.
 `s_mov_b32` stays hand-written, because it also accepts EXEC and VCC halves as
 destinations. As for SOP2, destinations s0-s7 are refused when a fixture runs
-(they hold its buffer descriptors), and float inline constants are rejected.
+(they hold its buffer descriptors). Inline floating constants carry exact integer bits;
+they do not numerically convert a floating value to an integer.
 
 `tests/validation/tests/sop1_unary.rs` checks 4,126 cases, with expected values
 derived from the guide (including its worked examples) separately from the

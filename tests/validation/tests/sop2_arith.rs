@@ -227,9 +227,9 @@ const COUNTS: [(&str, usize); 7] = [
     ("sop2 arith literal", 16 * 6 * 2 * 2),
     ("sop2 arith max register", 16 * 4 * 2),
 ];
-/// Per form: two literals, 6 destinations and 15 sources in each slot outside
+/// Per form: two literals, 6 destinations and 6 sources in each slot outside
 /// the supported subset; and CSELECT with SCC never written.
-const REJECTIONS: usize = 16 * (1 + 6 + 2 * 15) + 1 + 4;
+const REJECTIONS: usize = 16 * (1 + 6 + 2 * 6) + 1 + 4;
 
 /// ENCODING 0b10 in bits 30-31, OP 23-29, SDST 16-22, SSRC1 8-15, SSRC0 0-7
 /// (guide 13.1.1).
@@ -418,9 +418,8 @@ fn rejections() -> Vec<(String, Vec<u8>, usize)> {
             let code = program(&init, Some(false), &[sop2(op, dst, 8, 9)], 10);
             all.push((format!("{name} destination {dst}"), code, ALU_OFFSET));
         }
-        // VCC_LO, VCC_HI, M0, EXEC_LO, EXEC_HI, SCC, and the float inline
-        // constants 240-248 in either source slot.
-        for src in [106, 107, 124, 126, 127, 253].into_iter().chain(240..=248) {
+        // VCC_LO, VCC_HI, M0, EXEC_LO, EXEC_HI and SCC in either slot.
+        for src in [106, 107, 124, 126, 127, 253] {
             for (src0, src1, slot) in [(src, 9, 0), (8, src, 1)] {
                 let code = program(&init, Some(false), &[sop2(op, 10, src0, src1)], 10);
                 all.push((format!("{name} src{slot} {src}"), code, ALU_OFFSET));

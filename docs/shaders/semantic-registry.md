@@ -37,7 +37,7 @@ The top of the file holds:
   decoder implements each rule once, and the generator only accepts a rule
   whose declaration matches the decoder's implementation exactly. Today there
   is one rule, `sop2_sgpr`: an SGPR destination `s0`-`s105`, two scalar sources
-  (an SGPR, an inline integer -16 to 64, or a literal word) and at most one
+  (an SGPR, an inline integer -16 to 64, an inline floating bit pattern, or a literal word) and at most one
   literal. Its `unsupported` list names the encodings the rule rejects, which
   stay unsupported instead of being guessed. The list must name exactly the
   encodings the decoder rejects.

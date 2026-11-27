@@ -58,10 +58,10 @@ The 32-bit VOPC encoding (bits 31:25 = 0b0111110), no SDWA or DPP:
 Operand order matters (S0 is SRC0): lt with swapped operands is gt.
 
 SRC0 selectors, exhaustively: 0-105 (normal SGPR), 106 (VCC_LO, see 5),
-128-208 (inline integers 0..64 and -1..-16), 255 (one 32-bit literal, which
+128-208 (inline integers 0..64 and -1..-16), 240-248 (inline floating bit patterns), 255 (one 32-bit literal, which
 must be present in full after the word), 256-511 (VGPR). Every other selector
 is rejected at decode, independent of EXEC: TTMPs, M0, NULL, EXEC_LO/HI,
-VCC_HI, apertures, wave-ID, reserved values, inline floats 240-248, SDWA 249,
+VCC_HI, apertures, wave-ID, reserved values, SDWA 249,
 DPP8 233/234, DPP16 250, VCCZ/EXECZ/SCC 251-253, LDS direct 254. VSRC1 is a
 VGPR.
 
@@ -96,7 +96,7 @@ this wave (all 32 except in a final partial wave, see 7). As an unsigned
 - V_CMPX_* (writes EXEC: divergent execution; needs its own contract).
 - The VOP3 encoding of any compare (arbitrary SGPR destination, modifiers).
 - SDWA and DPP forms; F/T, 16-bit, 64-bit and float compares; v_cmp_class.
-- SRC0 inline float constants (240-248), SGPRs other than s0-s106, TTMPs,
+- SRC0 SGPRs other than s0-s106, TTMPs,
   M0, EXEC_LO/HI, VCC_HI, SCC/VCCZ/EXECZ selectors, LDS direct.
 - A normal-SGPR SRC0 without a known value, when EXEC_LO != 0.
 - Wave64 in any form.
@@ -150,7 +150,7 @@ create divergent EXEC. `s_mov_b32 vcc_lo, <known>` makes VCC_LO known again.
   - the target is a forward instruction boundary (existing rule);
   - no vector load is outstanding at the branch;
   - R contains only these integer vector forms: `v_mov_b32_e32` (from a
-    VGPR, an immediate (inline integer, the inline +1.0f bit pattern or a
+    VGPR, an immediate (inline integer, any of the nine inline floating bit patterns or a
     literal; the move copies bits), a known normal SGPR, or vcc_lo known or
     lane-derived), `v_add_nc_u32_e64`, `v_lshlrev_b32_e32`,
     `v_lshrrev_b32_e32`, `v_ashrrev_i32_e32`, `v_and_b32_e32`, `v_or_b32_e32`,

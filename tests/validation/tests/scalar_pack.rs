@@ -57,6 +57,11 @@ fn cases() -> Vec<(Vec<u8>, Vec<u32>)> {
     // Distinct halves, inline negative/positive, literal in either source,
     // equal sources and all-zero/all-one results. Both SCC states must survive.
     for (op, a, b, lit, d) in [
+        (50, 240, 9, None, 0xef01_0000),
+        (51, 248, 241, None, 0xbf00_f983),
+        (52, 247, 248, None, 0x3e22_c080),
+        (50, 248, 255, Some(0x1234_abcd), 0xabcd_f983),
+        (51, 255, 248, Some(0x1234_abcd), 0x3e22_abcd),
         (50, 255, 9, Some(0x8000_0001), 0xef01_0001),
         (51, 255, 9, Some(0x8000_0001), 0x5678_0001),
         (52, 255, 9, Some(0x8000_0001), 0x5678_8000),
@@ -83,7 +88,7 @@ fn cases() -> Vec<(Vec<u8>, Vec<u32>)> {
             ));
         }
     }
-    assert_eq!(out.len(), 63);
+    assert_eq!(out.len(), 73);
     out.push((
         include_bytes!("../../../fixtures/rdna2/scalar-pack.bin").to_vec(),
         vec![0xef01_1234, 0x10fe_edcb],
@@ -112,7 +117,6 @@ fn scalar_pack_invalid_operands_and_missing_literal_reject() {
             (10, 106, 9, None),
             (10, 8, 106, None),
             (10, 255, 255, Some(1)),
-            (10, 240, 9, None),
         ] {
             let code = program(op, dst, a, b, lit, None);
             assert!(compile(Architecture::Gfx1030, &code).is_err());

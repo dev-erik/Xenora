@@ -427,6 +427,69 @@ mod review {
         assert_eq!(actual, expected);
     }
 
+    #[test]
+    fn inline_float_selectors_are_exact_words_in_each_reference_reader() {
+        // Independent literal answers: selector, raw bits, bitwise NOT bits.
+        // Neither reference's mapping nor production semantics supplies this table.
+        let cases: &[(u32, u32, u32)] = &[
+            (240, 0x3f000000, 0xc0ffffff),
+            (241, 0xbf000000, 0x40ffffff),
+            (242, 0x3f800000, 0xc07fffff),
+            (243, 0xbf800000, 0x407fffff),
+            (244, 0x40000000, 0xbfffffff),
+            (245, 0xc0000000, 0x3fffffff),
+            (246, 0x40800000, 0xbf7fffff),
+            (247, 0xc0800000, 0x3f7fffff),
+            (248, 0x3e22f983, 0xc1dd067c),
+        ];
+        let check = |body: &[u32], expected: u32| {
+            let mut program = vec![0xe0302000, 0x80000100, 0xbf8c3f70];
+            program.extend_from_slice(body);
+            program.extend([0xe0702000, 0x80010200, 0xbbfd0000, 0xbf810000]);
+            verify(&words(&program), &[0], Some(&[expected]));
+        };
+        for &(selector, bits, inverted) in cases {
+            // Four-byte V_MOV and S_MOV, followed immediately by real instructions.
+            check(&[0x7e040200 | selector], bits);
+            check(&[0xbe880300 | selector, 0x7e040208], bits);
+            // SOP1 NOT sets SCC; its literal result tests all 32 operand bits.
+            check(&[0xbe880700 | selector, 0x7e040208], inverted);
+            // SOP2 ADD with integer zero, both source slots, then two inline
+            // XOR operands. Inline+literal must consume exactly one extra word.
+            check(&[0x80088000 | selector, 0x7e040208], bits);
+            check(&[0x80080080 | selector << 8, 0x7e040208], bits);
+            check(&[0x89080000 | selector << 8 | selector, 0x7e040208], 0);
+            check(&[0x8008ff00 | selector, 0, 0x7e040208], bits);
+            check(&[0x800800ff | selector << 8, 0, 0x7e040208], bits);
+            // SOPC EQ_U32: both inline operands and inline+literal in either
+            // position. Branch observation distinguishes true from false.
+            for operands in [
+                vec![0xbf060000 | selector << 8 | selector],
+                vec![0xbf06ff00 | selector, bits],
+                vec![0xbf0600ff | selector << 8, bits],
+            ] {
+                let mut body = vec![0x7e040280];
+                body.extend(operands);
+                body.extend([0xbf840001, 0x7e040281]);
+                check(&body, 1);
+            }
+            // Integer VOP2 ADD_NC sees the raw word, with v1 loaded as zero.
+            check(&[0x4a040200 | selector], bits);
+            // Integer VOPC EQ_U32 produces one active bit in this one-lane wave.
+            check(&[0x7e0602ff, bits, 0x7d840600 | selector, 0x7e04026a], 1);
+            check(
+                &[0x7e0602ff, inverted, 0x7d840600 | selector, 0x7e04026a],
+                0,
+            );
+            // Nine-bit classification must keep v240..v248 distinct from inline
+            // codes with the same low byte. Every selected VGPR contains 7.
+            check(&[0x7e000280 | selector << 17 | 7, 0x7e040300 | selector], 7);
+        }
+        // Integer inline one and FP inline one are different raw words.
+        check(&[0x7e040281], 1);
+        check(&[0x7e0402f2], 0x3f800000);
+    }
+
     fn words(code: &[u32]) -> Vec<u8> {
         code.iter().copied().flat_map(u32::to_le_bytes).collect()
     }
@@ -1789,9 +1852,7 @@ mod review {
             code[0x14..0x18].copy_from_slice(&word.to_le_bytes());
             code
         };
-        for selector in [
-            107, 124, 125, 126, 127, 233, 240, 242, 249, 250, 251, 253, 254,
-        ] {
+        for selector in [107, 124, 125, 126, 127, 233, 249, 250, 251, 253, 254] {
             rejected_at(&with_src0(selector), 0x14);
         }
         rejected_at(&with_src0(20), 0x14); // s20 has no known value

@@ -231,14 +231,16 @@ pub enum Instruction {
         src1: ScalarSource,
     },
     /// VOPC 32-bit integer compare writing a Wave32 mask to `vcc_lo`.
-    /// `src0` is a VGPR, `s0-s105`, `vcc_lo`, an inline integer or a literal.
+    /// `src0` is a VGPR, `s0-s105`, `vcc_lo`, an inline integer, inline float bits
+    /// (selectors 240..248), or a literal.
     VectorCompare {
         op: VectorCompareOp,
         src0: VectorSource,
         src1: u8,
     },
     /// VOP2 32-bit per-lane integer operation from the semantic registry.
-    /// `src0` is a VGPR, `s0-s105`, `vcc_lo`, an inline integer or a literal;
+    /// `src0` is a VGPR, `s0-s105`, `vcc_lo`, an inline integer, inline float bits
+    /// (selectors 240..248), or a literal;
     /// `src1` is a VGPR. Inactive lanes keep `dst`.
     VectorAlu {
         op: VectorAluOp,

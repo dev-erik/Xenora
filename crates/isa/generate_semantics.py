@@ -214,11 +214,12 @@ VECTOR_PRIMITIVES = {
 # match one of these shapes; anything else is an unimplemented rule.
 UNSUPPORTED_COMBOS = {
     "dst_vcc", "dst_exec", "dst_ttmp", "dst_m0", "dst_null", "src_vcc", "src_exec",
-    "src_m0", "src_ttmp", "src_float_inline", "src_special", "two_literals",
+    "src_m0", "src_ttmp", "src_special", "two_literals",
 }
 # Every combo name a rule may list (VOP2 also names vcc_hi and NULL sources,
-# which SOP2 groups under src_vcc and src_special).
-ALL_COMBOS = UNSUPPORTED_COMBOS | {"src_vcc_hi", "src_null"}
+# which SOP2 groups under src_vcc and src_special). Keep src_float_inline
+# in the vocabulary even though the implemented rules now accept those selectors.
+ALL_COMBOS = UNSUPPORTED_COMBOS | {"src_vcc_hi", "src_null", "src_float_inline"}
 OPERAND_RULES = {
     "sop2_sgpr": {
         "rust": "Sop2Sgpr",
@@ -276,10 +277,10 @@ OPERAND_RULES = {
             ],
             "max_literals": 1,
         },
-        # vector_source = VGPR, s0-s105, vcc_lo, inline integer -16..64 or a
-        # literal; the decoder rejects these SRC0 selectors.
+        # vector_source = VGPR, s0-s105, vcc_lo, inline integer -16..64, inline
+        # float bits (240..248), or a literal; these SRC0 selectors stay rejected.
         "unsupported": {
-            "src_vcc_hi", "src_exec", "src_m0", "src_ttmp", "src_null", "src_float_inline",
+            "src_vcc_hi", "src_exec", "src_m0", "src_ttmp", "src_null",
             "src_special",
         },
         "kind": "vector",

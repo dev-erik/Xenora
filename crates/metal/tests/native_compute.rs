@@ -491,3 +491,6 @@ mod four_queue_graphs;
 
 #[path = "native/resource_graph_acceptance.rs"]
 mod resource_graph_acceptance;
+
+#[path = "native/inline_float_sources.rs"]
+mod inline_float_sources;

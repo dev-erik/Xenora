@@ -220,8 +220,8 @@ const COUNTS: [(&str, usize); 7] = [
     ("sop1 aliasing", 11 * 3 * 2 * 2),
     ("sop1 max register", 11 * 3 * 2),
 ];
-/// Per form: 6 destinations and 15 sources outside the supported subset.
-const REJECTIONS: usize = 11 * (6 + 15);
+/// Per form: 6 destinations and 6 sources outside the supported subset.
+const REJECTIONS: usize = 11 * (6 + 6);
 
 /// ENCODING 0b10_1111101 in bits 23-31, SDST 16-22, OP 8-15, SSRC0 0-7
 /// (guide 13.1.3).
@@ -378,9 +378,8 @@ fn rejections() -> Vec<(String, Vec<u8>)> {
             let code = program(&[(8, 1)], false, &[sop1(op, dst, 8)], 10);
             all.push((format!("{name} destination {dst}"), code));
         }
-        // VCC_LO, VCC_HI, M0, EXEC_LO, EXEC_HI, SCC, and the float inline
-        // constants 240-248 as SSRC0.
-        for src in [106, 107, 124, 126, 127, 253].into_iter().chain(240..=248) {
+        // VCC_LO, VCC_HI, M0, EXEC_LO, EXEC_HI and SCC remain excluded.
+        for src in [106, 107, 124, 126, 127, 253] {
             let code = program(&[(8, 1)], false, &[sop1(op, 10, src)], 10);
             all.push((format!("{name} source {src}"), code));
         }

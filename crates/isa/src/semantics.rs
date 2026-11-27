@@ -185,18 +185,17 @@ pub enum Wave {
 /// Shared operand rule. The decoder implements each rule once.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OperandRule {
-    /// SOP2: SDST is s0-s105; SSRC0/SSRC1 are s0-s105, inline integers -16..64
-    /// or one literal word. Everything else is rejected as unsupported.
+    /// SOP2: SDST is s0-s105; SSRC0/SSRC1 are s0-s105, inline integers -16..64,
+    /// inline float bits (240..248), or one literal word. Everything else rejects.
     Sop2Sgpr,
-    /// SOPC: no destination; SSRC0/SSRC1 as for SOP2 sources (s0-s105, inline
-    /// integers -16..64 or one literal word). Everything else is rejected.
+    /// SOPC: no destination; SSRC0/SSRC1 use the same sources as SOP2.
     SopcScalar,
-    /// SOP1 unary: SDST is s0-s105; SSRC0 is s0-s105, an inline integer -16..64 or
-    /// a literal word. Everything else is rejected as unsupported.
+    /// SOP1 unary: SDST is s0-s105; SSRC0 is s0-s105, an inline integer -16..64,
+    /// inline float bits (240..248), or a literal word. Everything else rejects.
     Sop1Sgpr,
     /// VOP2 vector: VDST is v0-v255; SRC0 is a VGPR, s0-s105, `vcc_lo`, an inline
-    /// integer -16..64 or a literal word; VSRC1 is a VGPR. Everything else is
-    /// rejected as unsupported.
+    /// integer -16..64, inline float bits (240..248), or a literal word; VSRC1 is
+    /// a VGPR. Everything else is rejected as unsupported.
     Vop2Vgpr,
 }
 

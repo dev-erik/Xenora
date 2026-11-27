@@ -104,7 +104,7 @@ fn rejects_other_opcodes_and_noncanonical_operands() {
         (&[0x7e04_026b], "v_mov_b32_e32"), // VCC_HI is outside the source subset.
         (&[0x7d02_046b], "v_cmp_lt_i32_e32"), // VCC_HI source.
         (&[0x7d02_047e], "v_cmp_lt_i32_e32"), // EXEC_LO source.
-        (&[0x7d02_04f0], "v_cmp_lt_i32_e32"), // Inline 0.5 source.
+        (&[0x7d02_04f9], "v_cmp_lt_i32_e32"), // Unsupported SDWA source.
         (&[0x7d84_04f9, 0x0606_0601], "v_cmp_eq_u32_e32"), // SDWA.
         (&[0x7d84_04fa, 0], "v_cmp_eq_u32_e32"), // DPP16.
         (&[0x7e04_02fa, 0], "v_mov_b32_e32"),
@@ -1211,5 +1211,56 @@ fn signed_sopp_backedges_cannot_enter_literal_or_second_instruction_words() {
                 DecodeErrorKind::InvalidBranchTarget { target: 4 }
             );
         }
+    }
+}
+
+#[test]
+#[ignore = "requires LLVM with the gfx1030 AMDGPU target"]
+fn llvm_inline_float_selector_matrix_has_exact_fields_and_lengths() {
+    let words = [
+        0x3f000000u32,
+        0xbf000000,
+        0x3f800000,
+        0xbf800000,
+        0x40000000,
+        0xc0000000,
+        0x40800000,
+        0xc0800000,
+        0x3e22f983,
+    ];
+    let mut assembly = String::new();
+    for word in words {
+        for line in [
+            format!("s_mov_b32 s32, 0x{word:x}"),
+            format!("s_not_b32 s32, 0x{word:x}"),
+            format!("s_add_u32 s32, 0x{word:x}, s33"),
+            format!("s_add_u32 s32, s33, 0x{word:x}"),
+            format!("s_cmp_eq_u32 0x{word:x}, s33"),
+            format!("s_cmp_eq_u32 s33, 0x{word:x}"),
+            format!("v_mov_b32_e32 v8, 0x{word:x}"),
+            format!("v_add_nc_u32_e32 v8, 0x{word:x}, v9"),
+            format!("v_cmp_eq_u32_e32 vcc_lo, 0x{word:x}, v9"),
+        ] {
+            assembly.push_str(&line);
+            assembly.push('\n');
+        }
+    }
+    let output = llvm_mc(&[], assembly.as_bytes());
+    assert_llvm_success(&output);
+    let text = String::from_utf8(output.stdout).unwrap();
+    let encodings: Vec<_> = text
+        .lines()
+        .filter_map(|line| line.split_once("; encoding: ["))
+        .map(|(_, encoding)| encoding_bytes(encoding))
+        .collect();
+    assert_eq!(encodings.len(), 81);
+    for (index, bytes) in encodings.iter().enumerate() {
+        assert_eq!(bytes.len(), 4);
+        let position = usize::from(matches!(index % 9, 3 | 5));
+        assert_eq!(bytes[position], 240 + (index / 9) as u8);
+        assert_eq!(
+            decode_at(Architecture::Gfx1030, bytes, 0).unwrap().byte_len,
+            4
+        );
     }
 }

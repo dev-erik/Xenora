@@ -34,12 +34,13 @@ src = [
   { field = "SSRC0", class = "scalar_source" },
   { field = "SSRC1", class = "scalar_source" },
 ]
-# scalar_source = normal SGPR s0-s105, inline integer -16..64, or a literal word.
+# scalar_source = normal SGPR s0-s105, inline integer -16..64,
+# inline float bits (selectors 240..248), or a literal word.
 max_literals = 1
 # Encodings this rule rejects, so they stay unsupported rather than guessed.
 unsupported = [
   "dst_vcc", "dst_exec", "dst_ttmp", "dst_m0", "dst_null",
-  "src_vcc", "src_exec", "src_m0", "src_ttmp", "src_float_inline",
+  "src_vcc", "src_exec", "src_m0", "src_ttmp",
   "src_special", "two_literals",
 ]
 
@@ -695,7 +696,7 @@ src = [
 ]
 max_literals = 1
 unsupported = [
-  "src_vcc", "src_exec", "src_m0", "src_ttmp", "src_float_inline",
+  "src_vcc", "src_exec", "src_m0", "src_ttmp",
   "src_special", "two_literals",
 ]
 
@@ -962,7 +963,7 @@ src = [{ field = "SSRC0", class = "scalar_source" }]
 max_literals = 1
 unsupported = [
   "dst_vcc", "dst_exec", "dst_ttmp", "dst_m0", "dst_null",
-  "src_vcc", "src_exec", "src_m0", "src_ttmp", "src_float_inline", "src_special",
+  "src_vcc", "src_exec", "src_m0", "src_ttmp", "src_special",
 ]
 
 [[form]]
@@ -1199,10 +1200,11 @@ src = [
   { field = "SRC0", class = "vector_source" },
   { field = "VSRC1", class = "vgpr" },
 ]
-# vector_source = VGPR, normal SGPR s0-s105, vcc_lo, inline integer -16..64, or a literal word.
+# vector_source = VGPR, normal SGPR s0-s105, vcc_lo, inline integer -16..64,
+# inline float bits (selectors 240..248), or a literal word.
 max_literals = 1
 unsupported = [
-  "src_vcc_hi", "src_exec", "src_m0", "src_ttmp", "src_null", "src_float_inline", "src_special",
+  "src_vcc_hi", "src_exec", "src_m0", "src_ttmp", "src_null", "src_special",
 ]
 
 [[form]]
