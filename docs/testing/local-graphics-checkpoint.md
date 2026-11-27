@@ -16,6 +16,39 @@ run ends with `PASS`. Quick mode also rejects filters that select no passing tes
 Use `--help` for prerequisites. These tests render offscreen and compare pixels;
 they do not open an application window. Avoid other GPU test runs at the same time.
 
+## S2.7 increment: four-queue resource graphs
+
+27 November 2026. Opt-in graph cohorts now admit four logical/native queues with
+independent event timelines and pending tails. Legacy cohorts retain two-queue
+admission; the shared sixteen-node and payload ceilings are unchanged. All five
+worker mapping paths, including attachment transactions, use the four-queue map.
+Queue mappings survive successful collection and reset on generation recovery.
+
+Five native tests and one original guest test passed. Literal buffer results cover
+four-queue chains, gated fan-out/fan-in in both wait orders, descendant-first
+collection, source destruction, sixteen-node capacity, legacy rejection and
+abort/drain/reinitialization with stale-point/output rejection. The guest test
+checks fifth-queue rejection before and after drainage, then retries on an existing
+mapped queue. It does not establish the rejected queue's eventual first point
+across generation recovery. New native coverage exercises buffer/copy paths,
+not four-queue attachment rendering.
+
+All nine gates passed in `artifacts/validation-full.kfYuBx`: **1,012 workspace tests
+passed, zero failed, 145 ignored**; native suites reported **457 passed, zero
+failed, one ignored**. These suites overlap; ignored tests are not GPU evidence.
+Three isolated mutations reached assertion failures: removing legacy queue
+rejection, raising the node ceiling to17, and rejecting the fourth worker queue.
+An independent reviewer checked failures and exact restoration hashes in
+`artifacts/s27-four-queue-mutations`. Two independent reviews accepted this
+increment with their full-gate condition satisfied by the recorded run.
+
+The [increment checklist](../superpowers/plans/2026-11-27-four-queue-graphs.md)
+records scope and validation. Legacy cohorts currently allocate all four physical
+queues/events while admitting only the original two. **S2.7 remains open** for
+mixed attachment/copy/geometry/descriptor/storage/synchronization graph acceptance,
+wider failure and lifetime pressure, and a final dependency contract. Final
+integrated Stage2 acceptance remains separate.
+
 ## S2.6 completion: explicit guest resource synchronization
 
 27 November 2026. The [synchronization contract](../graphics-call-v1.md#explicit-guest-resource-synchronization)

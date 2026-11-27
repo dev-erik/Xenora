@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! Worker-local two-queue rendering; event progress is never a success result.
+//! Worker-local bounded multi-queue rendering; event progress is never a success result.
 use super::*;
 use crate::compute::{size, verify_shader_validation};
 use crate::{
@@ -27,12 +27,16 @@ pub use typed_copy::RenderTypedTextureOutput;
 pub enum RenderQueue {
     First,
     Second,
+    Third,
+    Fourth,
 }
 impl RenderQueue {
     fn index(self) -> usize {
         match self {
             Self::First => 0,
             Self::Second => 1,
+            Self::Third => 2,
+            Self::Fourth => 3,
         }
     }
 }
@@ -315,16 +319,16 @@ struct Entry {
     pending: PendingWork,
 }
 
-/// Owns two reusable queues. Legacy cohorts retain two entries, one per queue;
-/// opt-in graph cohorts retain up to sixteen entries across either queue.
+/// Owns four reusable queues. Legacy cohorts admit only First and Second;
+/// opt-in graph cohorts retain up to sixteen entries across all four queues.
 /// Rc provenance intentionally keeps this API on one worker thread.
 pub struct RenderCohort {
-    queues: [NativeCompute; 2],
-    events: [Retained<ProtocolObject<dyn MTLSharedEvent>>; 2],
-    sequence: [u64; 2],
+    queues: [NativeCompute; 4],
+    events: [Retained<ProtocolObject<dyn MTLSharedEvent>>; 4],
+    sequence: [u64; 4],
     generation: Rc<Generation>,
     entries: Vec<Option<Entry>>,
-    latest: [Option<RenderPoint>; 2],
+    latest: [Option<RenderPoint>; 4],
     color_bytes: Rc<Cell<usize>>,
     buffer_region_pipeline: Option<Retained<ProtocolObject<dyn MTLComputePipelineState>>>,
 }
@@ -547,7 +551,7 @@ impl NativeCompute {
     pub fn new_render_cohort(&self) -> Result<RenderCohort, MetalError> {
         self.render_cohort_with_capacity(2)
     }
-    /// Opt into sixteen retained submissions across two queues. Payload budgets
+    /// Opt into sixteen retained submissions across four queues. Payload budgets
     /// are unchanged. Latest pending queue points retain ordering independently
     /// of receipt storage and are released after successful collection.
     pub fn new_render_graph_cohort(&self) -> Result<RenderCohort, MetalError> {
@@ -564,17 +568,22 @@ impl NativeCompute {
                     .ok_or_else(|| error("queue creation failed"))?,
             })
         };
-        let queues = [new_queue()?, new_queue()?];
-        let events = [event(&queues[0])?, event(&queues[1])?];
+        let queues = [new_queue()?, new_queue()?, new_queue()?, new_queue()?];
+        let events = [
+            event(&queues[0])?,
+            event(&queues[1])?,
+            event(&queues[2])?,
+            event(&queues[3])?,
+        ];
         Ok(RenderCohort {
             queues,
             events,
-            sequence: [0; 2],
+            sequence: [0; 4],
             generation: Rc::new(Generation {
                 poisoned: Cell::new(false),
             }),
             entries: (0..capacity).map(|_| None).collect(),
-            latest: [None, None],
+            latest: std::array::from_fn(|_| None),
             color_bytes: Rc::new(Cell::new(0)),
             buffer_region_pipeline: None,
         })
@@ -582,6 +591,9 @@ impl NativeCompute {
 }
 impl RenderCohort {
     fn admission_slot(&self, queue: usize) -> Result<usize, MetalError> {
+        if self.entries.len() == 2 && queue >= 2 {
+            return Err(error("legacy cohort admits only two queues"));
+        }
         if self.entries.len() == 2
             && self
                 .entries
@@ -1133,7 +1145,7 @@ impl RenderCohort {
         if let Some(pipeline) = &self.buffer_region_pipeline {
             return Ok(pipeline.clone());
         }
-        let gpu = &self.queues[0]; // Both queues share this exact device.
+        let gpu = &self.queues[0]; // All queues share this exact device.
         let options = compile_options()?;
         let library = gpu.compile_library(include_str!("buffer_region_patch.metal"), &options)?;
         let function = find_function(&library, "patch_buffer_region")?;
@@ -2882,17 +2894,22 @@ impl RenderCohort {
         for entry in &mut self.entries {
             *entry = None;
         }
-        self.latest = [None, None];
+        self.latest = std::array::from_fn(|_| None);
         Ok(())
     }
     pub fn reinitialize(&mut self) -> Result<(), MetalError> {
         if self.entries.iter().any(Option::is_some) {
             return Err(error("drain/collect before reinitialize"));
         }
-        let events = [event(&self.queues[0])?, event(&self.queues[1])?];
+        let events = [
+            event(&self.queues[0])?,
+            event(&self.queues[1])?,
+            event(&self.queues[2])?,
+            event(&self.queues[3])?,
+        ];
         self.events = events;
-        self.sequence = [0; 2];
-        self.latest = [None, None];
+        self.sequence = [0; 4];
+        self.latest = std::array::from_fn(|_| None);
         self.generation = Rc::new(Generation {
             poisoned: Cell::new(false),
         });
@@ -4278,7 +4295,7 @@ mod graph_admission_tests {
             "collection plus final owner drop refunds without reset"
         );
         cohort.reinitialize().unwrap();
-        assert_eq!(cohort.sequence, [0, 0]);
+        assert_eq!(cohort.sequence, [0, 0, 0, 0]);
         assert!(cohort.latest.iter().all(Option::is_none));
         assert_eq!(budget.get(), 0);
     }

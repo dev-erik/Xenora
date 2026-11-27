@@ -578,7 +578,7 @@ graphs are not enabled by this operation.
 
 ## Multi-node graph backend
 
-The native queued adapter opts into up to 16 retained receipts across two queues,
+The native queued adapter opts into up to 16 retained receipts across four queues,
 including released receipts still needed by descendants. Multiple submissions may
 remain pending on a queue. SubmitAfter (opcode35) accepts at most 16 dependency
 records, each holding a queue handle and point value. Older backend registrations
@@ -1023,3 +1023,12 @@ in the [local checkpoint](testing/local-graphics-checkpoint.md#s26-completion-ex
 external writers, unrestricted aliases and general resource dependency graphs
 are outside this interface. No console memory model or game compatibility is
 claimed. See the [acceptance plan](superpowers/plans/2026-11-27-guest-synchronization.md).
+
+## Four-queue resource graphs
+
+The opt-in graph adapter maps at most four logical queues to four native queues.
+Existing dependency records and exact produced versions are unchanged. Legacy
+cohorts retain two-queue admission. The sixteen-node limit and payload ceilings
+remain shared across the whole graph. Queue assignments persist after successful
+collection and reset on generation recovery; a fifth distinct queue rejects
+without publication. See the [increment contract](interfaces.md#four-queue-graph-increment).

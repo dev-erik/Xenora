@@ -6485,3 +6485,6 @@ mod guest_image_sources;
 
 #[path = "guest_graphics/guest_sync.rs"]
 mod guest_sync;
+
+#[path = "guest_graphics/four_queue_graphs.rs"]
+mod four_queue_graphs;

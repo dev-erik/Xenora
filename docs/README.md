@@ -16,6 +16,8 @@ either path. The [changelog](../CHANGELOG.md) records notable changes.
 
 ## Native Metal graphics
 
+- [Four-queue resource graphs](interfaces.md#four-queue-graph-increment) — Expanded opt-in queue admission, recovery and [increment checklist](superpowers/plans/2026-11-27-four-queue-graphs.md).
+
 - [Guest resource synchronization](graphics-call-v1.md#explicit-guest-resource-synchronization) — Packed texture/buffer bindings and atomic import/export; [completion plan](superpowers/plans/2026-11-27-guest-synchronization.md).
 
 - [Guest-backed image sources](graphics-call-v1.md#guest-backed-buffer-image-sources) — Checked submission-time buffer snapshots for pitched, mip/array and typed transfers; [implementation plan](superpowers/plans/2026-11-27-guest-image-sources.md).

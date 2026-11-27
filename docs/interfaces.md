@@ -1350,7 +1350,7 @@ are described below; compressed/depth transfers and general graphs remain open.
 
 `GraphicsContext::set_metal_graph_queued_backend` enables up to 16 retained
 receipts, including released ancestors, with multiple pending submissions on the
-same logical queue. The native worker maps at most two logical queues to two Metal
+same logical queue. The native worker maps at most four logical queues to four Metal
 queues. Older installers retain the two-node and one-pending-per-queue contracts
 in the preceding sections. Replacing the graph installer revokes its larger limits.
 Existing payload ceilings remain unchanged; the node limit does not multiply them.
@@ -1575,3 +1575,17 @@ association, and no asynchronous callback holds a guest pointer.
 
 The GPU continues to own immutable snapshots. This is explicit synchronization,
 not automatic shared-memory coherence. See the [ABI contract](graphics-call-v1.md#explicit-guest-resource-synchronization).
+
+### Four-queue graph increment
+
+Graph cohorts add `RenderQueue::Third` and `Fourth`, each with its own event,
+sequence and pending tail. Legacy cohorts reject these lanes before admission;
+their two-node limit remains intact. The cohort owns all four physical queues,
+including when using legacy admission. Worker mapping supports four distinct
+logical queues in a generation across render, copy and attachment paths. A fifth
+queue rejects without consuming a logical point or committing resource states.
+Mapping survives successful collection; generation reinitialization clears it.
+All four timelines are recreated during recovery, and old-generation points and
+outputs remain invalid. Payload ceilings and the sixteen-node graph limit do not
+increase. This is a bounded S2.7 increment; broader graph-wide acceptance remains
+open. See the [plan](superpowers/plans/2026-11-27-four-queue-graphs.md).

@@ -349,6 +349,8 @@ impl State {
             match self.queues.len() {
                 0 => RenderQueue::First,
                 1 => RenderQueue::Second,
+                2 => RenderQueue::Third,
+                3 => RenderQueue::Fourth,
                 _ => return Err(GraphicsError::ResourceLifetimeViolation),
             }
         };
@@ -528,6 +530,8 @@ impl State {
             match self.queues.len() {
                 0 => RenderQueue::First,
                 1 => RenderQueue::Second,
+                2 => RenderQueue::Third,
+                3 => RenderQueue::Fourth,
                 _ => return Err(GraphicsError::ResourceLifetimeViolation),
             }
         };
@@ -746,6 +750,8 @@ impl State {
             match self.queues.len() {
                 0 => RenderQueue::First,
                 1 => RenderQueue::Second,
+                2 => RenderQueue::Third,
+                3 => RenderQueue::Fourth,
                 _ => return Err(GraphicsError::ResourceLifetimeViolation),
             }
         };
@@ -895,6 +901,8 @@ impl State {
             match self.queues.len() {
                 0 => RenderQueue::First,
                 1 => RenderQueue::Second,
+                2 => RenderQueue::Third,
+                3 => RenderQueue::Fourth,
                 _ => return Err(GraphicsError::ResourceLifetimeViolation),
             }
         };
@@ -1685,7 +1693,7 @@ fn submit_native_inputs(
         .map_err(metal_error)
 }
 
-/// Install two native queues with direct GPU producer/consumer resource versions.
+/// Install four native queues with direct GPU producer/consumer resource versions.
 /// Existing single-submit installers retain their original contracts.
 pub fn install_queued_pipeline_backend(context: &mut GraphicsContext) -> Result<(), GraphicsError> {
     install_inner(context, |_, _| Ok(()))

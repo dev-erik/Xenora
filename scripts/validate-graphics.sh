@@ -90,6 +90,8 @@ run_tests() {
 }
 printf 'Running %s validation. Logs: %s\n' "$mode" "$log_dir"
 if [[ "$mode" == quick ]]; then
+    run_tests four-queue-native cargo test --locked -p xenora-metal --features gpu-tests --test native_compute four_queue_graphs:: -- --nocapture --test-threads=1
+    run_tests four-queue-guest cargo test --locked -p xenora-ffi --features gpu-tests --test guest_graphics original_guest_four_queue_ -- --nocapture --test-threads=1
     run_tests guest-sync-cpu cargo test --locked -p xenora-loader --test guest_sync
     run_tests guest-sync-private cargo test --locked -p xenora-loader --lib guest_sync
     run_tests guest-sync-mappings cargo test --locked -p xenora-loader --lib mapping_identity_tests

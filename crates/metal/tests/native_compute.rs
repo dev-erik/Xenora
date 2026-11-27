@@ -483,3 +483,6 @@ mod depth_attachment_views;
 
 #[path = "native/shader_array_views.rs"]
 mod shader_array_views;
+
+#[path = "native/four_queue_graphs.rs"]
+mod four_queue_graphs;

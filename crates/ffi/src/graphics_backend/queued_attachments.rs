@@ -309,6 +309,8 @@ impl State {
             None => match self.queues.len() {
                 0 => RenderQueue::First,
                 1 => RenderQueue::Second,
+                2 => RenderQueue::Third,
+                3 => RenderQueue::Fourth,
                 _ => return Err(GraphicsError::ResourceLifetimeViolation),
             },
         };
