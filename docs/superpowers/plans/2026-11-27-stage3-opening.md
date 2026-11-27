@@ -101,7 +101,7 @@ project ABI constraint, not a claim about Xbox hardware.
 - [x] DS_BPERMUTE, supported DS_SWIZZLE modes and full-EXEC row permutations.
 - [x] Separate DS/LGKM readiness and qualified spec-derived e64 READFIRST.
 - [x] Independent native readback and wrong-routing mutation detection.
-- [ ] DS_PERMUTE scatter and collision-policy validation.
+- [x] Bounded full-Wave32 DS_PERMUTE scatter and collision-policy validation.
 - [ ] Resolve the AMD masked-rotation example/pseudocode contradiction.
 
 These entries record bounded increments; the full-stage closure checklist above

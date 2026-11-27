@@ -212,6 +212,7 @@ The wider LLVM operand matrix exercises decoding only. ABI means application bin
 | `v_permlane16_b32` | VOP3, ordinary VGPR and constant normal-SGPR selector words; full-wave launch and full EXEC; FI/BC admitted only under this contract | 8 B | yes | yes | three-way passed | MSL nibble-selected same-row gather with captured source and selector versions | implemented | fixture verified | fixture verified |
 | `v_permlanex16_b32` | VOP3, ordinary VGPR and constant normal-SGPR selector words; full-wave launch and full EXEC; FI/BC admitted only under this contract | 8 B | yes | yes | three-way passed | MSL nibble-selected opposite-row gather with captured source and selector versions | implemented | fixture verified | fixture verified |
 | `v_readfirstlane_b32_e64` | VOP3, AMD XML/spec-derived opcode386 with project-selected zero unused fields; normal SGPR destination and VGPR source | 8 B | yes | yes | unverified: pinned LLVM omits this encoding; AMD XML/spec-derived only | MSL selected-lane snapshot replay sharing the VOP1 launch and execution contract | implemented | fixture verified | fixture verified |
+| `ds_permute_b32` | DS, ordinary VGPR address/data, u16 offset, full-wave launch and static EXEC; zero reserved fields | 8 B | yes | yes | three-way passed | MSL bounded captured scatter with a permitted highest-active-writer policy, unwritten zero, inactive retention and separate LGKM completion | implemented | fixture verified | fixture verified |
 <!-- status:instructions:end -->
 
 ## Automated three-way comparison

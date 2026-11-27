@@ -1796,3 +1796,32 @@ It lowers to the same captured lane-read semantics as VOP1. LLVM's source
 acknowledges its missing VOP3 encoding support, so this form has no LLVM
 assembly/disassembly acceptance evidence. Metal readback tests validate
 translation behavior, not acceptance of these bytes by native AMD hardware.
+
+
+### Full-wave scatter
+
+`DS_PERMUTE_B32` captures address, data and EXEC at issue, routes active
+sources within each complete Wave32 group and publishes the destination only
+after the independent LGKM wait. Active destinations without a writer become
+zero; inactive destinations retain their earlier values. Address addition wraps
+at 32 bits before selecting address bits 6:2. Sources and addresses can alias
+the destination because they refer to pre-instruction snapshots.
+
+AMD's prose permits a value from any conflicting active writer, while its
+pseudocode selects the highest-numbered writer. Xenora uses that permitted
+highest-active-writer policy deterministically. Tests distinguish membership in
+the eligible-writer set from the chosen implementation policy; this does not
+establish a particular AMD device's collision determinism.
+
+Scatter kernels have an 8,192-unit weighted replay-work limit per invocation,
+including fixed 32-iteration scatter and comparison loops, and gather-table
+initialization. This is a compiler work estimate, not a GPU instruction-count
+or timing guarantee. Only one scatter may appear on a replay dependency path,
+including address dependencies. Independent scatter operations may compose
+within the total budget. These compiler-specific limits do not restrict the
+independent reference's semantic execution. Existing non-scatter kernels retain
+the earlier node, context-depth and source-size limits.
+
+A fresh scatter-loop scope uses unique names for every generated temporary,
+so replaying a gather through a scatter cannot shadow the destination lane
+selected by an outer gather.

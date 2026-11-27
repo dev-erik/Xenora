@@ -46,7 +46,8 @@ const fn concat_forms<const N: usize>() -> [(&'static str, EncodingFamily); N] {
 }
 
 /// Decoded forms not yet described by the semantic registry.
-const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 126] = [
+const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 127] = [
+    ("DS_PERMUTE_B32", EncodingFamily::Ds),
     ("DS_BPERMUTE_B32", EncodingFamily::Ds),
     ("DS_SWIZZLE_B32", EncodingFamily::Ds),
     ("V_PERMLANE16_B32", EncodingFamily::Vop3),
@@ -379,15 +380,24 @@ fn decode_gfx1030(bytes: &[u8], offset: usize) -> Result<(Instruction, u8), Deco
 
     // gfx1030 DS uses OP[25:18], GDS[17], and reserved bit 16.
     let ds_opcode = first & 0xfffc0000;
-    if matches!(ds_opcode, 0xdacc0000 | 0xd8d40000) {
+    if matches!(ds_opcode, 0xdac80000 | 0xdacc0000 | 0xd8d40000) {
         let second = word(bytes, 8)?;
+        let permute = ds_opcode == 0xdac80000;
         let bpermute = ds_opcode == 0xdacc0000;
-        let mnemonic = if bpermute {
-            "ds_bpermute_b32"
-        } else {
-            "ds_swizzle_b32"
+        let mnemonic = match ds_opcode {
+            0xdac80000 => "ds_permute_b32",
+            0xdacc0000 => "ds_bpermute_b32",
+            _ => "ds_swizzle_b32",
         };
-        if first & 0x00030000 != 0 || second & if bpermute { 0x00ff0000 } else { 0x00ffff00 } != 0 {
+        if first & 0x00030000 != 0
+            || second
+                & if permute || bpermute {
+                    0x00ff0000
+                } else {
+                    0x00ffff00
+                }
+                != 0
+        {
             return Err(unsupported(
                 mnemonic,
                 "expected LDS mode and zero reserved/unused fields",
@@ -397,7 +407,14 @@ fn decode_gfx1030(bytes: &[u8], offset: usize) -> Result<(Instruction, u8), Deco
         let source = second as u8;
         let offset = first as u16;
         return Ok((
-            if bpermute {
+            if permute {
+                Instruction::DsPermuteB32 {
+                    dst,
+                    addr: source,
+                    data: (second >> 8) as u8,
+                    offset,
+                }
+            } else if bpermute {
                 Instruction::DsBpermuteB32 {
                     dst,
                     addr: source,

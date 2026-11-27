@@ -302,3 +302,55 @@ Logs: `artifacts/validation-full.BgbmCy`. The separate encoding run passed
 excluded from that LLVM claim. The fixture inventory still requires every
 declared form; spec-derived raw words carry explicit expected mnemonics and
 are checked against byte identification, rather than being excluded.
+
+
+## Full-wave scatter continuation
+
+All **11/11 S3.4 encoding forms** now have bounded Wave32 implementations.
+This is a form-coverage milestone; masked rotation, wider operand/EXEC modes,
+Wave64 and graphics/helper-lane participation still prevent full-stage closure.
+S3.2 remains **8/24** and is not marked complete.
+
+The scatter-specific independent suite passed **8 tests, zero ignored**, with
+**87 original programs and 96 GPU dispatches**. It checks eligible-writer
+membership separately from the highest-active-writer implementation policy,
+as well as inactive/no-writer results, snapshots, waits and nested transfer
+composition. The combined scatter, gather and general lane-read run passed
+**24 tests, zero ignored**, covering **373 dispatches** with Metal API/shader
+validation enabled (`artifacts/s34-scatter/native.log`).
+
+Independent review found a temporary-name shadowing risk in nested replay;
+unique loop namespaces fix it. Reintroducing the defect produced an invalid
+result in the independent gather→scatter→gather native case. The production
+source was restored exactly. The native failure is recorded in
+`artifacts/s34-scatter/scope-mutation.log`; the wrapper initially failed to
+recognize that assertion's wording, but the log directly records the incorrect
+value and eligible-output assertion failure. Both independent static reviewers
+approved the bounded implementation.
+
+The LLVM oracle passed **30 tests**, with **1,322 three-way instruction
+comparisons across 182 forms** (`artifacts/s34-scatter/llvm.log`). E64
+READFIRST remains excluded from LLVM encoding evidence.
+
+Regression verification: workspace **1,486 passed, zero failed, 183 ignored**.
+Format and all-target Clippy passed. All GPU suites completed across the
+unchanged-source runs below: **521 passed, zero assertion failures, one ignored**
+(counting each completed suite once). Fixture reproduction, generated maps,
+claims, dependency direction and diff checks passed.
+
+The full wrapper did **not** pass in one run: `validation-full.Ivw1Wh` and
+`validation-full.MOt7t1` stopped at the native-compute process timeout.
+`artifacts/s34-scatter/gpu-from-native.log` records native compute passing
+279 tests in 58.54 seconds under an explicit 120-second bound, followed by the
+intervening loader/FFI suites. That supplemental run later timed out in the
+frame-loop memory-footprint case. The complete frame-loop suite had already
+passed all five tests in 14.08 seconds in
+`artifacts/s34-scatter/remaining-gpu.log`, which also completed every subsequent
+suite. The fixed-timeout wrapper remains sensitive to runtime variation; no
+assertions or checked-in gate definitions were weakened.
+
+The total uses the 44-test Metal library result from `validation-full.MOt7t1`,
+the 338 completed tests before guest graphics in `gpu-from-native.log`, and
+the 139 tests from guest graphics onward in `remaining-gpu.log`. Partial and
+duplicate runs are excluded. Source hashes are in
+`artifacts/s34-scatter/verified-source.json`.

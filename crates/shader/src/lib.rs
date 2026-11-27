@@ -187,6 +187,12 @@ fn swizzle_table(offset: u16) -> [u8; 32] {
 
 #[derive(Clone, Copy)]
 enum Op {
+    Scatter {
+        address: Value,
+        data: Value,
+        offset: u16,
+        exec: u32,
+    },
     Gather {
         source: Value,
         selection: GatherSelection,
@@ -240,6 +246,7 @@ enum Op {
 impl Op {
     fn operands(self) -> Vec<Value> {
         match self {
+            Self::Scatter { address, data, .. } => vec![address, data],
             Self::Gather {
                 source, selection, ..
             } => match selection {
@@ -336,7 +343,8 @@ impl Op {
                 name(fallthrough),
                 name(taken)
             ),
-            Self::Gather { .. }
+            Self::Scatter { .. }
+            | Self::Gather { .. }
             | Self::ReadLane { .. }
             | Self::Store(_)
             | Self::ScalarBranch { .. }
@@ -786,13 +794,20 @@ pub fn compile_with_options(
         )?;
     }
     // Wave-uniform values: identical in every lane of an RDNA wave.
-    let mut replay_nodes = 0;
+    let mut replay_nodes = ReplayBudget {
+        enforce_work: operations
+            .iter()
+            .any(|(_, op)| matches!(op, Op::Scatter { .. })),
+        ..ReplayBudget::default()
+    };
     for (i, &(_, op)) in operations.iter().enumerate() {
         if let Op::Gather {
             selection: GatherSelection::Table(table),
             ..
         } = op
         {
+            // Count per-invocation table initialization, not GPU instructions or time.
+            replay_nodes.charge(32, 1)?;
             let entries = table
                 .iter()
                 .map(|v| format!("{v}u"))
@@ -806,18 +821,20 @@ pub fn compile_with_options(
     }
     let mut uniform = Vec::with_capacity(operations.len());
     for (index, &(offset, operation)) in operations.iter().enumerate() {
+        replay_nodes.charge(1, 1)?;
         let dest = Value(index);
         uniform.push(match operation {
             Op::Constant(_) | Op::LaneMask { .. } | Op::ReadLane { .. } => true,
             Op::Load(_)
             | Op::Gather { .. }
+            | Op::Scatter { .. }
             | Op::MergeLanes { .. }
             | Op::BitBinary(VectorBitBinaryOp::MbcntLoU32B32, _, _) => false,
             _ => operation.operands().iter().all(|value| uniform[value.0]),
         });
         let thread = |value: Value| value.to_string();
         let (step, statement) = match operation {
-            Op::Gather { .. } => {
+            Op::Gather { .. } | Op::Scatter { .. } => {
                 let mut replay = Replay::new(
                     &mut msl,
                     &operations,
@@ -976,6 +993,32 @@ pub fn compile_with_options(
 const MAX_MSL_BYTES: usize = 64 * 1024;
 const MAX_REPLAY_NODES: usize = 8192;
 const MAX_REPLAY_DEPTH: usize = 64;
+const MAX_REPLAY_WORK: usize = 8192;
+struct ReplayBudget {
+    nodes: usize,
+    work: usize,
+    enforce_work: bool,
+}
+impl Default for ReplayBudget {
+    fn default() -> Self {
+        Self {
+            nodes: 0,
+            work: 0,
+            enforce_work: true,
+        }
+    }
+}
+impl ReplayBudget {
+    fn charge(&mut self, operations: usize, multiplier: usize) -> Result<(), CompileError> {
+        let total = operations
+            .checked_mul(multiplier)
+            .and_then(|cost| self.work.checked_add(cost))
+            .filter(|&total| !self.enforce_work || total <= MAX_REPLAY_WORK)
+            .ok_or_else(|| replay_error("replay weighted work exceeds 8192"))?;
+        self.work = total;
+        Ok(())
+    }
+}
 fn replay_error(reason: &'static str) -> CompileError {
     CompileError::Verify { offset: 0, reason }
 }
@@ -994,7 +1037,10 @@ struct Replay<'a> {
     operations: &'a [(usize, Op)],
     uniform: &'a [bool],
     root: usize,
-    nodes: &'a mut usize,
+    scope: String,
+    budget: &'a mut ReplayBudget,
+    multiplier: usize,
+    scatter_depth: usize,
     contexts: Vec<(String, String)>,
     context_keys: std::collections::BTreeMap<String, usize>,
     memo: std::collections::BTreeMap<(usize, usize), String>,
@@ -1007,7 +1053,7 @@ impl<'a> Replay<'a> {
         operations: &'a [(usize, Op)],
         uniform: &'a [bool],
         root: usize,
-        nodes: &'a mut usize,
+        nodes: &'a mut ReplayBudget,
         lane: String,
         index: String,
         thread_context: bool,
@@ -1017,7 +1063,10 @@ impl<'a> Replay<'a> {
             operations,
             uniform,
             root,
-            nodes,
+            scope: root.to_string(),
+            budget: nodes,
+            multiplier: 1,
+            scatter_depth: 0,
             contexts: vec![(lane, index)],
             context_keys: Default::default(),
             memo: Default::default(),
@@ -1039,14 +1088,66 @@ impl<'a> Replay<'a> {
         if depth > MAX_REPLAY_DEPTH {
             return Err(replay_error("replay depth exceeds 64"));
         }
-        if *self.nodes >= MAX_REPLAY_NODES {
+        if self.budget.nodes >= MAX_REPLAY_NODES {
             return Err(replay_error("replay nodes exceed 8192"));
         }
-        *self.nodes += 1;
+        self.budget.charge(1, self.multiplier)?;
+        self.budget.nodes += 1;
         let (lane, index) = self.contexts[context].clone();
         let operation = self.operations[value.0].1;
-        if depth >= MAX_REPLAY_DEPTH && matches!(operation, Op::Gather { .. }) {
+        if depth >= MAX_REPLAY_DEPTH && matches!(operation, Op::Gather { .. } | Op::Scatter { .. })
+        {
             return Err(replay_error("replay depth exceeds 64"));
+        }
+        if let Op::Scatter {
+            address,
+            data,
+            offset,
+            exec,
+        } = operation
+        {
+            if self.scatter_depth != 0 {
+                return Err(replay_error("nested scatter replay is unsupported"));
+            }
+            let multiplier = self
+                .multiplier
+                .checked_mul(32)
+                .ok_or_else(|| replay_error("replay weighted work exceeds 8192"))?;
+            // Fixed loop control, EXEC test, target calculation, comparison and assignment.
+            self.budget.charge(6, multiplier)?;
+            let name = format!("s{}_{}_{}", self.scope, value.0, context);
+            let writer = format!("w{}_{}_{}", self.scope, value.0, context);
+            append_msl(
+                self.msl,
+                &format!(
+                    "    uint {name} = 0u;\n    for (uint {writer} = 0u; {writer} < 32u; ++{writer}) {{\n"
+                ),
+            )?;
+            // A new lexical scope owns the writer's memoized expressions. No loop-local
+            // temporary can escape, and both address/data paths carry the scatter depth.
+            let mut body = Replay::new(
+                self.msl,
+                self.operations,
+                self.uniform,
+                self.root,
+                self.budget,
+                writer.clone(),
+                format!("((index & ~31u) + {writer})"),
+                false,
+            );
+            body.scope = format!("{}_s{}_{}", self.scope, value.0, context);
+            body.multiplier = multiplier;
+            body.scatter_depth = self.scatter_depth + 1;
+            let address = body.value(address, 0, depth + 1)?;
+            let data = body.value(data, 0, depth + 1)?;
+            append_msl(
+                body.msl,
+                &format!(
+                    "        if (((0x{exec:08x}u >> {writer}) & 1u) != 0u && ((({address} + {offset}u) >> 2u) & 31u) == ({lane})) {{ {name} = {data}; }}\n    }}\n"
+                ),
+            )?;
+            self.memo.insert((value.0, context), name.clone());
+            return Ok(name);
         }
         let expression = if let Op::Gather {
             source,
@@ -1064,11 +1165,12 @@ impl<'a> Replay<'a> {
                 }
                 GatherSelection::Table(_) => format!("gather_{}[{lane}]", value.0),
             };
+            self.budget.charge(4, self.multiplier)?;
             let child = if let Some(&i) = self.context_keys.get(&selected) {
                 i
             } else {
                 let id = self.contexts.len();
-                let name = format!("c{}_{}", self.root, id);
+                let name = format!("c{}_{}", self.scope, id);
                 append_msl(self.msl, &format!("    uint {name} = {selected};\n"))?;
                 self.context_keys.insert(selected, id);
                 self.contexts
@@ -1088,7 +1190,7 @@ impl<'a> Replay<'a> {
         let name = if context == 0 && lane == "lane" {
             format!("l{}", value.0)
         } else {
-            format!("r{}_{}_{}", self.root, value.0, context)
+            format!("r{}_{}_{}", self.scope, value.0, context)
         };
         let indent = if self.contexts[0].0 == "lane" {
             "        "
@@ -1109,7 +1211,7 @@ fn emit_selected_lane(
     index: usize,
     source: Value,
     selector: Value,
-    nodes: &mut usize,
+    nodes: &mut ReplayBudget,
 ) -> Result<(), CompileError> {
     let zero = matches!(operations[selector.0].1, Op::Constant(0));
     let lane = if zero {
@@ -1149,8 +1251,9 @@ fn emit_lane_mask(
     src0: Value,
     src1: Value,
     exec: u32,
-    nodes: &mut usize,
+    nodes: &mut ReplayBudget,
 ) -> Result<(), CompileError> {
+    nodes.charge(4, 32)?;
     let dest = Value(index);
     append_msl(
         msl,
@@ -1168,6 +1271,7 @@ fn emit_lane_mask(
         "lane_index".into(),
         false,
     );
+    replay.multiplier = 32;
     let a = replay.value(src0, 0, 0)?;
     let b = replay.value(src1, 0, 0)?;
     append_msl(
@@ -1245,7 +1349,8 @@ fn lift(
             Instruction::BufferStoreDword {
                 index, resource, ..
             } if (index, resource) != (0, 4) => "unsupported resource or buffer index",
-            Instruction::DsBpermuteB32 { .. }
+            Instruction::DsPermuteB32 { .. }
+            | Instruction::DsBpermuteB32 { .. }
             | Instruction::DsSwizzleB32 { .. }
             | Instruction::Permlane16B32 { .. }
                 if launch != Wave32Launch::FullWavesRequired =>
@@ -1430,6 +1535,37 @@ fn lift(
         }
         let next = Value(operations.len());
         let (dest, operation) = match instruction.instruction {
+            Instruction::DsPermuteB32 {
+                dst,
+                addr,
+                data,
+                offset: immediate,
+            } => {
+                let slot = usize::from(dst);
+                if dst == 0 || pending_ds.is_some() || pending_load.is_some_and(|(r, _)| r == slot)
+                {
+                    return Err(error(
+                        "scatter writes reserved/pending destination or overlaps DS",
+                    ));
+                }
+                let address = read(addr)?;
+                let data = read(data)?;
+                let old = registers[slot];
+                operations.push((
+                    offset,
+                    Op::Scatter {
+                        address,
+                        data,
+                        offset: immediate,
+                        exec,
+                    },
+                ));
+                facts.push(KnownBits::UNKNOWN);
+                let value = merge_lanes(&mut operations, &mut facts, offset, exec, next, old)?;
+                registers[slot] = None;
+                pending_ds = Some((slot, value));
+                continue;
+            }
             Instruction::DsBpermuteB32 { dst, .. }
             | Instruction::DsSwizzleB32 { dst, .. }
             | Instruction::Permlane16B32 { dst, .. } => {

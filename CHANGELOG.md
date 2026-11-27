@@ -29,6 +29,10 @@ remains unsupported.
 - Extended the read-only RDNA2 planning CLI (`python3 -m qa rdna2`) with family/status filters, compact summaries, Codex-ready manifests under `artifacts/`, active-claim exclusion (family claims exclude those families; path-only claims block overlapping permitted files), coverage reconcile against `semantic_coverage` without inflating counts, and inventory diffs. Covered by `tests/qa/test_rdna2_plan.py`; planning only, no GPU production edits.
 
 ### Added
+- Added full-wave DS_PERMUTE scatter with a documented permitted collision
+  policy, independent LGKM completion, bounded replay work and isolated loop
+  temporaries. All eleven inventoried wave/lane forms now have bounded Wave32
+  implementations; full-stage acceptance remains open.
 - Added full-wave backward gathers, row permutations and supported swizzle modes
   with separate DS/LGKM completion and bounded nested replay. Masked rotation
   remains rejected because the public ISA examples contradict its pseudocode.

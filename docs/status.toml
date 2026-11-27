@@ -2418,3 +2418,15 @@ gpu = "fixture verified"
 recognized = true
 decoded = true
 llvm = "unverified: pinned LLVM omits this encoding; AMD XML/spec-derived only"
+
+[[instruction]]
+form = "ds_permute_b32"
+encoding = "DS, ordinary VGPR address/data, u16 offset, full-wave launch and static EXEC; zero reserved fields"
+representation = "8 B"
+lowering = "MSL bounded captured scatter with a permitted highest-active-writer policy, unwritten zero, inactive retention and separate LGKM completion"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"

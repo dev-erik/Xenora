@@ -305,6 +305,17 @@ fn reference_scalar(scalar: ScalarSource) -> Source {
 
 fn reference_op(instruction: Instruction) -> Op {
     match instruction {
+        Instruction::DsPermuteB32 {
+            dst,
+            addr,
+            data,
+            offset,
+        } => Op::DsPermuteB32 {
+            dst,
+            addr,
+            data,
+            offset,
+        },
         Instruction::DsBpermuteB32 {
             dst,
             addr,
@@ -853,10 +864,11 @@ fn compares_fixture_instructions_against_llvm() {
         include_bytes!("../../../fixtures/rdna2/wave-swizzle.bin"),
         include_bytes!("../../../fixtures/rdna2/wave-permlane16.bin"),
         include_bytes!("../../../fixtures/rdna2/wave-permlanex16.bin"),
+        include_bytes!("../../../fixtures/rdna2/wave-permute.bin"),
     ] {
         count += compare_against_llvm(fixture, &mut forms);
     }
-    assert_eq!(forms.len(), 181, "forms compared: {forms:?}");
+    assert_eq!(forms.len(), 182, "forms compared: {forms:?}");
     eprintln!(
         "{count} three-way instruction comparisons across {} forms",
         forms.len()

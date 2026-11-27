@@ -15,7 +15,7 @@ Implemented subsets: MBCNT LO/HI, validated full-wave lane reads, selected-lane 
 | Family | Form | Decoder present at audit |
 | --- | --- | --- |
 | DS | `DS_BPERMUTE_B32` | yes; full-wave compute and separate LGKM completion |
-| DS | `DS_PERMUTE_B32` | no |
+| DS | `DS_PERMUTE_B32` | yes; full-wave compute, bounded scatter and explicit collision policy |
 | DS | `DS_SWIZZLE_B32` | yes; full EXEC; masked rotation rejected |
 | VOP1 | `V_READFIRSTLANE_B32` | yes; lane-zero default and explicit full-wave compute subset |
 | VOP3 | `V_MBCNT_HI_U32_B32` | yes; Wave32 compute subset |
@@ -56,7 +56,7 @@ Waits cannot be blanket no-ops. Resource graphs and local readback tests do not 
 
 ## Evidence and next gates
 
-The [first-increment checkpoint](../testing/stage3-control-memory-opening.md) records SCC1 and VMCNT evidence. S3.4 has ten decoded forms with bounded native fixture evidence; DS_PERMUTE remains undecoded. Masked rotation, broader operand modes, Wave64 and graphics participation remain open. VOP3 READFIRSTLANE has spec-derived encoding evidence without LLVM validation.
+The [first-increment checkpoint](../testing/stage3-control-memory-opening.md) records SCC1 and VMCNT evidence. All eleven S3.4 forms now have decoded, bounded Wave32 subsets with native fixture evidence. This is not full-stage completion. Masked rotation, broader operand modes, Wave64 and graphics participation remain open. VOP3 READFIRSTLANE has spec-derived encoding evidence without LLVM validation.
 
 The [opening plan](../superpowers/plans/2026-11-27-stage3-opening.md) tracks the first increments. Require exact encoding checks, independent CPU expectations, applicable native compute/graphics readback and independent review before acceptance. Checkpoint results must identify the tested source version; this document alone records no passing GPU tests.
 
@@ -69,7 +69,7 @@ These are dependency groups, not equal-sized tasks or a complete operand matrix.
 | Stage | Next bounded work | Architectural work still required |
 | --- | --- | --- |
 | S3.2 | Additional proven loop shapes | Compute loops and live-out joins; code addresses and calls/returns; exceptions; dynamic EXEC and reconvergence |
-| S3.4 | DS_PERMUTE scatter and unresolved masked-rotation semantics | Inactive/absent source lanes; cross-lane data movement; graphics/helper lanes; Wave64; DPP/SDWA mode coverage |
+| S3.4 | Resolve masked-rotation semantics and expand operand/EXEC modes | Inactive/absent source lanes; cross-lane data movement; graphics/helper lanes; Wave64; DPP/SDWA mode coverage |
 | S3.5 | More buffer transfer forms with explicit addressing and destination spans | Multiple outstanding transfers; descriptors and address spaces; scalar/private/LDS memory; atomics and rendezvous; image/stage-interface matrices |
 
 Each accepted increment needs exact source and destination modes, negative cases,
@@ -112,7 +112,7 @@ Primary-source contract audit (AMD document 70648, printed pages 137,
 | READFIRSTLANE | Select the lowest set EXEC bit, or lane zero for zero EXEC; the access itself ignores EXEC. |
 | READLANE / WRITELANE | Select low five lane bits in Wave32 or six in Wave64; ignore EXEC for the lane access. Scalar and vector register banks differ by operation. |
 | DS_BPERMUTE | Address selects a source lane; source EXEC affects the fetched value and destination EXEC affects the write. Pending-result rules need their own contract. |
-| DS_PERMUTE | Scatter active source lanes to selected destinations; apply destination EXEC separately. The guide's pseudocode and prose disagree on whether duplicate writers deterministically select the highest lane. Resolve or explicitly bound that case before acceptance. |
+| DS_PERMUTE | Scatter active source lanes to selected destinations; apply destination EXEC separately. The implementation chooses the highest active writer; this is permitted by the guide's any-writer prose and matches its pseudocode, without claiming hardware determinism. |
 | DS_SWIZZLE | Cover basic quad/bitmask modes, rotate and FFT modes separately; validate invalid source-lane behavior. |
 | PERMLANE16 / PERMLANEX16 | Distinguish same-row from adjacent-row gathers; OP_SEL bits encode fetch-inactive and bound control rather than ordinary arithmetic selection. |
 
@@ -182,4 +182,20 @@ writes remain rejected. Independent native results are recorded in the [checkpoi
 The full-wave transfer contracts and source contradiction are recorded in
 [interfaces](../interfaces.md#full-wave-transfers-and-ds-completion). The
 [latest checkpoint](../testing/stage3-control-memory-opening.md) records actual
-readback tests. Ten decoded wave/lane forms are not full S3.4 completion.
+readback tests. Eleven decoded wave/lane forms are not full S3.4 completion.
+
+### Later public documentation and unresolved RDNA2 modes
+
+The [RDNA4 ISA guide](https://gpuopen.com/download/rdna4-instruction-set-architecture.pdf#page=597),
+§16.15, printed pages 587–588, changes the masked-rotation examples to agree
+with the pseudocode. RDNA3 printed pages 513–514 retain the older conflict.
+This supports a documentation-correction hypothesis, but neither later guide
+explicitly applies that correction to RDNA2. RDNA2 masked rotation remains
+rejected; an inference across GPU generations is not verification.
+
+RDNA3 Table 31 (printed page 71) and RDNA4 Table 39 (printed page 87) describe
+a disabled in-range PERMLANE source with FI=0/BC=0 as preserving the
+destination, and FI=0/BC=1 as zero. RDNA2's unconditional FI=0 wording differs.
+The [official RDNA3 guide](https://docs.amd.com/api/khub/documents/UkT_UPQL21KfKAMUBFnZTw/content#page=80)
+and RDNA4 tables provide useful research evidence, but no explicit retroactive
+correction was found. Full-EXEC PERMLANE admission remains the verified subset.

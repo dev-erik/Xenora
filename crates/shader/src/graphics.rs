@@ -724,7 +724,8 @@ fn lift(
     for decoded in decoded {
         if matches!(
             decoded.instruction,
-            Instruction::DsBpermuteB32 { .. }
+            Instruction::DsPermuteB32 { .. }
+                | Instruction::DsBpermuteB32 { .. }
                 | Instruction::DsSwizzleB32 { .. }
                 | Instruction::Permlane16B32 { .. }
                 | Instruction::WaitLgkm

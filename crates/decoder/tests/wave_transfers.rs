@@ -236,3 +236,63 @@ fn readfirstlane_vop3_requires_exact_eight_bytes_before_next_instruction() {
     assert_eq!(decoded[1].offset, 8);
     assert_eq!(decoded[1].instruction, Instruction::EndProgram);
 }
+
+// DS_PERMUTE: pinned gfx1030 OP178; same unused-field policy as BPERMUTE.
+#[test]
+fn ds_permute_registers_offsets_identity_and_display() {
+    assert!(SEMANTIC_FORMS.contains(&("DS_PERMUTE_B32", EncodingFamily::Ds)));
+    for register in 0..=255u32 {
+        for offset in [0, 1, 255, 256, 0x7fff, 0xffff] {
+            for field in [0, 8, 24] {
+                let second = register << field;
+                assert_eq!(
+                    one(&[0xdac80000 | offset, second]),
+                    Instruction::DsPermuteB32 {
+                        dst: (second >> 24) as u8,
+                        addr: second as u8,
+                        data: (second >> 8) as u8,
+                        offset: offset as u16,
+                    }
+                );
+            }
+        }
+    }
+    assert_eq!(
+        one(&[0xdac80001, 0x03000504]).to_string(),
+        "ds_permute_b32 v3, v4, v5 offset:1"
+    );
+    assert_eq!(
+        one(&[0xdac80000, 0xff00ffff]),
+        Instruction::DsPermuteB32 {
+            dst: 255,
+            addr: 255,
+            data: 255,
+            offset: 0
+        }
+    );
+}
+
+#[test]
+fn ds_permute_rejects_gds_reserved_and_unused_data1() {
+    for bits in 1..4u32 {
+        rejects(&[0xdac80000 | bits << 16, 0x03000504], "ds_permute_b32");
+    }
+    for unused in 1..256u32 {
+        rejects(&[0xdac80000, 0x03000504 | unused << 16], "ds_permute_b32");
+    }
+}
+
+#[test]
+fn ds_permute_has_eight_byte_length_and_preserves_lgkm_wait() {
+    let code = bytes(&[0xdac80000, 0x03000504]);
+    for length in 1..8 {
+        assert!(decode(Gfx1030, &code[..length]).is_err());
+    }
+    let stream = bytes(&[0xdac80000, 0x03000504, 0xbf8cc07f, 0xbf810000]);
+    let decoded = decode(Gfx1030, &stream).unwrap();
+    assert_eq!(decoded.len(), 3);
+    assert_eq!(decoded[0].byte_len, 8);
+    assert_eq!(decoded[1].offset, 8);
+    assert_eq!(decoded[1].instruction, Instruction::WaitLgkm);
+    assert_eq!(decoded[2].offset, 12);
+}

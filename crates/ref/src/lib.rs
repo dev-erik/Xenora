@@ -39,6 +39,12 @@ pub type ScalarSource = Source;
 /// Operations decoded independently by the reference interpreter.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Op {
+    DsPermuteB32 {
+        dst: u8,
+        addr: u8,
+        data: u8,
+        offset: u16,
+    },
     DsBpermuteB32 {
         dst: u8,
         addr: u8,
@@ -549,7 +555,10 @@ pub fn execute_with_options(
                     "DS_SWIZZLE masked rotate rejected: primary source conflict between AMD examples and pseudocode",
                 ));
             }
-            Op::DsBpermuteB32 { .. } | Op::DsSwizzleB32 { .. } | Op::Permlane16B32 { .. }
+            Op::DsPermuteB32 { .. }
+            | Op::DsBpermuteB32 { .. }
+            | Op::DsSwizzleB32 { .. }
+            | Op::Permlane16B32 { .. }
                 if options.wave32_launch != Wave32Launch::FullWavesRequired =>
             {
                 return Err(error(
@@ -629,10 +638,10 @@ pub fn decode(code: &[u8]) -> Result<Vec<DecodedInstruction>, ReferenceError> {
             [
                 lo,
                 hi,
-                tag @ (0xcc | 0xd4),
+                tag @ (0xc8 | 0xcc | 0xd4),
                 family @ (0xda | 0xd8),
                 tail @ ..,
-            ] if (*tag, *family) == (0xcc, 0xda) || (*tag, *family) == (0xd4, 0xd8) => {
+            ] if matches!((*tag, *family), (0xc8 | 0xcc, 0xda) | (0xd4, 0xd8)) => {
                 let [addr, data, unused, dst, ..] = tail else {
                     return Err(error(offset, "truncated DS gather"));
                 };
@@ -641,7 +650,14 @@ pub fn decode(code: &[u8]) -> Result<Vec<DecodedInstruction>, ReferenceError> {
                     return Err(error(offset, "unsupported DS gather fields"));
                 }
                 (
-                    if *family == 0xda {
+                    if *tag == 0xc8 {
+                        Op::DsPermuteB32 {
+                            dst: *dst,
+                            addr: *addr,
+                            data: *data,
+                            offset: immediate,
+                        }
+                    } else if *family == 0xda {
                         Op::DsBpermuteB32 {
                             dst: *dst,
                             addr: *addr,
@@ -1702,6 +1718,37 @@ fn execute_wave(
                         results[lane] = Some((dst, value));
                     }
                 }
+            }
+            Op::DsPermuteB32 {
+                dst,
+                addr,
+                data,
+                offset: immediate,
+            } => {
+                if dst == 0 || pending_read == Some(dst) || pending_ds.is_some() {
+                    return Err(error(
+                        offset,
+                        "invalid scatter destination or outstanding DS",
+                    ));
+                }
+                let mut scattered = vec![0; lanes];
+                // Ascending active writers choose the highest numbered contender,
+                // one of the outcomes permitted by the primary ISA prose.
+                for writer in 0..lanes {
+                    let address = read(writer, addr)?;
+                    let value = read(writer, data)?;
+                    if exec & (1 << writer) != 0 {
+                        let destination =
+                            (address.wrapping_add(u32::from(immediate)) % 128 / 4) as usize;
+                        scattered[destination] = value;
+                    }
+                }
+                for (lane, value) in scattered.iter_mut().enumerate() {
+                    if exec & (1 << lane) == 0 {
+                        *value = read(lane, dst)?;
+                    }
+                }
+                pending_ds = Some((dst, scattered));
             }
             Op::DsBpermuteB32 { dst, .. }
             | Op::DsSwizzleB32 { dst, .. }

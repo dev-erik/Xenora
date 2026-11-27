@@ -224,5 +224,5 @@ fn display_both_modes_and_unique_metadata() {
             1
         );
     }
-    assert_eq!(xenora_decoder::SEMANTIC_FORMS.len(), 202);
+    assert_eq!(xenora_decoder::SEMANTIC_FORMS.len(), 203);
 }

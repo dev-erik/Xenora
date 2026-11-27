@@ -433,6 +433,13 @@ impl BufferLoadKind {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[allow(missing_docs)]
 pub enum Instruction {
+    /// Scatter VGPR data through byte addresses; result requires an LGKM wait.
+    DsPermuteB32 {
+        dst: u8,
+        addr: u8,
+        data: u8,
+        offset: u16,
+    },
     /// Gather a VGPR lane through a byte address; result requires an LGKM wait.
     DsBpermuteB32 {
         dst: u8,
@@ -781,6 +788,7 @@ impl Instruction {
     /// Returns the mnemonic for the exact encoding family represented.
     pub fn mnemonic(self) -> &'static str {
         match self {
+            Self::DsPermuteB32 { .. } => "ds_permute_b32",
             Self::DsBpermuteB32 { .. } => "ds_bpermute_b32",
             Self::DsSwizzleB32 { .. } => "ds_swizzle_b32",
             Self::Permlane16B32 {
@@ -863,6 +871,12 @@ impl fmt::Display for Instruction {
         formatter.write_str(self.mnemonic())?;
         match *self {
             Self::DsBpermuteB32 {
+                dst,
+                addr,
+                data,
+                offset,
+            }
+            | Self::DsPermuteB32 {
                 dst,
                 addr,
                 data,

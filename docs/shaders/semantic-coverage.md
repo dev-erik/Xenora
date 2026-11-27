@@ -15,7 +15,7 @@ acceptance remain outside the verified count. All results concern synthetic fixt
 
 | Family | Identified | Encoding-validated | Declared | Decoder-supported | IR | MSL | Reference-verified | Metal-verified | Unsupported operand variants |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| DS | 123 | 2 | 0 | 2 | 2 | 2 | 2 | 2 | 0 |
+| DS | 123 | 3 | 0 | 3 | 3 | 3 | 3 | 3 | 0 |
 | EXP | 1 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 |
 | FLAT | 54 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | GLOBAL | 57 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
@@ -36,7 +36,7 @@ acceptance remain outside the verified count. All results concern synthetic fixt
 | VOP3P | 29 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | VOP3SDST | 10 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | VOPC | 190 | 12 | 0 | 12 | 12 | 12 | 0 | 0 | 0 |
-| **Total** | 1465 | 196 | 76 | 202 | 197 | 197 | 115 | 115 | 39 |
+| **Total** | 1465 | 197 | 76 | 203 | 198 | 198 | 116 | 116 | 39 |
 
 ## Unsupported operand variants
 
