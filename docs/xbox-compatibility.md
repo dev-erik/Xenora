@@ -20,6 +20,20 @@ Those contracts are not all known. “Unknown” is open work, never evidence th
 feature is unnecessary or already supported. No overall completion percentage
 is justified while the requirement inventory is incomplete.
 
+## Visual coverage map
+
+[![Xbox Series X and S compatibility map](assets/xbox-compatibility-map.svg)](assets/xbox-compatibility-map.svg)
+
+The visual's **Foundation** label means bounded or synthetic work exists;
+**Contract gap** means a key Xbox contract or external dependency is unresolved;
+**Open** means full Xbox acceptance is unrecorded. All three remain open for full
+compatibility. Foundation rows may also have unresolved Xbox contracts. Tile
+counts are feature-area counts, not a completion percentage. The table's explicit
+Map status column is the source for this generated visual.
+
+Regenerate with `python3 scripts/audit/xbox_map.py`; validate with
+`python3 scripts/audit/xbox_map.py --check` (also run by CI and full validation).
+
 ## Scope and evidence rules
 
 - Keep separate target records for Series X and Series S, including guest-visible
@@ -68,86 +82,86 @@ claim that each listed API spelling or hardware mechanism exists unchanged on Xb
 
 ### Target, loading and CPU execution
 
-| ID | Area | Required coverage / completion evidence | Current basis |
-| --- | --- | --- | --- |
-| XBOX-01 | Target profiles | Separate Series X/S profiles; guest-visible CPU/GPU features, memory budgets, versions and capability queries; independently justified values | Unknown contract; [hardware research](research/xbox-gpu.md) |
-| XBOX-02 | Executable and module loading | Actual supported Xbox executable/module formats, relocations, imports, initialization, TLS and dependencies; malformed-input handling and startup evidence | Bounded PE32+ foundation; [interfaces](interfaces.md); authentic loading open |
-| XBOX-03 | Packages and content | Package metadata, mounts, install/update layout, resource lookup, content versions and supported input boundaries | Unknown contract; synthetic PE loading is not package compatibility |
-| XBOX-04 | Process and calling conventions | Entry state, ABI, stack/unwind rules, register preservation, dynamic libraries, process lifecycle and exit behavior | Bounded synthetic Win64 foundation; [CPU registry](cpu/instruction-registry.md) |
-| XBOX-05 | Integer CPU execution | Required x86-64 encodings, prefixes, flags, addressing, exceptions and boundary cases; interpreter/native translator agreement | Bounded foundation; [CPU registry](cpu/instruction-registry.md) |
-| XBOX-06 | CPU floating point and SIMD | Required x87/SSE/AVX and other vector forms; rounding, exceptions, NaNs, denormals, conversions and state save/restore | Bounded foundation; full target coverage open |
-| XBOX-07 | CPU atomics and memory order | Atomic widths/alignment, locked operations, fences, cross-core visibility and contention; guest memory-order litmus tests on ARM64 | Open; [CPU boundary](research/cpu-boundary.md) |
-| XBOX-08 | Translation lifecycle | Executable-page changes, self-modifying code, cache invalidation, code publication, interpreter/translator transitions and precise faults | Bounded native translator foundation; full acceptance open |
-| XBOX-09 | Virtual memory | Guest page sizes, address-space layout, reservations, commits, protection, guard pages, faults, aliases and CPU/GPU mappings | Bounded foundation; console contract open |
-| XBOX-10 | Threads and synchronization | Scheduling-visible behavior, TLS, events, waits, mutexes, semaphores, condition variables, wakeup ordering, cancellation and teardown | Bounded services; [runtime registry](runtime/registry.md) |
-| XBOX-11 | Timing and exceptions | Clock domains, timers, timeouts, exception delivery/unwind, asynchronous completion and error codes | Bounded services; console equivalence open |
+| ID | Area | Required coverage / completion evidence | Current basis | Map status |
+| --- | --- | --- | --- | --- |
+| XBOX-01 | Target profiles | Separate Series X/S profiles; guest-visible CPU/GPU features, memory budgets, versions and capability queries; independently justified values | Unknown contract; [hardware research](research/xbox-gpu.md) | Contract gap |
+| XBOX-02 | Executable and module loading | Actual supported Xbox executable/module formats, relocations, imports, initialization, TLS and dependencies; malformed-input handling and startup evidence | Bounded PE32+ foundation; [interfaces](interfaces.md); authentic loading open | Foundation |
+| XBOX-03 | Packages and content | Package metadata, mounts, install/update layout, resource lookup, content versions and supported input boundaries | Unknown contract; synthetic PE loading is not package compatibility | Contract gap |
+| XBOX-04 | Process and calling conventions | Entry state, ABI, stack/unwind rules, register preservation, dynamic libraries, process lifecycle and exit behavior | Bounded synthetic Win64 foundation; [CPU registry](cpu/instruction-registry.md) | Foundation |
+| XBOX-05 | Integer CPU execution | Required x86-64 encodings, prefixes, flags, addressing, exceptions and boundary cases; interpreter/native translator agreement | Bounded foundation; [CPU registry](cpu/instruction-registry.md) | Foundation |
+| XBOX-06 | CPU floating point and SIMD | Required x87/SSE/AVX and other vector forms; rounding, exceptions, NaNs, denormals, conversions and state save/restore | Bounded foundation; full target coverage open | Foundation |
+| XBOX-07 | CPU atomics and memory order | Atomic widths/alignment, locked operations, fences, cross-core visibility and contention; guest memory-order litmus tests on ARM64 | Open; [CPU boundary](research/cpu-boundary.md) | Open |
+| XBOX-08 | Translation lifecycle | Executable-page changes, self-modifying code, cache invalidation, code publication, interpreter/translator transitions and precise faults | Bounded native translator foundation; full acceptance open | Foundation |
+| XBOX-09 | Virtual memory | Guest page sizes, address-space layout, reservations, commits, protection, guard pages, faults, aliases and CPU/GPU mappings | Bounded foundation; console contract open | Foundation |
+| XBOX-10 | Threads and synchronization | Scheduling-visible behavior, TLS, events, waits, mutexes, semaphores, condition variables, wakeup ordering, cancellation and teardown | Bounded services; [runtime registry](runtime/registry.md) | Foundation |
+| XBOX-11 | Timing and exceptions | Clock domains, timers, timeouts, exception delivery/unwind, asynchronous completion and error codes | Bounded services; console equivalence open | Foundation |
 
 ### Xbox graphics boundary and resource system
 
-| ID | Area | Required coverage / completion evidence | Current basis |
-| --- | --- | --- | --- |
-| XBOX-12 | Graphics API/driver entry points | Enumerate actual Xbox exports, signatures, structures, ownership, callbacks, errors and version differences | Unknown contract; [GDK research](research/xbox-gdk.md) |
-| XBOX-13 | Command submission | Actual command streams or applicable interception interface; graphics/compute/copy work, ordering, queues, synchronization and recovery | Synthetic command/graph foundation; console packets unknown |
-| XBOX-14 | Shader/pipeline containers | Validate actual payloads, shader extraction, stage metadata, pipeline serialization and versioning; establish code versus data boundaries | Unknown console layout; [container research](research/shader-containers.md) |
-| XBOX-15 | Shader entry ABI | Registers, stage inputs/outputs, wave state, descriptors, constants, built-ins and guest GPU address rules | Synthetic ABI only; [interfaces](interfaces.md) |
-| XBOX-16 | Resource creation and lifetime | Buffers/textures, heaps, allocation alignment, aliasing, residency, ownership, destruction with in-flight use and failure atomicity | Bounded S2 foundation; [integrated acceptance](testing/stage2-integrated-acceptance.md) |
-| XBOX-17 | Formats and layouts | Complete target format/role matrix, compression, packing, tiling/swizzles, pitches, mips, slices, samples and reinterpretation | Finite [format matrix](resource-formats.md); console layout open |
-| XBOX-18 | Resource views | SRV/UAV/attachment-equivalent behavior, ranges, reinterpretation, arrays, cubes, 3D, depth/stencil aspects and overlap | Bounded S2.4; full console coverage open |
-| XBOX-19 | Descriptors and binding | Actual heap/table/root binding contracts, dynamic indexing, address and lifetime rules, null descriptors and bounds | Bounded S2.5; [descriptor tables](descriptor-tables.md); console layouts unknown |
-| XBOX-20 | Uploads, copies and readback | All required transfer directions, subresources, conversions, overlap rules and observable untouched data | Bounded S2.2/S2.3; full matrix open |
-| XBOX-21 | Coherence and barriers | CPU/GPU visibility, caches, resource transitions, UAV/alias barriers, ownership and completion/error propagation | Bounded explicit mirrors/graphs; console semantics open |
-| XBOX-22 | Sparse and streamed resources | Tiled/sparse mappings, residency changes, sampler-feedback interactions, eviction and failure behavior where required | Open |
-| XBOX-23 | Indirect work and queries | Indirect draw/dispatch, counters, predicates, timestamps, occlusion/statistics and observable ordering | Open beyond bounded foundations |
+| ID | Area | Required coverage / completion evidence | Current basis | Map status |
+| --- | --- | --- | --- | --- |
+| XBOX-12 | Graphics API/driver entry points | Enumerate actual Xbox exports, signatures, structures, ownership, callbacks, errors and version differences | Unknown contract; [GDK research](research/xbox-gdk.md) | Contract gap |
+| XBOX-13 | Command submission | Actual command streams or applicable interception interface; graphics/compute/copy work, ordering, queues, synchronization and recovery | Synthetic command/graph foundation; console packets unknown | Foundation |
+| XBOX-14 | Shader/pipeline containers | Validate actual payloads, shader extraction, stage metadata, pipeline serialization and versioning; establish code versus data boundaries | Unknown console layout; [container research](research/shader-containers.md) | Contract gap |
+| XBOX-15 | Shader entry ABI | Registers, stage inputs/outputs, wave state, descriptors, constants, built-ins and guest GPU address rules | Synthetic ABI only; [interfaces](interfaces.md) | Contract gap |
+| XBOX-16 | Resource creation and lifetime | Buffers/textures, heaps, allocation alignment, aliasing, residency, ownership, destruction with in-flight use and failure atomicity | Bounded S2 foundation; [integrated acceptance](testing/stage2-integrated-acceptance.md) | Foundation |
+| XBOX-17 | Formats and layouts | Complete target format/role matrix, compression, packing, tiling/swizzles, pitches, mips, slices, samples and reinterpretation | Finite [format matrix](resource-formats.md); console layout open | Foundation |
+| XBOX-18 | Resource views | SRV/UAV/attachment-equivalent behavior, ranges, reinterpretation, arrays, cubes, 3D, depth/stencil aspects and overlap | Bounded S2.4; full console coverage open | Foundation |
+| XBOX-19 | Descriptors and binding | Actual heap/table/root binding contracts, dynamic indexing, address and lifetime rules, null descriptors and bounds | Bounded S2.5; [descriptor tables](descriptor-tables.md); console layouts unknown | Foundation |
+| XBOX-20 | Uploads, copies and readback | All required transfer directions, subresources, conversions, overlap rules and observable untouched data | Bounded S2.2/S2.3; full matrix open | Foundation |
+| XBOX-21 | Coherence and barriers | CPU/GPU visibility, caches, resource transitions, UAV/alias barriers, ownership and completion/error propagation | Bounded explicit mirrors/graphs; console semantics open | Foundation |
+| XBOX-22 | Sparse and streamed resources | Tiled/sparse mappings, residency changes, sampler-feedback interactions, eviction and failure behavior where required | Open | Open |
+| XBOX-23 | Indirect work and queries | Indirect draw/dispatch, counters, predicates, timestamps, occlusion/statistics and observable ordering | Open beyond bounded foundations | Open |
 
 ### Shader translation and native Metal behavior
 
-| ID | Area | Required coverage / completion evidence | Current basis |
-| --- | --- | --- | --- |
-| XBOX-24 | Instruction identities | Every required console encoding; reconcile desktop inventory with actual target differences | [Full desktop checklist](shaders/shader-checklist.md); console completeness unknown |
-| XBOX-25 | Operands and modifiers | Source classes, literals, register pairs, aliasing, width/packing, clamps, swizzles, DPP/SDWA and special registers where applicable | Partial contracts; a decoded mnemonic does not close this row |
-| XBOX-26 | Arithmetic and conversions | Required integer/FP16/FP32/FP64/packed/mixed forms, conversions and bit operations across applicable stages | S3.1 in progress; [checkpoints](testing/local-graphics-checkpoint.md) |
-| XBOX-27 | Control flow | Branches, loops, calls, dynamic paths, reconvergence, termination and instruction-boundary validation | Bounded scalar/graphics paths; S3.2 open |
-| XBOX-28 | Predicates, masks and flags | SCC/VCC/EXEC behavior, inactive lanes, conditional writes, carries, comparisons, divergence and helper lanes | Partial subset; S3.3 open |
-| XBOX-29 | Wave and lane behavior | Target wave sizes, lane numbering, shuffles, ballots, reductions, quad operations and cross-lane dependencies | Wave32 synthetic subset; S3.4 open |
-| XBOX-30 | Shader memory | Buffer/image loads/stores, address spaces, bounds, atomics, LDS/shared memory, barriers and ordering | Bounded memory subset; S3.5 open |
-| XBOX-31 | Sampling | Texture dimensions/formats, samplers, addressing, filtering, LOD/gradients, gather, comparison, anisotropy and edge semantics | Selected 2D/array paths; full matrix open |
-| XBOX-32 | Numerical equivalence | NaN/Inf/signed zero, denormals, rounding, precision, overflow, fused operations, contraction and transcendental requirements | Restricted evidence; S3.6 open |
-| XBOX-33 | Shader stages | All target stages and their linkage, interpolation, built-ins and stream/output rules; geometry/tessellation/mesh/task-equivalent paths where required | Bounded vertex/pixel/compute foundation; broader stages open |
-| XBOX-34 | Rasterization and output | Topologies, clipping/culling, viewport/scissor, provoking/interpolation rules, depth/stencil, blending, MRT and sample behavior | Bounded S1 foundation; console-wide acceptance open |
-| XBOX-35 | Multisampling and precision | Sample patterns, coverage, sample-frequency shading, resolves, depth/stencil resolves and format precision | Open |
-| XBOX-36 | Ray tracing | Pipeline and inline-query interfaces, acceleration structures/build/update, traversal, hit/miss behavior and synchronization | Open; host mapping must be proven, not inferred from Metal feature names |
-| XBOX-37 | Variable-rate shading | Required rate images, combiners, coverage and derivative interactions; exact target-to-host mapping | Open |
-| XBOX-38 | Advanced bindings and execution | Required bindless/resource indexing, mesh-driven/indirect GPU work, pipeline caching and capability reporting | Bounded indexing/cache foundations; broader behavior open |
-| XBOX-39 | Presentation | Swapchain-equivalent behavior, pacing, buffering, vsync/VRR, color spaces/HDR, resizing, focus and device loss | Offscreen synthetic validation does not certify presentation |
-| XBOX-40 | Host compatibility | Per-chip/OS Metal capability matrix, correct fallback paths, limits, compiler behavior and recovery; native ARM64 dependency audit | Runtime gating foundations; full host matrix open |
+| ID | Area | Required coverage / completion evidence | Current basis | Map status |
+| --- | --- | --- | --- | --- |
+| XBOX-24 | Instruction identities | Every required console encoding; reconcile desktop inventory with actual target differences | [Full desktop checklist](shaders/shader-checklist.md); console completeness unknown | Foundation |
+| XBOX-25 | Operands and modifiers | Source classes, literals, register pairs, aliasing, width/packing, clamps, swizzles, DPP/SDWA and special registers where applicable | Partial contracts; a decoded mnemonic does not close this row | Foundation |
+| XBOX-26 | Arithmetic and conversions | Required integer/FP16/FP32/FP64/packed/mixed forms, conversions and bit operations across applicable stages | S3.1 in progress; [checkpoints](testing/local-graphics-checkpoint.md) | Foundation |
+| XBOX-27 | Control flow | Branches, loops, calls, dynamic paths, reconvergence, termination and instruction-boundary validation | Bounded scalar/graphics paths; S3.2 open | Foundation |
+| XBOX-28 | Predicates, masks and flags | SCC/VCC/EXEC behavior, inactive lanes, conditional writes, carries, comparisons, divergence and helper lanes | Partial subset; S3.3 open | Foundation |
+| XBOX-29 | Wave and lane behavior | Target wave sizes, lane numbering, shuffles, ballots, reductions, quad operations and cross-lane dependencies | Wave32 synthetic subset; S3.4 open | Foundation |
+| XBOX-30 | Shader memory | Buffer/image loads/stores, address spaces, bounds, atomics, LDS/shared memory, barriers and ordering | Bounded memory subset; S3.5 open | Foundation |
+| XBOX-31 | Sampling | Texture dimensions/formats, samplers, addressing, filtering, LOD/gradients, gather, comparison, anisotropy and edge semantics | Selected 2D/array paths; full matrix open | Foundation |
+| XBOX-32 | Numerical equivalence | NaN/Inf/signed zero, denormals, rounding, precision, overflow, fused operations, contraction and transcendental requirements | Restricted evidence; S3.6 open | Foundation |
+| XBOX-33 | Shader stages | All target stages and their linkage, interpolation, built-ins and stream/output rules; geometry/tessellation/mesh/task-equivalent paths where required | Bounded vertex/pixel/compute foundation; broader stages open | Foundation |
+| XBOX-34 | Rasterization and output | Topologies, clipping/culling, viewport/scissor, provoking/interpolation rules, depth/stencil, blending, MRT and sample behavior | Bounded S1 foundation; console-wide acceptance open | Foundation |
+| XBOX-35 | Multisampling and precision | Sample patterns, coverage, sample-frequency shading, resolves, depth/stencil resolves and format precision | Open | Open |
+| XBOX-36 | Ray tracing | Pipeline and inline-query interfaces, acceleration structures/build/update, traversal, hit/miss behavior and synchronization | Open; host mapping must be proven, not inferred from Metal feature names | Open |
+| XBOX-37 | Variable-rate shading | Required rate images, combiners, coverage and derivative interactions; exact target-to-host mapping | Open | Open |
+| XBOX-38 | Advanced bindings and execution | Required bindless/resource indexing, mesh-driven/indirect GPU work, pipeline caching and capability reporting | Bounded indexing/cache foundations; broader behavior open | Foundation |
+| XBOX-39 | Presentation | Swapchain-equivalent behavior, pacing, buffering, vsync/VRR, color spaces/HDR, resizing, focus and device loss | Offscreen synthetic validation does not certify presentation | Open |
+| XBOX-40 | Host compatibility | Per-chip/OS Metal capability matrix, correct fallback paths, limits, compiler behavior and recovery; native ARM64 dependency audit | Runtime gating foundations; full host matrix open | Foundation |
 
 ### Runtime, media and platform behavior
 
-| ID | Area | Required coverage / completion evidence | Current basis |
-| --- | --- | --- | --- |
-| XBOX-41 | Runtime/system services | Enumerate actual imports and guest-visible contracts, handles, strings, errors, callbacks and asynchronous behavior | [Synthetic service registry](runtime/registry.md) and [inventory](runtime/services.md); console completeness unknown |
-| XBOX-42 | Filesystem and save data | Paths, mounts, permissions, file/directory operations, async I/O, persistent saves, quotas and failure handling | Full Xbox contract open |
-| XBOX-43 | Streaming and decompression | Storage request interfaces, completion ordering, required codecs/data formats, cancellations and resource-streaming integration | Open; Velocity Architecture disclosure alone is not an interface spec |
-| XBOX-44 | Audio | Target APIs, codecs, channel layouts, mixing, resampling, spatial audio, clocks/latency and device changes | Full Xbox acceptance open |
-| XBOX-45 | Input and peripherals | Controllers, hotplug, mappings, rumble, trigger feedback, keyboard/mouse/accessibility and polling/timestamp semantics where exposed | Full Xbox acceptance open |
-| XBOX-46 | Video and media | Required decode/playback APIs, codecs, A/V synchronization, subtitles and surface sharing | Full Xbox acceptance open |
-| XBOX-47 | Networking | Sockets/transports, name resolution, asynchronous I/O, timing, disconnect/error semantics and title-specific dependencies | Full Xbox acceptance open |
-| XBOX-48 | Identity and online services | Guest-visible users, authentication-dependent APIs, multiplayer, achievements, cloud saves and unavailable-service behavior | Unknown/externally dependent; offline success cannot certify online compatibility |
-| XBOX-49 | Lifecycle and suspend/resume | Launch/exit, focus, suspend/resume, device changes, retained state and Quick Resume-related observable requirements | Full Xbox acceptance open |
-| XBOX-50 | Locale, accessibility and settings | Language/region, text/Unicode, time zone, accessibility, display/audio settings and configuration changes | Full Xbox acceptance open |
-| XBOX-51 | Installation and updates | Content/DLC discovery, versions, deployment/update behavior and title-specific dependencies | Unknown contract; do not infer from PC packaging |
-| XBOX-52 | Firmware and system environment | Determine necessary kernel/system interfaces, privileged operations and any full-boot requirements; record unavailable dependencies | Research unresolved; no firmware/dashboard compatibility claim |
+| ID | Area | Required coverage / completion evidence | Current basis | Map status |
+| --- | --- | --- | --- | --- |
+| XBOX-41 | Runtime/system services | Enumerate actual imports and guest-visible contracts, handles, strings, errors, callbacks and asynchronous behavior | [Synthetic service registry](runtime/registry.md) and [inventory](runtime/services.md); console completeness unknown | Foundation |
+| XBOX-42 | Filesystem and save data | Paths, mounts, permissions, file/directory operations, async I/O, persistent saves, quotas and failure handling | Full Xbox contract open | Open |
+| XBOX-43 | Streaming and decompression | Storage request interfaces, completion ordering, required codecs/data formats, cancellations and resource-streaming integration | Open; Velocity Architecture disclosure alone is not an interface spec | Open |
+| XBOX-44 | Audio | Target APIs, codecs, channel layouts, mixing, resampling, spatial audio, clocks/latency and device changes | Full Xbox acceptance open | Open |
+| XBOX-45 | Input and peripherals | Controllers, hotplug, mappings, rumble, trigger feedback, keyboard/mouse/accessibility and polling/timestamp semantics where exposed | Full Xbox acceptance open | Open |
+| XBOX-46 | Video and media | Required decode/playback APIs, codecs, A/V synchronization, subtitles and surface sharing | Full Xbox acceptance open | Open |
+| XBOX-47 | Networking | Sockets/transports, name resolution, asynchronous I/O, timing, disconnect/error semantics and title-specific dependencies | Full Xbox acceptance open | Open |
+| XBOX-48 | Identity and online services | Guest-visible users, authentication-dependent APIs, multiplayer, achievements, cloud saves and unavailable-service behavior | Unknown/externally dependent; offline success cannot certify online compatibility | Contract gap |
+| XBOX-49 | Lifecycle and suspend/resume | Launch/exit, focus, suspend/resume, device changes, retained state and Quick Resume-related observable requirements | Full Xbox acceptance open | Open |
+| XBOX-50 | Locale, accessibility and settings | Language/region, text/Unicode, time zone, accessibility, display/audio settings and configuration changes | Full Xbox acceptance open | Open |
+| XBOX-51 | Installation and updates | Content/DLC discovery, versions, deployment/update behavior and title-specific dependencies | Unknown contract; do not infer from PC packaging | Contract gap |
+| XBOX-52 | Firmware and system environment | Determine necessary kernel/system interfaces, privileged operations and any full-boot requirements; record unavailable dependencies | Research unresolved; no firmware/dashboard compatibility claim | Contract gap |
 
 ### Integration, verification and usability
 
-| ID | Area | Required coverage / completion evidence | Current basis |
-| --- | --- | --- | --- |
-| XBOX-53 | Per-feature acceptance | Versioned contract, applicable targets/hosts, implementation paths, independent oracle, boundary/negative tests, native execution, limitations and review | Existing synthetic acceptance practice; extend to all requirements |
-| XBOX-54 | Original integrated workloads | Sustained CPU + graphics + resources + input + audio + storage execution; concurrency, teardown and failure recovery | Bounded original workloads; [synthetic integration](research/synthetic-integration.md) |
-| XBOX-55 | Per-title compatibility | Record load, startup, first frame, interaction, gameplay, save/load, audio/input and sustained stability separately, for each title/version and target | Commercial game execution not demonstrated |
-| XBOX-56 | Performance and stability | Frame-time distributions, shader/CPU compilation, memory growth, caches, streaming stalls, latency, long sessions and reproducible host configuration | Bounded benchmarks only; no general playability claim |
-| XBOX-57 | Diagnostics and packaging | Reproducible launches, precise unsupported-feature reports, crash diagnostics, validation tooling, native packaging and installation | Research tools exist; end-user compatibility workflow open |
-| XBOX-58 | Inventory closure | Reconcile every discovered interface/form/mode with a requirement and evidence row; audit missing categories and untracked behavior | Open; this map starts the system-wide ledger, not its certification |
+| ID | Area | Required coverage / completion evidence | Current basis | Map status |
+| --- | --- | --- | --- | --- |
+| XBOX-53 | Per-feature acceptance | Versioned contract, applicable targets/hosts, implementation paths, independent oracle, boundary/negative tests, native execution, limitations and review | Existing synthetic acceptance practice; extend to all requirements | Foundation |
+| XBOX-54 | Original integrated workloads | Sustained CPU + graphics + resources + input + audio + storage execution; concurrency, teardown and failure recovery | Bounded original workloads; [synthetic integration](research/synthetic-integration.md) | Foundation |
+| XBOX-55 | Per-title compatibility | Record load, startup, first frame, interaction, gameplay, save/load, audio/input and sustained stability separately, for each title/version and target | Commercial game execution not demonstrated | Open |
+| XBOX-56 | Performance and stability | Frame-time distributions, shader/CPU compilation, memory growth, caches, streaming stalls, latency, long sessions and reproducible host configuration | Bounded benchmarks only; no general playability claim | Foundation |
+| XBOX-57 | Diagnostics and packaging | Reproducible launches, precise unsupported-feature reports, crash diagnostics, validation tooling, native packaging and installation | Research tools exist; end-user compatibility workflow open | Foundation |
+| XBOX-58 | Inventory closure | Reconcile every discovered interface/form/mode with a requirement and evidence row; audit missing categories and untracked behavior | Open; this map starts the system-wide ledger, not its certification | Open |
 
 ## Required detail for each feature
 

@@ -23,6 +23,9 @@ remains unsupported.
 - Extended the read-only RDNA2 planning CLI (`python3 -m qa rdna2`) with family/status filters, compact summaries, Codex-ready manifests under `artifacts/`, active-claim exclusion (family claims exclude those families; path-only claims block overlapping permitted files), coverage reconcile against `semantic_coverage` without inflating counts, and inventory diffs. Covered by `tests/qa/test_rdna2_plan.py`; planning only, no GPU production edits.
 
 ### Added
+- Added a system-wide Xbox compatibility visual to the README, generated from
+  the 58-area master map with explicit foundation, contract-gap and open statuses;
+  freshness is checked in CI and full validation.
 - Added the Xbox Series X|S system-wide compatibility coverage map, separating
   the comprehensive target from bounded milestones and desktop shader counts;
   records 58 feature areas, unresolved contracts and acceptance requirements.

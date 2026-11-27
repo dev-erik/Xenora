@@ -24,6 +24,14 @@ it is not a complete Xbox feature list or an overall completion percentage.
 
 ---
 
+## Xbox compatibility map
+
+[![Xbox Series X and S compatibility across all 58 tracked areas](docs/assets/xbox-compatibility-map.svg)](docs/xbox-compatibility.md)
+
+The [system-wide coverage map](docs/xbox-compatibility.md) distinguishes bounded
+foundations, unresolved contracts and open acceptance across the full Xbox target.
+These are feature areas, not a percentage of game compatibility.
+
 ## Shader conversion progress
 
 [![Every RDNA2 form and its conversion status](docs/assets/shader-conversion-map.svg)](docs/shaders/shader-checklist.md)

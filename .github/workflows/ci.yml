@@ -42,6 +42,7 @@ jobs:
           python3 scripts/audit/semantic_coverage.py --check
           python3 scripts/audit/status.py --check
           python3 scripts/audit/shader_checklist.py --check
+          python3 scripts/audit/xbox_map.py --check
           for fixture in x2 x3 x4; do
             python3 "experiments/x1/fixtures/$fixture.py" --check || exit 1
           done

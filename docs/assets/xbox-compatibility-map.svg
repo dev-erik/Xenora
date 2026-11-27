@@ -1,0 +1,332 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200" viewBox="0 0 1200 1200" role="img" aria-labelledby="title desc">
+<title id="title">Xbox Series X and S compatibility on Apple Silicon and Metal</title>
+<desc id="desc">All 58 tracked areas grouped into six subsystems. Foundation means bounded synthetic work; contract gap means unresolved Xbox requirements; open means no full acceptance. No area is certified complete for Xbox compatibility. The master document contains the accessible table.</desc>
+<rect width="1200" height="1200" fill="#0b111b"/>
+<g font-family="system-ui,-apple-system,BlinkMacSystemFont,sans-serif">
+<text x="26" y="32" fill="#69baff" font-size="12" font-weight="700" letter-spacing="2">XENORA / SYSTEM COMPATIBILITY</text>
+<text x="24" y="72" fill="#f2f6fc" font-size="32" font-weight="700">Xbox Series X|S → Apple Silicon + Metal</text>
+<text x="26" y="100" fill="#aab8cc" font-size="15">58 tracked areas · comprehensive target · no full Xbox acceptance claimed</text>
+<circle cx="31" cy="125" r="5" fill="#69baff"/>
+<text x="44" y="130" fill="#69baff" font-size="13">Foundation 33 · bounded work</text>
+<circle cx="415" cy="125" r="5" fill="#efb666"/>
+<text x="428" y="130" fill="#efb666" font-size="13">Contract gap 8 · unresolved contract</text>
+<circle cx="835" cy="125" r="5" fill="#a0aab9"/>
+<text x="848" y="130" fill="#a0aab9" font-size="13">Open 17 · acceptance outstanding</text>
+<rect x="24" y="152" width="564" height="308" rx="12" fill="#111c2b" stroke="#273548"/>
+<text x="42" y="180" fill="#657d9a" font-size="14" font-weight="700">01</text>
+<text x="75" y="180" fill="#eef4fc" font-size="19" font-weight="650">CPU &amp; launch</text>
+<text x="42" y="201" fill="#91a5bf" font-size="12">Guest execution and target profiles</text>
+<g data-id="XBOX-01"><title>XBOX-01: Target profiles. Contract gap. Unknown contract; hardware research. Required: Separate Series X/S profiles; guest-visible CPU/GPU features, memory budgets, versions and capability queries; independently justified values</title>
+<text x="42" y="228" fill="#6f86a2" font-size="11">01</text>
+<text x="68" y="228" fill="#dce6f4" font-size="13">Target profiles</text>
+<text x="570" y="228" text-anchor="end" fill="#efb666" font-size="11">Contract gap</text>
+</g>
+<g data-id="XBOX-02"><title>XBOX-02: Executable and module loading. Foundation. Bounded PE32+ foundation; interfaces; authentic loading open. Required: Actual supported Xbox executable/module formats, relocations, imports, initialization, TLS and dependencies; malformed-input handling and startup evidence</title>
+<text x="42" y="247" fill="#6f86a2" font-size="11">02</text>
+<text x="68" y="247" fill="#dce6f4" font-size="13">Executable and module loading</text>
+<text x="570" y="247" text-anchor="end" fill="#69baff" font-size="11">Foundation</text>
+</g>
+<g data-id="XBOX-03"><title>XBOX-03: Packages and content. Contract gap. Unknown contract; synthetic PE loading is not package compatibility. Required: Package metadata, mounts, install/update layout, resource lookup, content versions and supported input boundaries</title>
+<text x="42" y="266" fill="#6f86a2" font-size="11">03</text>
+<text x="68" y="266" fill="#dce6f4" font-size="13">Packages and content</text>
+<text x="570" y="266" text-anchor="end" fill="#efb666" font-size="11">Contract gap</text>
+</g>
+<g data-id="XBOX-04"><title>XBOX-04: Process and calling conventions. Foundation. Bounded synthetic Win64 foundation; CPU registry. Required: Entry state, ABI, stack/unwind rules, register preservation, dynamic libraries, process lifecycle and exit behavior</title>
+<text x="42" y="285" fill="#6f86a2" font-size="11">04</text>
+<text x="68" y="285" fill="#dce6f4" font-size="13">Process and calling conventions</text>
+<text x="570" y="285" text-anchor="end" fill="#69baff" font-size="11">Foundation</text>
+</g>
+<g data-id="XBOX-05"><title>XBOX-05: Integer CPU execution. Foundation. Bounded foundation; CPU registry. Required: Required x86-64 encodings, prefixes, flags, addressing, exceptions and boundary cases; interpreter/native translator agreement</title>
+<text x="42" y="304" fill="#6f86a2" font-size="11">05</text>
+<text x="68" y="304" fill="#dce6f4" font-size="13">Integer CPU execution</text>
+<text x="570" y="304" text-anchor="end" fill="#69baff" font-size="11">Foundation</text>
+</g>
+<g data-id="XBOX-06"><title>XBOX-06: CPU floating point and SIMD. Foundation. Bounded foundation; full target coverage open. Required: Required x87/SSE/AVX and other vector forms; rounding, exceptions, NaNs, denormals, conversions and state save/restore</title>
+<text x="42" y="323" fill="#6f86a2" font-size="11">06</text>
+<text x="68" y="323" fill="#dce6f4" font-size="13">CPU floating point and SIMD</text>
+<text x="570" y="323" text-anchor="end" fill="#69baff" font-size="11">Foundation</text>
+</g>
+<g data-id="XBOX-07"><title>XBOX-07: CPU atomics and memory order. Open. Open; CPU boundary. Required: Atomic widths/alignment, locked operations, fences, cross-core visibility and contention; guest memory-order litmus tests on ARM64</title>
+<text x="42" y="342" fill="#6f86a2" font-size="11">07</text>
+<text x="68" y="342" fill="#dce6f4" font-size="13">CPU atomics and memory order</text>
+<text x="570" y="342" text-anchor="end" fill="#a0aab9" font-size="11">Open</text>
+</g>
+<g data-id="XBOX-08"><title>XBOX-08: Translation lifecycle. Foundation. Bounded native translator foundation; full acceptance open. Required: Executable-page changes, self-modifying code, cache invalidation, code publication, interpreter/translator transitions and precise faults</title>
+<text x="42" y="361" fill="#6f86a2" font-size="11">08</text>
+<text x="68" y="361" fill="#dce6f4" font-size="13">Translation lifecycle</text>
+<text x="570" y="361" text-anchor="end" fill="#69baff" font-size="11">Foundation</text>
+</g>
+<g data-id="XBOX-09"><title>XBOX-09: Virtual memory. Foundation. Bounded foundation; console contract open. Required: Guest page sizes, address-space layout, reservations, commits, protection, guard pages, faults, aliases and CPU/GPU mappings</title>
+<text x="42" y="380" fill="#6f86a2" font-size="11">09</text>
+<text x="68" y="380" fill="#dce6f4" font-size="13">Virtual memory</text>
+<text x="570" y="380" text-anchor="end" fill="#69baff" font-size="11">Foundation</text>
+</g>
+<g data-id="XBOX-10"><title>XBOX-10: Threads and synchronization. Foundation. Bounded services; runtime registry. Required: Scheduling-visible behavior, TLS, events, waits, mutexes, semaphores, condition variables, wakeup ordering, cancellation and teardown</title>
+<text x="42" y="399" fill="#6f86a2" font-size="11">10</text>
+<text x="68" y="399" fill="#dce6f4" font-size="13">Threads and synchronization</text>
+<text x="570" y="399" text-anchor="end" fill="#69baff" font-size="11">Foundation</text>
+</g>
+<g data-id="XBOX-11"><title>XBOX-11: Timing and exceptions. Foundation. Bounded services; console equivalence open. Required: Clock domains, timers, timeouts, exception delivery/unwind, asynchronous completion and error codes</title>
+<text x="42" y="418" fill="#6f86a2" font-size="11">11</text>
+<text x="68" y="418" fill="#dce6f4" font-size="13">Timing and exceptions</text>
+<text x="570" y="418" text-anchor="end" fill="#69baff" font-size="11">Foundation</text>
+</g>
+<rect x="612" y="152" width="564" height="308" rx="12" fill="#111c2b" stroke="#273548"/>
+<text x="630" y="180" fill="#657d9a" font-size="14" font-weight="700">02</text>
+<text x="663" y="180" fill="#eef4fc" font-size="19" font-weight="650">Graphics boundary &amp; resources</text>
+<text x="630" y="201" fill="#91a5bf" font-size="12">Xbox interfaces and GPU ownership</text>
+<g data-id="XBOX-12"><title>XBOX-12: Graphics API/driver entry points. Contract gap. Unknown contract; GDK research. Required: Enumerate actual Xbox exports, signatures, structures, ownership, callbacks, errors and version differences</title>
+<text x="630" y="228" fill="#6f86a2" font-size="11">12</text>
+<text x="656" y="228" fill="#dce6f4" font-size="13">Graphics API/driver entry points</text>
+<text x="1158" y="228" text-anchor="end" fill="#efb666" font-size="11">Contract gap</text>
+</g>
+<g data-id="XBOX-13"><title>XBOX-13: Command submission. Foundation. Synthetic command/graph foundation; console packets unknown. Required: Actual command streams or applicable interception interface; graphics/compute/copy work, ordering, queues, synchronization and recovery</title>
+<text x="630" y="247" fill="#6f86a2" font-size="11">13</text>
+<text x="656" y="247" fill="#dce6f4" font-size="13">Command submission</text>
+<text x="1158" y="247" text-anchor="end" fill="#69baff" font-size="11">Foundation</text>
+</g>
+<g data-id="XBOX-14"><title>XBOX-14: Shader/pipeline containers. Contract gap. Unknown console layout; container research. Required: Validate actual payloads, shader extraction, stage metadata, pipeline serialization and versioning; establish code versus data boundaries</title>
+<text x="630" y="266" fill="#6f86a2" font-size="11">14</text>
+<text x="656" y="266" fill="#dce6f4" font-size="13">Shader/pipeline containers</text>
+<text x="1158" y="266" text-anchor="end" fill="#efb666" font-size="11">Contract gap</text>
+</g>
+<g data-id="XBOX-15"><title>XBOX-15: Shader entry ABI. Contract gap. Synthetic ABI only; interfaces. Required: Registers, stage inputs/outputs, wave state, descriptors, constants, built-ins and guest GPU address rules</title>
+<text x="630" y="285" fill="#6f86a2" font-size="11">15</text>
+<text x="656" y="285" fill="#dce6f4" font-size="13">Shader entry ABI</text>
+<text x="1158" y="285" text-anchor="end" fill="#efb666" font-size="11">Contract gap</text>
+</g>
+<g data-id="XBOX-16"><title>XBOX-16: Resource creation and lifetime. Foundation. Bounded S2 foundation; integrated acceptance. Required: Buffers/textures, heaps, allocation alignment, aliasing, residency, ownership, destruction with in-flight use and failure atomicity</title>
+<text x="630" y="304" fill="#6f86a2" font-size="11">16</text>
+<text x="656" y="304" fill="#dce6f4" font-size="13">Resource creation and lifetime</text>
+<text x="1158" y="304" text-anchor="end" fill="#69baff" font-size="11">Foundation</text>
+</g>
+<g data-id="XBOX-17"><title>XBOX-17: Formats and layouts. Foundation. Finite format matrix; console layout open. Required: Complete target format/role matrix, compression, packing, tiling/swizzles, pitches, mips, slices, samples and reinterpretation</title>
+<text x="630" y="323" fill="#6f86a2" font-size="11">17</text>
+<text x="656" y="323" fill="#dce6f4" font-size="13">Formats and layouts</text>
+<text x="1158" y="323" text-anchor="end" fill="#69baff" font-size="11">Foundation</text>
+</g>
+<g data-id="XBOX-18"><title>XBOX-18: Resource views. Foundation. Bounded S2.4; full console coverage open. Required: SRV/UAV/attachment-equivalent behavior, ranges, reinterpretation, arrays, cubes, 3D, depth/stencil aspects and overlap</title>
+<text x="630" y="342" fill="#6f86a2" font-size="11">18</text>
+<text x="656" y="342" fill="#dce6f4" font-size="13">Resource views</text>
+<text x="1158" y="342" text-anchor="end" fill="#69baff" font-size="11">Foundation</text>
+</g>
+<g data-id="XBOX-19"><title>XBOX-19: Descriptors and binding. Foundation. Bounded S2.5; descriptor tables; console layouts unknown. Required: Actual heap/table/root binding contracts, dynamic indexing, address and lifetime rules, null descriptors and bounds</title>
+<text x="630" y="361" fill="#6f86a2" font-size="11">19</text>
+<text x="656" y="361" fill="#dce6f4" font-size="13">Descriptors and binding</text>
+<text x="1158" y="361" text-anchor="end" fill="#69baff" font-size="11">Foundation</text>
+</g>
+<g data-id="XBOX-20"><title>XBOX-20: Uploads, copies and readback. Foundation. Bounded S2.2/S2.3; full matrix open. Required: All required transfer directions, subresources, conversions, overlap rules and observable untouched data</title>
+<text x="630" y="380" fill="#6f86a2" font-size="11">20</text>
+<text x="656" y="380" fill="#dce6f4" font-size="13">Uploads, copies and readback</text>
+<text x="1158" y="380" text-anchor="end" fill="#69baff" font-size="11">Foundation</text>
+</g>
+<g data-id="XBOX-21"><title>XBOX-21: Coherence and barriers. Foundation. Bounded explicit mirrors/graphs; console semantics open. Required: CPU/GPU visibility, caches, resource transitions, UAV/alias barriers, ownership and completion/error propagation</title>
+<text x="630" y="399" fill="#6f86a2" font-size="11">21</text>
+<text x="656" y="399" fill="#dce6f4" font-size="13">Coherence and barriers</text>
+<text x="1158" y="399" text-anchor="end" fill="#69baff" font-size="11">Foundation</text>
+</g>
+<g data-id="XBOX-22"><title>XBOX-22: Sparse and streamed resources. Open. Open. Required: Tiled/sparse mappings, residency changes, sampler-feedback interactions, eviction and failure behavior where required</title>
+<text x="630" y="418" fill="#6f86a2" font-size="11">22</text>
+<text x="656" y="418" fill="#dce6f4" font-size="13">Sparse and streamed resources</text>
+<text x="1158" y="418" text-anchor="end" fill="#a0aab9" font-size="11">Open</text>
+</g>
+<g data-id="XBOX-23"><title>XBOX-23: Indirect work and queries. Open. Open beyond bounded foundations. Required: Indirect draw/dispatch, counters, predicates, timestamps, occlusion/statistics and observable ordering</title>
+<text x="630" y="437" fill="#6f86a2" font-size="11">23</text>
+<text x="656" y="437" fill="#dce6f4" font-size="13">Indirect work and queries</text>
+<text x="1158" y="437" text-anchor="end" fill="#a0aab9" font-size="11">Open</text>
+</g>
+<rect x="24" y="478" width="564" height="308" rx="12" fill="#111c2b" stroke="#273548"/>
+<text x="42" y="506" fill="#657d9a" font-size="14" font-weight="700">03</text>
+<text x="75" y="506" fill="#eef4fc" font-size="19" font-weight="650">Shader translation</text>
+<text x="42" y="527" fill="#91a5bf" font-size="12">Instruction behavior and execution state</text>
+<g data-id="XBOX-24"><title>XBOX-24: Instruction identities. Foundation. Full desktop checklist; console completeness unknown. Required: Every required console encoding; reconcile desktop inventory with actual target differences</title>
+<text x="42" y="554" fill="#6f86a2" font-size="11">24</text>
+<text x="68" y="554" fill="#dce6f4" font-size="13">Instruction identities</text>
+<text x="570" y="554" text-anchor="end" fill="#69baff" font-size="11">Foundation</text>
+</g>
+<g data-id="XBOX-25"><title>XBOX-25: Operands and modifiers. Foundation. Partial contracts; a decoded mnemonic does not close this row. Required: Source classes, literals, register pairs, aliasing, width/packing, clamps, swizzles, DPP/SDWA and special registers where applicable</title>
+<text x="42" y="573" fill="#6f86a2" font-size="11">25</text>
+<text x="68" y="573" fill="#dce6f4" font-size="13">Operands and modifiers</text>
+<text x="570" y="573" text-anchor="end" fill="#69baff" font-size="11">Foundation</text>
+</g>
+<g data-id="XBOX-26"><title>XBOX-26: Arithmetic and conversions. Foundation. S3.1 in progress; checkpoints. Required: Required integer/FP16/FP32/FP64/packed/mixed forms, conversions and bit operations across applicable stages</title>
+<text x="42" y="592" fill="#6f86a2" font-size="11">26</text>
+<text x="68" y="592" fill="#dce6f4" font-size="13">Arithmetic and conversions</text>
+<text x="570" y="592" text-anchor="end" fill="#69baff" font-size="11">Foundation</text>
+</g>
+<g data-id="XBOX-27"><title>XBOX-27: Control flow. Foundation. Bounded scalar/graphics paths; S3.2 open. Required: Branches, loops, calls, dynamic paths, reconvergence, termination and instruction-boundary validation</title>
+<text x="42" y="611" fill="#6f86a2" font-size="11">27</text>
+<text x="68" y="611" fill="#dce6f4" font-size="13">Control flow</text>
+<text x="570" y="611" text-anchor="end" fill="#69baff" font-size="11">Foundation</text>
+</g>
+<g data-id="XBOX-28"><title>XBOX-28: Predicates, masks and flags. Foundation. Partial subset; S3.3 open. Required: SCC/VCC/EXEC behavior, inactive lanes, conditional writes, carries, comparisons, divergence and helper lanes</title>
+<text x="42" y="630" fill="#6f86a2" font-size="11">28</text>
+<text x="68" y="630" fill="#dce6f4" font-size="13">Predicates, masks and flags</text>
+<text x="570" y="630" text-anchor="end" fill="#69baff" font-size="11">Foundation</text>
+</g>
+<g data-id="XBOX-29"><title>XBOX-29: Wave and lane behavior. Foundation. Wave32 synthetic subset; S3.4 open. Required: Target wave sizes, lane numbering, shuffles, ballots, reductions, quad operations and cross-lane dependencies</title>
+<text x="42" y="649" fill="#6f86a2" font-size="11">29</text>
+<text x="68" y="649" fill="#dce6f4" font-size="13">Wave and lane behavior</text>
+<text x="570" y="649" text-anchor="end" fill="#69baff" font-size="11">Foundation</text>
+</g>
+<g data-id="XBOX-30"><title>XBOX-30: Shader memory. Foundation. Bounded memory subset; S3.5 open. Required: Buffer/image loads/stores, address spaces, bounds, atomics, LDS/shared memory, barriers and ordering</title>
+<text x="42" y="668" fill="#6f86a2" font-size="11">30</text>
+<text x="68" y="668" fill="#dce6f4" font-size="13">Shader memory</text>
+<text x="570" y="668" text-anchor="end" fill="#69baff" font-size="11">Foundation</text>
+</g>
+<g data-id="XBOX-31"><title>XBOX-31: Sampling. Foundation. Selected 2D/array paths; full matrix open. Required: Texture dimensions/formats, samplers, addressing, filtering, LOD/gradients, gather, comparison, anisotropy and edge semantics</title>
+<text x="42" y="687" fill="#6f86a2" font-size="11">31</text>
+<text x="68" y="687" fill="#dce6f4" font-size="13">Sampling</text>
+<text x="570" y="687" text-anchor="end" fill="#69baff" font-size="11">Foundation</text>
+</g>
+<g data-id="XBOX-32"><title>XBOX-32: Numerical equivalence. Foundation. Restricted evidence; S3.6 open. Required: NaN/Inf/signed zero, denormals, rounding, precision, overflow, fused operations, contraction and transcendental requirements</title>
+<text x="42" y="706" fill="#6f86a2" font-size="11">32</text>
+<text x="68" y="706" fill="#dce6f4" font-size="13">Numerical equivalence</text>
+<text x="570" y="706" text-anchor="end" fill="#69baff" font-size="11">Foundation</text>
+</g>
+<rect x="612" y="478" width="564" height="308" rx="12" fill="#111c2b" stroke="#273548"/>
+<text x="630" y="506" fill="#657d9a" font-size="14" font-weight="700">04</text>
+<text x="663" y="506" fill="#eef4fc" font-size="19" font-weight="650">Rendering &amp; Metal</text>
+<text x="630" y="527" fill="#91a5bf" font-size="12">Pipeline features and host mappings</text>
+<g data-id="XBOX-33"><title>XBOX-33: Shader stages. Foundation. Bounded vertex/pixel/compute foundation; broader stages open. Required: All target stages and their linkage, interpolation, built-ins and stream/output rules; geometry/tessellation/mesh/task-equivalent paths where required</title>
+<text x="630" y="554" fill="#6f86a2" font-size="11">33</text>
+<text x="656" y="554" fill="#dce6f4" font-size="13">Shader stages</text>
+<text x="1158" y="554" text-anchor="end" fill="#69baff" font-size="11">Foundation</text>
+</g>
+<g data-id="XBOX-34"><title>XBOX-34: Rasterization and output. Foundation. Bounded S1 foundation; console-wide acceptance open. Required: Topologies, clipping/culling, viewport/scissor, provoking/interpolation rules, depth/stencil, blending, MRT and sample behavior</title>
+<text x="630" y="573" fill="#6f86a2" font-size="11">34</text>
+<text x="656" y="573" fill="#dce6f4" font-size="13">Rasterization and output</text>
+<text x="1158" y="573" text-anchor="end" fill="#69baff" font-size="11">Foundation</text>
+</g>
+<g data-id="XBOX-35"><title>XBOX-35: Multisampling and precision. Open. Open. Required: Sample patterns, coverage, sample-frequency shading, resolves, depth/stencil resolves and format precision</title>
+<text x="630" y="592" fill="#6f86a2" font-size="11">35</text>
+<text x="656" y="592" fill="#dce6f4" font-size="13">Multisampling and precision</text>
+<text x="1158" y="592" text-anchor="end" fill="#a0aab9" font-size="11">Open</text>
+</g>
+<g data-id="XBOX-36"><title>XBOX-36: Ray tracing. Open. Open; host mapping must be proven, not inferred from Metal feature names. Required: Pipeline and inline-query interfaces, acceleration structures/build/update, traversal, hit/miss behavior and synchronization</title>
+<text x="630" y="611" fill="#6f86a2" font-size="11">36</text>
+<text x="656" y="611" fill="#dce6f4" font-size="13">Ray tracing</text>
+<text x="1158" y="611" text-anchor="end" fill="#a0aab9" font-size="11">Open</text>
+</g>
+<g data-id="XBOX-37"><title>XBOX-37: Variable-rate shading. Open. Open. Required: Required rate images, combiners, coverage and derivative interactions; exact target-to-host mapping</title>
+<text x="630" y="630" fill="#6f86a2" font-size="11">37</text>
+<text x="656" y="630" fill="#dce6f4" font-size="13">Variable-rate shading</text>
+<text x="1158" y="630" text-anchor="end" fill="#a0aab9" font-size="11">Open</text>
+</g>
+<g data-id="XBOX-38"><title>XBOX-38: Advanced bindings and execution. Foundation. Bounded indexing/cache foundations; broader behavior open. Required: Required bindless/resource indexing, mesh-driven/indirect GPU work, pipeline caching and capability reporting</title>
+<text x="630" y="649" fill="#6f86a2" font-size="11">38</text>
+<text x="656" y="649" fill="#dce6f4" font-size="13">Advanced bindings and execution</text>
+<text x="1158" y="649" text-anchor="end" fill="#69baff" font-size="11">Foundation</text>
+</g>
+<g data-id="XBOX-39"><title>XBOX-39: Presentation. Open. Offscreen synthetic validation does not certify presentation. Required: Swapchain-equivalent behavior, pacing, buffering, vsync/VRR, color spaces/HDR, resizing, focus and device loss</title>
+<text x="630" y="668" fill="#6f86a2" font-size="11">39</text>
+<text x="656" y="668" fill="#dce6f4" font-size="13">Presentation</text>
+<text x="1158" y="668" text-anchor="end" fill="#a0aab9" font-size="11">Open</text>
+</g>
+<g data-id="XBOX-40"><title>XBOX-40: Host compatibility. Foundation. Runtime gating foundations; full host matrix open. Required: Per-chip/OS Metal capability matrix, correct fallback paths, limits, compiler behavior and recovery; native ARM64 dependency audit</title>
+<text x="630" y="687" fill="#6f86a2" font-size="11">40</text>
+<text x="656" y="687" fill="#dce6f4" font-size="13">Host compatibility</text>
+<text x="1158" y="687" text-anchor="end" fill="#69baff" font-size="11">Foundation</text>
+</g>
+<rect x="24" y="804" width="564" height="308" rx="12" fill="#111c2b" stroke="#273548"/>
+<text x="42" y="832" fill="#657d9a" font-size="14" font-weight="700">05</text>
+<text x="75" y="832" fill="#eef4fc" font-size="19" font-weight="650">Runtime &amp; platform</text>
+<text x="42" y="853" fill="#91a5bf" font-size="12">Services required around the renderer</text>
+<g data-id="XBOX-41"><title>XBOX-41: Runtime/system services. Foundation. Synthetic service registry and inventory; console completeness unknown. Required: Enumerate actual imports and guest-visible contracts, handles, strings, errors, callbacks and asynchronous behavior</title>
+<text x="42" y="880" fill="#6f86a2" font-size="11">41</text>
+<text x="68" y="880" fill="#dce6f4" font-size="13">Runtime/system services</text>
+<text x="570" y="880" text-anchor="end" fill="#69baff" font-size="11">Foundation</text>
+</g>
+<g data-id="XBOX-42"><title>XBOX-42: Filesystem and save data. Open. Full Xbox contract open. Required: Paths, mounts, permissions, file/directory operations, async I/O, persistent saves, quotas and failure handling</title>
+<text x="42" y="899" fill="#6f86a2" font-size="11">42</text>
+<text x="68" y="899" fill="#dce6f4" font-size="13">Filesystem and save data</text>
+<text x="570" y="899" text-anchor="end" fill="#a0aab9" font-size="11">Open</text>
+</g>
+<g data-id="XBOX-43"><title>XBOX-43: Streaming and decompression. Open. Open; Velocity Architecture disclosure alone is not an interface spec. Required: Storage request interfaces, completion ordering, required codecs/data formats, cancellations and resource-streaming integration</title>
+<text x="42" y="918" fill="#6f86a2" font-size="11">43</text>
+<text x="68" y="918" fill="#dce6f4" font-size="13">Streaming and decompression</text>
+<text x="570" y="918" text-anchor="end" fill="#a0aab9" font-size="11">Open</text>
+</g>
+<g data-id="XBOX-44"><title>XBOX-44: Audio. Open. Full Xbox acceptance open. Required: Target APIs, codecs, channel layouts, mixing, resampling, spatial audio, clocks/latency and device changes</title>
+<text x="42" y="937" fill="#6f86a2" font-size="11">44</text>
+<text x="68" y="937" fill="#dce6f4" font-size="13">Audio</text>
+<text x="570" y="937" text-anchor="end" fill="#a0aab9" font-size="11">Open</text>
+</g>
+<g data-id="XBOX-45"><title>XBOX-45: Input and peripherals. Open. Full Xbox acceptance open. Required: Controllers, hotplug, mappings, rumble, trigger feedback, keyboard/mouse/accessibility and polling/timestamp semantics where exposed</title>
+<text x="42" y="956" fill="#6f86a2" font-size="11">45</text>
+<text x="68" y="956" fill="#dce6f4" font-size="13">Input and peripherals</text>
+<text x="570" y="956" text-anchor="end" fill="#a0aab9" font-size="11">Open</text>
+</g>
+<g data-id="XBOX-46"><title>XBOX-46: Video and media. Open. Full Xbox acceptance open. Required: Required decode/playback APIs, codecs, A/V synchronization, subtitles and surface sharing</title>
+<text x="42" y="975" fill="#6f86a2" font-size="11">46</text>
+<text x="68" y="975" fill="#dce6f4" font-size="13">Video and media</text>
+<text x="570" y="975" text-anchor="end" fill="#a0aab9" font-size="11">Open</text>
+</g>
+<g data-id="XBOX-47"><title>XBOX-47: Networking. Open. Full Xbox acceptance open. Required: Sockets/transports, name resolution, asynchronous I/O, timing, disconnect/error semantics and title-specific dependencies</title>
+<text x="42" y="994" fill="#6f86a2" font-size="11">47</text>
+<text x="68" y="994" fill="#dce6f4" font-size="13">Networking</text>
+<text x="570" y="994" text-anchor="end" fill="#a0aab9" font-size="11">Open</text>
+</g>
+<g data-id="XBOX-48"><title>XBOX-48: Identity and online services. Contract gap. Unknown/externally dependent; offline success cannot certify online compatibility. Required: Guest-visible users, authentication-dependent APIs, multiplayer, achievements, cloud saves and unavailable-service behavior</title>
+<text x="42" y="1013" fill="#6f86a2" font-size="11">48</text>
+<text x="68" y="1013" fill="#dce6f4" font-size="13">Identity and online services</text>
+<text x="570" y="1013" text-anchor="end" fill="#efb666" font-size="11">Contract gap</text>
+</g>
+<g data-id="XBOX-49"><title>XBOX-49: Lifecycle and suspend/resume. Open. Full Xbox acceptance open. Required: Launch/exit, focus, suspend/resume, device changes, retained state and Quick Resume-related observable requirements</title>
+<text x="42" y="1032" fill="#6f86a2" font-size="11">49</text>
+<text x="68" y="1032" fill="#dce6f4" font-size="13">Lifecycle and suspend/resume</text>
+<text x="570" y="1032" text-anchor="end" fill="#a0aab9" font-size="11">Open</text>
+</g>
+<g data-id="XBOX-50"><title>XBOX-50: Locale, accessibility and settings. Open. Full Xbox acceptance open. Required: Language/region, text/Unicode, time zone, accessibility, display/audio settings and configuration changes</title>
+<text x="42" y="1051" fill="#6f86a2" font-size="11">50</text>
+<text x="68" y="1051" fill="#dce6f4" font-size="13">Locale, accessibility and settings</text>
+<text x="570" y="1051" text-anchor="end" fill="#a0aab9" font-size="11">Open</text>
+</g>
+<g data-id="XBOX-51"><title>XBOX-51: Installation and updates. Contract gap. Unknown contract; do not infer from PC packaging. Required: Content/DLC discovery, versions, deployment/update behavior and title-specific dependencies</title>
+<text x="42" y="1070" fill="#6f86a2" font-size="11">51</text>
+<text x="68" y="1070" fill="#dce6f4" font-size="13">Installation and updates</text>
+<text x="570" y="1070" text-anchor="end" fill="#efb666" font-size="11">Contract gap</text>
+</g>
+<g data-id="XBOX-52"><title>XBOX-52: Firmware and system environment. Contract gap. Research unresolved; no firmware/dashboard compatibility claim. Required: Determine necessary kernel/system interfaces, privileged operations and any full-boot requirements; record unavailable dependencies</title>
+<text x="42" y="1089" fill="#6f86a2" font-size="11">52</text>
+<text x="68" y="1089" fill="#dce6f4" font-size="13">Firmware and system environment</text>
+<text x="570" y="1089" text-anchor="end" fill="#efb666" font-size="11">Contract gap</text>
+</g>
+<rect x="612" y="804" width="564" height="308" rx="12" fill="#111c2b" stroke="#273548"/>
+<text x="630" y="832" fill="#657d9a" font-size="14" font-weight="700">06</text>
+<text x="663" y="832" fill="#eef4fc" font-size="19" font-weight="650">Integration &amp; acceptance</text>
+<text x="630" y="853" fill="#91a5bf" font-size="12">Evidence that the whole system works</text>
+<g data-id="XBOX-53"><title>XBOX-53: Per-feature acceptance. Foundation. Existing synthetic acceptance practice; extend to all requirements. Required: Versioned contract, applicable targets/hosts, implementation paths, independent oracle, boundary/negative tests, native execution, limitations and review</title>
+<text x="630" y="880" fill="#6f86a2" font-size="11">53</text>
+<text x="656" y="880" fill="#dce6f4" font-size="13">Per-feature acceptance</text>
+<text x="1158" y="880" text-anchor="end" fill="#69baff" font-size="11">Foundation</text>
+</g>
+<g data-id="XBOX-54"><title>XBOX-54: Original integrated workloads. Foundation. Bounded original workloads; synthetic integration. Required: Sustained CPU + graphics + resources + input + audio + storage execution; concurrency, teardown and failure recovery</title>
+<text x="630" y="899" fill="#6f86a2" font-size="11">54</text>
+<text x="656" y="899" fill="#dce6f4" font-size="13">Original integrated workloads</text>
+<text x="1158" y="899" text-anchor="end" fill="#69baff" font-size="11">Foundation</text>
+</g>
+<g data-id="XBOX-55"><title>XBOX-55: Per-title compatibility. Open. Commercial game execution not demonstrated. Required: Record load, startup, first frame, interaction, gameplay, save/load, audio/input and sustained stability separately, for each title/version and target</title>
+<text x="630" y="918" fill="#6f86a2" font-size="11">55</text>
+<text x="656" y="918" fill="#dce6f4" font-size="13">Per-title compatibility</text>
+<text x="1158" y="918" text-anchor="end" fill="#a0aab9" font-size="11">Open</text>
+</g>
+<g data-id="XBOX-56"><title>XBOX-56: Performance and stability. Foundation. Bounded benchmarks only; no general playability claim. Required: Frame-time distributions, shader/CPU compilation, memory growth, caches, streaming stalls, latency, long sessions and reproducible host configuration</title>
+<text x="630" y="937" fill="#6f86a2" font-size="11">56</text>
+<text x="656" y="937" fill="#dce6f4" font-size="13">Performance and stability</text>
+<text x="1158" y="937" text-anchor="end" fill="#69baff" font-size="11">Foundation</text>
+</g>
+<g data-id="XBOX-57"><title>XBOX-57: Diagnostics and packaging. Foundation. Research tools exist; end-user compatibility workflow open. Required: Reproducible launches, precise unsupported-feature reports, crash diagnostics, validation tooling, native packaging and installation</title>
+<text x="630" y="956" fill="#6f86a2" font-size="11">57</text>
+<text x="656" y="956" fill="#dce6f4" font-size="13">Diagnostics and packaging</text>
+<text x="1158" y="956" text-anchor="end" fill="#69baff" font-size="11">Foundation</text>
+</g>
+<g data-id="XBOX-58"><title>XBOX-58: Inventory closure. Open. Open; this map starts the system-wide ledger, not its certification. Required: Reconcile every discovered interface/form/mode with a requirement and evidence row; audit missing categories and untracked behavior</title>
+<text x="630" y="975" fill="#6f86a2" font-size="11">58</text>
+<text x="656" y="975" fill="#dce6f4" font-size="13">Inventory closure</text>
+<text x="1158" y="975" text-anchor="end" fill="#a0aab9" font-size="11">Open</text>
+</g>
+<text x="26" y="1147" fill="#dce6f4" font-size="14">Foundation ≠ console compatibility. Every area still needs Xbox-specific acceptance.</text>
+<text x="26" y="1172" fill="#91a5bf" font-size="12">Source: docs/xbox-compatibility.md · Desktop RDNA2 instruction coverage is a separate, narrower inventory.</text>
+</g>
+</svg>
