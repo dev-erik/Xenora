@@ -6,6 +6,37 @@ claim of Xbox hardware equivalence. Supporting raw logs, mutation records and
 source manifests remain local and are not distributed with the repository.
 The array-range descriptor increment below was validated on 26 November 2026.
 
+## Stage 1 revalidation before shader expansion
+
+27 November 2026, implementation baseline `3368468`. The original finite rendering
+scope was reviewed again before Stage 3: larger indexed draws, per-draw state and
+programs, depth, blending/masks, and one through eight render targets. Fresh tests
+passed **154 checks, zero failed, zero ignored** with native Metal API and shader
+validation enabled. This is a focused revalidation, not a new full-nine-gate run.
+
+| Evidence | Passing checks | Purpose |
+| --- | ---: | --- |
+| Native `translated_render::` | 41 | Ordered passes, state reset, MRT, limits, depth and rollback |
+| Native `depth::` and `blend::` | 4 | Known-answer color/depth and blend cases |
+| CPU `depth_reference` and `blend_reference` | 2 | Independent reference fixture comparisons |
+| Loader `render_limits` | 10 | Admission boundaries and rejection before dispatch |
+| Loader `graphics_d3d12`, GPU enabled | 8 | Indexed input rejection and actual Metal guest rendering |
+| FFI `large_scene`, `integrated_scene`, `pipeline`, `guest_graphics` | 89 | Both index widths, repeated tiles, mixed programs, actual PE guests and integrated recovery |
+
+The log directory is `artifacts/s1-revalidation`; `commands.json` records the six
+serial command groups. `loader-rejection.log` records the additional GPU-enabled
+`graphics_d3d12` run. Original mutation records remain historical sensitivity
+evidence, not new mutation runs. The previous criterion-level review is retained
+in `artifacts/stage1-evidence.md` and `artifacts/stage1-integration-local-reviews.md`.
+Two independent LOW-effort reviewers accepted the finite S1 scope after inspecting
+the sources and fresh logs. R1 checked the initial 146 passing tests; R2 also checked
+the eight additional loader rejection/native cases. Neither authored or reran tests
+for this review. No unresolved original S1 requirement was found.
+
+The accepted scope does not include instancing, indirect draws, stencil, MSAA or
+independent per-attachment blending. These were not original S1 acceptance criteria.
+Stage 3 remains a separate shader expansion milestone.
+
 ## Integrated Stage 2 acceptance
 
 The [integrated acceptance record](stage2-integrated-acceptance.md) records accepted
@@ -904,9 +935,10 @@ publication. Legacy and host-only paths retain their documented contracts.
 See [interfaces](../interfaces.md) and the [guest graphics ABI](../graphics-call-v1.md)
 for capability, capacity, layout and validation restrictions.
 
-Full Stage 2 and Stage 3 remain open. General resource/view/format coverage,
-broader synchronization, general shader control flow and divergent execution are
-not established. Additional geometry formats, instancing and indirect draws are
+At the historical checkpoint above, full Stage 2 and Stage 3 remained open.
+The finite Stage 2 resource contracts are now accepted in the integrated record
+linked above. Stage 3 general shader control flow and divergent execution remain
+open. Additional geometry formats, instancing and indirect draws are
 outside this increment. Original synthetic fixtures do not demonstrate commercial
 Xbox game execution, console hardware equivalence or a process-wide memory ceiling.
 Payload budgets cover explicitly documented owned allocations rather than total

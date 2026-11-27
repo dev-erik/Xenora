@@ -18,6 +18,9 @@ remains unsupported.
 - Extended the read-only RDNA2 planning CLI (`python3 -m qa rdna2`) with family/status filters, compact summaries, Codex-ready manifests under `artifacts/`, active-claim exclusion (family claims exclude those families; path-only claims block overlapping permitted files), coverage reconcile against `semantic_coverage` without inflating counts, and inventory diffs. Covered by `tests/qa/test_rdna2_plan.py`; planning only, no GPU production edits.
 
 ### Added
+- Focused Stage 1 rendering revalidation before shader expansion, covering indexed
+  scenes, per-draw state, depth, blending and multiple targets; recorded in the
+  local graphics checkpoint with current native and guest test evidence.
 - Integrated S2 resource acceptance matrix linking the seven finite contracts,
   cross-workstream tests and final validation evidence; see
   `docs/testing/stage2-integrated-acceptance.md`.
