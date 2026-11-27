@@ -41,6 +41,8 @@ mod runtime_uniform_semantics;
 mod runtime_uniforms;
 #[path = "native/scalar_graphics.rs"]
 mod scalar_graphics;
+#[path = "native/scalar_unary_graphics.rs"]
+mod scalar_unary_graphics;
 #[path = "native/texture.rs"]
 mod texture;
 #[path = "native/texture_bc_alpha.rs"]

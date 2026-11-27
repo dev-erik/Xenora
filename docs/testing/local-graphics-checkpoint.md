@@ -6,6 +6,34 @@ claim of Xbox hardware equivalence. Supporting raw logs, mutation records and
 source manifests remain local and are not distributed with the repository.
 The array-range descriptor increment below was validated on 26 November 2026.
 
+## Stage 3.1 increment: graphics scalar arithmetic and unary operations
+
+27 November 2026. Graphics lowering now handles all 36 existing 32-bit SOP2
+operations and all 11 existing SOP1 unary operations, with the normal local and
+uniform register restrictions in the [scalar contract](../shaders/scalar-alu.md#graphics-scalar-execution).
+This adds 21 binary and 11 unary graphics lowerings without changing the decoder
+inventory. It does not complete S3.1's broader instruction and operand coverage.
+
+Literal expected results exercise 256 high-product draws, 1,376 other binary
+draws and 1,920 unary draws. They cover constant/runtime inputs, source aliases,
+both incoming SCC values, matching/nonmatching result probes and result/flag
+boundaries. Native runs passed with Metal API and shader validation on Apple
+M4 Max, macOS 27.2.1 (26B131). These original synthetic programs provide no AMD
+or Xbox hardware equivalence evidence. Compiler regressions check uninitialized
+sources, undefined SCC and reserved destinations.
+
+Six targeted mutations were detected by native assertion failures: low instead
+of high multiplication, incorrect zero-width extraction, omitted shift carry or addition carry,
+incorrect bit-scan sentinel and unsigned byte extension. The exact compiler
+source was restored afterward. Local evidence is under
+`artifacts/s31-graphics-mulhi/`. All nine full gates passed in
+`validation-full.sUR00J` (workspace 1,074 passed/0 failed/151 ignored; GPU script
+470 passed/0 failed/1 ignored; totals overlap). After test-only review additions,
+59 graphics compiler tests and 16 native scalar tests passed, including 12 new
+loop-carried unary draws. The native audit checked 120 ARM64 executables/loadable
+dependencies. Both independent reviewers accepted the bounded increment after checking the
+final source hashes, resolved findings and execution evidence. Full S3.1 remains open.
+
 ## Stage 3.1 increment: scalar immediate comparisons
 
 27 November 2026. All twelve signed/unsigned SOPK comparisons now normalize to

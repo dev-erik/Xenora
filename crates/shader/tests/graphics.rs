@@ -1423,8 +1423,8 @@ fn scalar_local_diamond_chain_stays_linear_and_unsupported_operations_reject() {
     assert_eq!(compiled.required_uniform_mask, 1);
     assert!(compiled.shader.msl.len() < 50000);
     for prefix in [
-        vec![scalar_local_alu(14, 32, 0x81, 0x81)],
-        vec![0xbea00381, 0x7e100220], // unsupported SGPR-to-VGPR move
+        vec![scalar_local_alu(15, 32, 0x81, 0x81)], // unsupported 64-bit AND
+        vec![0xbea00381, 0x7e100220],               // unsupported SGPR-to-VGPR move
         vec![0xbf820001, 0xbea00381, 0xbf068120],
     ] {
         // skipped definition
@@ -1445,4 +1445,83 @@ fn signed_decode_does_not_enable_unreachable_graphics_backedges() {
         4,
         "counted loop requires a preheader and nonempty body",
     );
+}
+
+#[test]
+fn scalar_high_multiplication_supports_runtime_operands_and_preserves_unset_scc() {
+    for opcode in [53u32, 54] {
+        let mut ps = include_bytes!("../../../fixtures/rdna2/x9-scalar-mul-ps.bin").to_vec();
+        ps[12..16]
+            .copy_from_slice(&(0x80000000 | opcode << 23 | 32 << 16 | 33 << 8 | 32).to_le_bytes());
+        compile_graphics_pipeline(Gfx1030, CONSTANT_VS, &ps).unwrap();
+        // No previous SCC: later consumer must reject rather than silently initialize it.
+        ps[8..12].copy_from_slice(&0xbea20380u32.to_le_bytes());
+        assert!(compile_graphics_pipeline(Gfx1030, CONSTANT_VS, &ps).is_err());
+    }
+}
+
+#[test]
+fn scalar_bit_operations_initialize_scc_except_flagless_mask() {
+    for opcode in [
+        14u32, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 39, 40, 44, 46, 47, 48, 49,
+    ] {
+        let mut ps = include_bytes!("../../../fixtures/rdna2/x9-scalar-mul-ps.bin").to_vec();
+        ps[12..16]
+            .copy_from_slice(&(0x80000000 | opcode << 23 | 32 << 16 | 33 << 8 | 32).to_le_bytes());
+        compile_graphics_pipeline(Gfx1030, CONSTANT_VS, &ps).unwrap();
+        ps[8..12].copy_from_slice(&0xbea20380u32.to_le_bytes());
+        let compiled = compile_graphics_pipeline(Gfx1030, CONSTANT_VS, &ps);
+        assert_eq!(
+            compiled.is_ok(),
+            opcode != 36,
+            "opcode {opcode}: {compiled:?}"
+        );
+        // Restore SCC so the invalid operand is the sole rejection reason.
+        let original = include_bytes!("../../../fixtures/rdna2/x9-scalar-mul-ps.bin");
+        ps[8..12].copy_from_slice(&original[8..12]);
+        for source_byte in [12, 13] {
+            let saved = ps[source_byte];
+            ps[source_byte] = 35;
+            let error = compile_graphics_pipeline(Gfx1030, CONSTANT_VS, &ps).unwrap_err();
+            assert_stage_error(&error, "pixel", 12, "scalar local is uninitialized");
+            ps[source_byte] = saved;
+        }
+    }
+}
+
+#[test]
+fn scalar_unary_graphics_tracks_defined_flags_and_rejects_invalid_operands() {
+    for opcode in [7u32, 11, 13, 15, 17, 19, 21, 23, 25, 26, 52] {
+        let mut ps = include_bytes!("../../../fixtures/rdna2/x9-scalar-mul-ps.bin").to_vec();
+        ps[12..16].copy_from_slice(&(0xbe800000 | 32 << 16 | opcode << 8 | 32).to_le_bytes());
+        compile_graphics_pipeline(Gfx1030, CONSTANT_VS, &ps).unwrap();
+        ps[8..12].copy_from_slice(&0xbea20380u32.to_le_bytes());
+        let compiled = compile_graphics_pipeline(Gfx1030, CONSTANT_VS, &ps);
+        assert_eq!(
+            compiled.is_ok(),
+            matches!(opcode, 7 | 13 | 15 | 52),
+            "opcode {opcode}: {compiled:?}"
+        );
+        let original = include_bytes!("../../../fixtures/rdna2/x9-scalar-mul-ps.bin");
+        ps[8..12].copy_from_slice(&original[8..12]);
+        ps[12] = 35;
+        let error = compile_graphics_pipeline(Gfx1030, CONSTANT_VS, &ps).unwrap_err();
+        assert_stage_error(&error, "pixel", 12, "scalar local is uninitialized");
+        ps[12] = 32;
+        // Input uniforms cannot be overwritten as scalar locals.
+        ps[14] = 0x80 | 24;
+        let error = compile_graphics_pipeline(Gfx1030, CONSTANT_VS, &ps).unwrap_err();
+        assert_stage_error(&error, "pixel", 12, "destination");
+    }
+}
+
+#[test]
+fn unary_loop_carried_local_accepts_but_counter_rewrite_rejects() {
+    let mut ps = include_bytes!("../../../fixtures/rdna2/x9-loop-scalar-ps.bin").to_vec();
+    // Replace the body ADD with NOT s33,s33; original decrement remains intact.
+    ps[40..44].copy_from_slice(&0xbea10721u32.to_le_bytes());
+    compile_graphics_pipeline(Gfx1030, CONSTANT_VS, &ps).unwrap();
+    // Rewriting the bounded induction variable invalidates the termination proof.
+    ps[40..44].copy_from_slice(&0xbea00720u32.to_le_bytes());
+    assert!(compile_graphics_pipeline(Gfx1030, CONSTANT_VS, &ps).is_err());
 }

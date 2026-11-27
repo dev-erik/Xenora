@@ -423,3 +423,26 @@ fn translated_counted_loop_sample_accumulator_observes_both_pairs_and_iterations
         bindings,
     );
 }
+
+#[test]
+fn translated_unary_loop_carried_scalar_keeps_iteration_values() {
+    let mut ps = include_bytes!("../../../../fixtures/rdna2/x9-loop-scalar-ps.bin").to_vec();
+    ps[40..44].copy_from_slice(&0xbea10721u32.to_le_bytes()); // NOT s33,s33
+    let cases = [
+        (0, 3, 255),
+        (1, 0xfffffffc, 255),
+        (2, 3, 255),
+        (3, 0xfffffffc, 255),
+        (4, 3, 0),
+        (0xffffffff, 3, 0),
+    ];
+    let mut words = Vec::new();
+    let mut expected = Vec::new();
+    for (count, result, initial_flag) in cases {
+        for mismatch in [false, true] {
+            words.push([count, result ^ u32::from(mismatch), 0, 0, 0, 0, 0, 0]);
+            expected.push([if mismatch { 0 } else { 255 }, initial_flag, 0, 255]);
+        }
+    }
+    pixel_grid(&ps, &words, &expected, vec![]);
+}

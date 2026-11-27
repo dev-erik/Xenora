@@ -6,7 +6,7 @@ mod cfg;
 
 use xenora_decoder::{
     DecodedInstruction, ExportTarget, Instruction, InterpolationPhase, ScalarAluOp,
-    ScalarCompareOp, ScalarSource, VectorSource,
+    ScalarCompareOp, ScalarSource, ScalarUnaryOp, VectorSource,
 };
 
 use super::{Architecture, Binary, CompileError, CompiledShader, Value, decode_fixture};
@@ -41,6 +41,8 @@ enum Float4Input {
 enum Op {
     VertexInput(Float4Input, u8),
     Compare(ScalarCompareOp, ScalarValue, ScalarValue),
+    ScalarUnaryResult(ScalarUnaryOp, ScalarValue),
+    ScalarNonzeroFlag(Value),
     ScalarResult(ScalarAluOp, ScalarValue, ScalarValue, Condition),
     ScalarFlag(ScalarAluOp, ScalarValue, ScalarValue, Condition, Value),
     Phi(ValueType),
@@ -709,9 +711,9 @@ fn lift(
     if extended {
         for decoded in decoded {
             let destination = match decoded.instruction {
-                Instruction::ScalarMoveB32 { dst, .. } | Instruction::ScalarAlu { dst, .. } => {
-                    Some(dst)
-                }
+                Instruction::ScalarMoveB32 { dst, .. }
+                | Instruction::ScalarUnary { dst, .. }
+                | Instruction::ScalarAlu { dst, .. } => Some(dst),
                 _ => None,
             };
             if let Some(dst) = destination {
@@ -731,7 +733,20 @@ fn lift(
             }
         }
     }
-    let loops = cfg::analyze(decoded)?;
+    // For structural loop analysis, a unary operation is an arbitrary scalar
+    // write, just like MOV. Keep offsets and operands; lift the original stream
+    // below so unary values and SCC retain their actual semantics.
+    let loop_instructions: Vec<_> = decoded
+        .iter()
+        .map(|item| {
+            let mut item = *item;
+            if let Instruction::ScalarUnary { dst, src, .. } = item.instruction {
+                item.instruction = Instruction::ScalarMoveB32 { dst, src };
+            }
+            item
+        })
+        .collect();
+    let loops = cfg::analyze(&loop_instructions)?;
     let mut loop_headers: Vec<Option<RegisterState>> = vec![None; loops.len()];
     let mut loop_bounds = vec![None; loops.len()];
     let mut ir = StageIr::default();
@@ -838,6 +853,33 @@ fn lift(
                 scalars[usize::from(dst)] = Some(value);
                 // MOV neither initializes nor overwrites SCC.
             }
+            Instruction::ScalarUnary { op, dst, src } if !exporting => {
+                scalar_destination(dst, offset)?;
+                // Capture the source before writing an aliased destination.
+                let source = read_scalar(src, &scalars, &mut ir.uniform_mask, offset)?;
+                let (value, flag) = match source {
+                    ScalarValue::Constant(bits) => {
+                        let (value, flag) = op.evaluate(bits);
+                        (ScalarValue::Constant(value), flag.map(Condition::Constant))
+                    }
+                    _ => {
+                        let result = ir.push(Some(offset), Op::ScalarUnaryResult(op, source));
+                        let flag = if op.writes_scc() {
+                            Some(Condition::Runtime(
+                                ir.push(Some(offset), Op::ScalarNonzeroFlag(result)),
+                            ))
+                        } else {
+                            None
+                        };
+                        (ScalarValue::Runtime(result), flag)
+                    }
+                };
+                scalars[usize::from(dst)] = Some(value);
+                // Flagless forms neither initialize nor overwrite SCC.
+                if let Some(flag) = flag {
+                    scc = Some(flag);
+                }
+            }
             Instruction::ScalarAlu {
                 op,
                 dst,
@@ -845,26 +887,6 @@ fn lift(
                 src1,
             } if !exporting => {
                 use ScalarAluOp::*;
-                if !matches!(
-                    op,
-                    AddU32
-                        | SubU32
-                        | AddI32
-                        | SubI32
-                        | AddcU32
-                        | SubbU32
-                        | MinI32
-                        | MinU32
-                        | MaxI32
-                        | MaxU32
-                        | CselectB32
-                        | MulI32
-                        | PackLlB32B16
-                        | PackLhB32B16
-                        | PackHhB32B16
-                ) {
-                    return Err(error("graphics scalar ALU operation is unsupported"));
-                }
                 scalar_destination(dst, offset)?;
                 // Capture both operands and incoming SCC before any aliased write.
                 let left = read_scalar(src0, &scalars, &mut ir.uniform_mask, offset)?;
@@ -874,42 +896,49 @@ fn lift(
                 } else {
                     Condition::Constant(false)
                 };
-                let (value, flag) =
-                    if matches!(op, MulI32 | PackLlB32B16 | PackLhB32B16 | PackHhB32B16) {
-                        let value = match (left, right) {
-                            (ScalarValue::Constant(a), ScalarValue::Constant(b)) => {
-                                ScalarValue::Constant(op.evaluate(a, b, false).0)
-                            }
-                            _ => ScalarValue::Runtime(
-                                ir.push(Some(offset), Op::ScalarResult(op, left, right, carry)),
-                            ),
-                        };
-                        (value, scc)
-                    } else if op == CselectB32 {
-                        let value = match carry {
-                            Condition::Constant(true) => left,
-                            Condition::Constant(false) => right,
-                            _ if left.same(right) => left,
-                            _ => ScalarValue::Runtime(
-                                ir.push(Some(offset), Op::ScalarResult(op, left, right, carry)),
-                            ),
-                        };
-                        (value, scc)
-                    } else if let (
-                        ScalarValue::Constant(a),
-                        ScalarValue::Constant(b),
-                        Condition::Constant(c),
-                    ) = (left, right, carry)
-                    {
-                        let (bits, flag) = scalar_constant(op, a, b, c);
-                        (ScalarValue::Constant(bits), Some(Condition::Constant(flag)))
-                    } else {
-                        let result =
-                            ir.push(Some(offset), Op::ScalarResult(op, left, right, carry));
-                        let flag =
-                            ir.push(Some(offset), Op::ScalarFlag(op, left, right, carry, result));
-                        (ScalarValue::Runtime(result), Some(Condition::Runtime(flag)))
+                let (value, flag) = if matches!(
+                    op,
+                    BfmB32
+                        | MulI32
+                        | MulHiU32
+                        | MulHiI32
+                        | PackLlB32B16
+                        | PackLhB32B16
+                        | PackHhB32B16
+                ) {
+                    let value = match (left, right) {
+                        (ScalarValue::Constant(a), ScalarValue::Constant(b)) => {
+                            ScalarValue::Constant(op.evaluate(a, b, false).0)
+                        }
+                        _ => ScalarValue::Runtime(
+                            ir.push(Some(offset), Op::ScalarResult(op, left, right, carry)),
+                        ),
                     };
+                    (value, scc)
+                } else if op == CselectB32 {
+                    let value = match carry {
+                        Condition::Constant(true) => left,
+                        Condition::Constant(false) => right,
+                        _ if left.same(right) => left,
+                        _ => ScalarValue::Runtime(
+                            ir.push(Some(offset), Op::ScalarResult(op, left, right, carry)),
+                        ),
+                    };
+                    (value, scc)
+                } else if let (
+                    ScalarValue::Constant(a),
+                    ScalarValue::Constant(b),
+                    Condition::Constant(c),
+                ) = (left, right, carry)
+                {
+                    let (bits, flag) = scalar_constant(op, a, b, c);
+                    (ScalarValue::Constant(bits), Some(Condition::Constant(flag)))
+                } else {
+                    let result = ir.push(Some(offset), Op::ScalarResult(op, left, right, carry));
+                    let flag =
+                        ir.push(Some(offset), Op::ScalarFlag(op, left, right, carry, result));
+                    (ScalarValue::Runtime(result), Some(Condition::Runtime(flag)))
+                };
                 scalars[usize::from(dst)] = Some(value);
                 scc = flag;
             }
@@ -1387,40 +1416,31 @@ fn read_scalar(
 // AMD RDNA2 section 12.1. All arithmetic is unsigned bit arithmetic; signed
 // add/sub overflow is independent of carry/borrow. No native signed overflow.
 fn scalar_constant(op: ScalarAluOp, a: u32, b: u32, carry: bool) -> (u32, bool) {
-    use ScalarAluOp::*;
-    let c = u32::from(carry);
+    let (value, flag) = op.evaluate(a, b, carry);
+    (value, flag.expect("validated flag-producing operation"))
+}
+
+// AMD RDNA2 section 12.3; match the scalar unary primitive contracts.
+fn scalar_unary_expression(op: ScalarUnaryOp, source: ScalarValue) -> String {
+    use ScalarUnaryOp::*;
+    let a = source.expression();
     match op {
-        AddU32 | AddI32 | AddcU32 => {
-            let t = a.wrapping_add(b);
-            let r = t.wrapping_add(if op == AddcU32 { c } else { 0 });
-            let flag = if op == AddI32 {
-                (!(a ^ b) & (a ^ r) & 0x80000000) != 0
-            } else {
-                t < a || r < t
-            };
-            (r, flag)
+        NotB32 => format!("~({a})"),
+        BrevB32 => format!("reverse_bits({a})"),
+        Bcnt0I32B32 => format!("popcount(~({a}))"),
+        Bcnt1I32B32 => format!("popcount({a})"),
+        Ff0I32B32 => format!("(({a}) == 0xffffffffu) ? 0xffffffffu : ctz(~({a}))"),
+        Ff1I32B32 => format!("(({a}) == 0u) ? 0xffffffffu : ctz({a})"),
+        FlbitI32B32 => format!("(({a}) == 0u) ? 0xffffffffu : clz({a})"),
+        FlbitI32 => {
+            // Count leading sign bits, including the sign bit itself.
+            let differing = format!("(({a}) ^ (0u - (({a}) >> 31u)))");
+            format!("({differing} == 0u) ? 0xffffffffu : clz({differing})")
         }
-        SubU32 | SubI32 | SubbU32 => {
-            let r = a
-                .wrapping_sub(b)
-                .wrapping_sub(if op == SubbU32 { c } else { 0 });
-            let flag = if op == SubI32 {
-                ((a ^ b) & (a ^ r) & 0x80000000) != 0
-            } else {
-                a < b || (op == SubbU32 && carry && a == b)
-            };
-            (r, flag)
-        }
-        MinI32 | MinU32 | MaxI32 | MaxU32 => {
-            let select = match op {
-                MinI32 => (a as i32) < (b as i32),
-                MinU32 => a < b,
-                MaxI32 => (a as i32) > (b as i32),
-                _ => a > b,
-            };
-            (if select { a } else { b }, select)
-        }
-        _ => unreachable!("validated scalar operation"),
+        SextI32I8 => format!("((({a}) & 0xffu) ^ 0x80u) - 0x80u"),
+        SextI32I16 => format!("((({a}) & 0xffffu) ^ 0x8000u) - 0x8000u"),
+        // Unsigned negation retains INT_MIN without native signed overflow.
+        AbsI32 => format!("((({a}) & 0x80000000u) != 0u) ? (0u - ({a})) : ({a})"),
     }
 }
 
@@ -1439,8 +1459,48 @@ fn scalar_result_expression(
         SubU32 | SubI32 => format!("{a} - {b}"),
         AddcU32 => format!("({a} + {b}) + uint({c})"),
         SubbU32 => format!("({a} - {b}) - uint({c})"),
+        AndB32 => format!("({a}) & ({b})"),
+        OrB32 => format!("({a}) | ({b})"),
+        XorB32 => format!("({a}) ^ ({b})"),
+        Andn2B32 => format!("({a}) & ~({b})"),
+        Orn2B32 => format!("({a}) | ~({b})"),
+        NandB32 => format!("~(({a}) & ({b}))"),
+        NorB32 => format!("~(({a}) | ({b}))"),
+        XnorB32 => format!("~(({a}) ^ ({b}))"),
+        LshlB32 => format!("({a}) << (({b}) & 31u)"),
+        LshrB32 => format!("({a}) >> (({b}) & 31u)"),
+        AshrI32 => format!("as_type<uint>(as_type<int>({a}) >> (({b}) & 31u))"),
+        BfmB32 => format!("((1u << (({a}) & 31u)) - 1u) << (({b}) & 31u)"),
+        BfeU32 | BfeI32 => {
+            let offset = format!("(({b}) & 31u)");
+            let width = format!("((({b}) >> 16u) & 127u)");
+            let shifted = if op == BfeI32 {
+                format!("as_type<uint>(as_type<int>({a}) >> {offset})")
+            } else {
+                format!("(({a}) >> {offset})")
+            };
+            // Mask every shift count, including in branches not selected at runtime.
+            // Width >= 32 keeps the shifted word; width zero produces zero.
+            let field = if op == BfeI32 {
+                let unused = format!("((32u - {width}) & 31u)");
+                format!("as_type<uint>(as_type<int>({shifted} << {unused}) >> {unused})")
+            } else {
+                format!("({shifted} & ((1u << ({width} & 31u)) - 1u))")
+            };
+            format!("({width} == 0u) ? 0u : (({width} >= 32u) ? {shifted} : {field})")
+        }
+        AbsdiffI32 => {
+            let difference = format!("(({a}) - ({b}))");
+            format!("(({difference} & 0x80000000u) != 0u) ? (0u - {difference}) : {difference}")
+        }
+        Lshl1AddU32 | Lshl2AddU32 | Lshl3AddU32 | Lshl4AddU32 => {
+            let shift = scalar_add_shift(op);
+            format!("(({a}) << {shift}u) + ({b})")
+        }
         CselectB32 => format!("{c} ? {a} : {b}"),
         MulI32 => format!("({a}) * ({b})"),
+        MulHiU32 => format!("mulhi({a}, {b})"),
+        MulHiI32 => format!("as_type<uint>(mulhi(as_type<int>({a}), as_type<int>({b})))"),
         PackLlB32B16 => format!("(({a}) & 0xffffu) | (({b}) << 16u)"),
         PackLhB32B16 => format!("(({a}) & 0xffffu) | (({b}) & 0xffff0000u)"),
         PackHhB32B16 => format!("(({a}) >> 16u) | (({b}) & 0xffff0000u)"),
@@ -1457,7 +1517,16 @@ fn scalar_result_expression(
             };
             format!("({condition}) ? {a} : {b}")
         }
-        _ => unreachable!("validated scalar operation"),
+    }
+}
+
+fn scalar_add_shift(op: ScalarAluOp) -> u32 {
+    match op {
+        ScalarAluOp::Lshl1AddU32 => 1,
+        ScalarAluOp::Lshl2AddU32 => 2,
+        ScalarAluOp::Lshl3AddU32 => 3,
+        ScalarAluOp::Lshl4AddU32 => 4,
+        _ => unreachable!("validated shift-add operation"),
     }
 }
 
@@ -1483,6 +1552,16 @@ fn scalar_flag_expression(
         MaxI32 => format!("as_type<int>({a}) > as_type<int>({b})"),
         MinU32 => format!("{a} < {b}"),
         MaxU32 => format!("{a} > {b}"),
+        AndB32 | OrB32 | XorB32 | Andn2B32 | Orn2B32 | NandB32 | NorB32 | XnorB32 | LshlB32
+        | LshrB32 | AshrI32 | BfeU32 | BfeI32 | AbsdiffI32 => {
+            format!("{result} != 0u")
+        }
+        Lshl1AddU32 | Lshl2AddU32 | Lshl3AddU32 | Lshl4AddU32 => {
+            let shift = scalar_add_shift(op);
+            let high_shift = 32 - shift;
+            // Carry includes bits lost by the shift as well as overflow of the add.
+            format!("((({a}) >> {high_shift}u) != 0u) || ({result} < (({a}) << {shift}u))")
+        }
         _ => unreachable!("validated flag-producing operation"),
     }
 }
@@ -1752,8 +1831,11 @@ fn validate_resource_types(
 
 fn value_type(op: Op) -> &'static str {
     match op {
-        Op::Compare(..) | Op::ScalarFlag(..) | Op::Phi(ValueType::Bool) => "bool",
-        Op::ScalarResult(..) | Op::Phi(ValueType::U32) => "uint",
+        Op::Compare(..)
+        | Op::ScalarFlag(..)
+        | Op::ScalarNonzeroFlag(..)
+        | Op::Phi(ValueType::Bool) => "bool",
+        Op::ScalarResult(..) | Op::ScalarUnaryResult(..) | Op::Phi(ValueType::U32) => "uint",
         _ => "float",
     }
 }
@@ -1965,6 +2047,17 @@ fn emit_range(
             Op::Compare(operator, left, right) => {
                 let expression = compare_expression(operator, left, right);
                 (format!("compare.u32 {expression}"), expression)
+            }
+            Op::ScalarUnaryResult(operator, source) => {
+                let expression = scalar_unary_expression(operator, source);
+                (
+                    format!("{}.u32 {expression}", operator.mnemonic()),
+                    expression,
+                )
+            }
+            Op::ScalarNonzeroFlag(result) => {
+                let expression = format!("{result} != 0u");
+                (format!("scc.bool {expression}"), expression)
             }
             Op::ScalarResult(operator, left, right, carry) => {
                 let expression = scalar_result_expression(operator, left, right, carry);

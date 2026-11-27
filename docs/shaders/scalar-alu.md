@@ -45,6 +45,26 @@ evaluation through the shared primitives in `crates/isa/src/primitive.rs`. Run
 the registry.
 `v_mov_b32_e32` may read a normal SGPR, so the results can reach vector code.
 
+## Graphics scalar execution
+
+Graphics stages support all 36 decoded 32-bit SOP2 forms and all 11 decoded
+SOP1 unary forms described here. Normal local registers s32-s105 hold constants
+or runtime values; pixel uniforms s24-s31 are read-only inputs. Existing resource
+descriptor, reserved-register and uninitialized-source checks remain in force.
+Both sources are captured before an aliased destination changes. Flagless forms
+preserve SCC, including its uninitialized state; flag-producing forms establish it.
+
+Runtime lowering uses unsigned bit arithmetic, masked shift counts and explicit
+bit reinterpretation for signed comparisons, arithmetic shifts and high products.
+Field extraction handles zero widths and widths at least 32 without an oversized
+native shift. Shift-add carry includes bits discarded by the shift. Unary bit
+searches return the documented all-ones sentinel when no bit matches.
+Constant evaluation uses the same production semantics as compute; independent
+literal graphics tests exercise both constant and runtime paths. This closes the
+graphics gap for these decoded scalar forms, not full instruction or operand
+coverage. The [local checkpoint](../testing/local-graphics-checkpoint.md) records
+validation and acceptance separately.
+
 ## Sources
 
 - The AMD "RDNA 2" Instruction Set Architecture reference guide (GPUOpen,

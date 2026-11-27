@@ -880,9 +880,10 @@ control flow, EXEC/VCC divergence and reconvergence remain unsupported; the boun
 countdown extension below is the explicit exception.
 
 Graphics scalar locals s32..s105 start undefined independently in each stage.
-`S_MOV_B32` and `S_ADD_U32`, `S_SUB_U32`, `S_ADD_I32`, `S_SUB_I32`,
-`S_ADDC_U32`, `S_SUBB_U32`, `S_MIN_I32`, `S_MIN_U32`, `S_MAX_I32`,
-`S_MAX_U32`, and `S_CSELECT_B32` operate on exact 32-bit integer bits.
+`S_MOV_B32`, all 36 decoded 32-bit SOP2 binary forms and all 11 decoded
+SOP1 unary forms operate on exact 32-bit integer bits. The
+[scalar contract](shaders/scalar-alu.md#graphics-scalar-execution) lists their
+arithmetic, shift, bit-field, bit-scan and condition-code behavior.
 Descriptor registers s0..s23 and uniform inputs s24..s31 cannot be destinations;
 special registers and scalar-to-vector transfers remain unsupported. Every source,
 including both CSELECT operands, must be defined on every feasible incoming path.

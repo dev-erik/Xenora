@@ -889,3 +889,272 @@ fn translated_immediate_comparisons_preserve_source_and_replace_scc() {
         }
     }
 }
+
+#[test]
+fn translated_scalar_high_products_preserve_scc_and_aliased_operands() {
+    let gpu = NativeCompute::new().unwrap();
+    // A, B, literal unsigned high word, literal signed high word.
+    let rows = [
+        (0xffffffffu32, 0xffffffffu32, 0xfffffffeu32, 0u32),
+        (0x80000000, 2, 1, 0xffffffff),
+        (0x80000000, 0x80000000, 0x40000000, 0x40000000),
+        (0x7fffffff, 0x7fffffff, 0x3fffffff, 0x3fffffff),
+        (0xffff0000, 0x10000, 0xffff, 0xffffffff),
+        (0x12345678, 0x10000, 0x1234, 0x1234),
+        (0xffffffff, 0x80000000, 0x7fffffff, 0),
+        (0, 0xffffffff, 0, 0),
+    ];
+    for (a, b, unsigned, signed) in rows {
+        for opcode in [53u32, 54] {
+            let result = if opcode == 53 { unsigned } else { signed };
+            for alias_right in [false, true] {
+                for constants in [false, true] {
+                    let mut ps =
+                        include_bytes!("../../../../fixtures/rdna2/x9-scalar-mul-ps.bin").to_vec();
+                    let dst = if alias_right { 33 } else { 32 };
+                    ps[12..16].copy_from_slice(
+                        &(0x80000000 | opcode << 23 | dst << 16 | 33 << 8 | 32).to_le_bytes(),
+                    );
+                    ps[16] = dst as u8;
+                    if constants {
+                        let mut prefix: Vec<u8> = [0xbea003ffu32, a, 0xbea103ff, b]
+                            .into_iter()
+                            .flat_map(u32::to_le_bytes)
+                            .collect();
+                        prefix.extend_from_slice(&ps[8..]);
+                        ps = prefix;
+                    }
+                    let pipeline =
+                        compile_graphics_pipeline(Architecture::Gfx1030, VS, &ps).unwrap();
+                    for flag in [false, true] {
+                        for matches in [true, false] {
+                            let draws = [TriangleDraw {
+                                vertices: &POS,
+                                colors: &COLORS,
+                                viewport: [1, 1],
+                            }];
+                            let states = [TriangleState::default()];
+                            let shaders = [TriangleShader {
+                                source: &pipeline.shader.msl,
+                                entries: ENTRIES,
+                            }];
+                            let uniforms = [DrawUniforms {
+                                required_mask: pipeline.required_uniform_mask,
+                                values: Some([
+                                    a,
+                                    b,
+                                    u32::from(flag),
+                                    result ^ u32::from(!matches),
+                                    0,
+                                    0,
+                                    0,
+                                    0,
+                                ]),
+                            }];
+                            let pass = TriangleTargetsPass {
+                                draws: &draws,
+                                states: &states,
+                                extent: [1, 1],
+                                clears: &[[7, 11, 13, 255]],
+                                clear_depth: None,
+                            };
+                            let actual = gpu
+                                .submit_view_binding_triangle_targets_with_uniforms_rgba8(
+                                    &shaders,
+                                    &pass,
+                                    &[vec![]],
+                                    None,
+                                    &[None],
+                                    &uniforms,
+                                )
+                                .unwrap()
+                                .wait()
+                                .unwrap();
+                            assert_eq!(
+                                actual,
+                                vec![vec![
+                                    if matches { 255 } else { 0 },
+                                    if flag { 255 } else { 0 },
+                                    0,
+                                    255
+                                ]]
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn translated_remaining_scalar_alu_matches_literal_results_flags_and_aliases() {
+    let gpu = NativeCompute::new().unwrap();
+    // Original literal words and SCC expectations; never call production evaluators.
+    let cases: &[(u32, u32, u32, u32, Option<bool>)] = &[
+        (14, 0xaaaaaaaa, 0x55555555, 0x00000000, Some(false)),
+        (14, 0xffffffff, 0xffffffff, 0xffffffff, Some(true)),
+        (14, 0x00000000, 0x00000000, 0x00000000, Some(false)),
+        (16, 0xaaaaaaaa, 0x55555555, 0xffffffff, Some(true)),
+        (16, 0xffffffff, 0xffffffff, 0xffffffff, Some(true)),
+        (16, 0x00000000, 0x00000000, 0x00000000, Some(false)),
+        (18, 0xaaaaaaaa, 0x55555555, 0xffffffff, Some(true)),
+        (18, 0xffffffff, 0xffffffff, 0x00000000, Some(false)),
+        (18, 0x00000000, 0x00000000, 0x00000000, Some(false)),
+        (20, 0xaaaaaaaa, 0x55555555, 0xaaaaaaaa, Some(true)),
+        (20, 0xffffffff, 0xffffffff, 0x00000000, Some(false)),
+        (20, 0x00000000, 0x00000000, 0x00000000, Some(false)),
+        (22, 0xaaaaaaaa, 0x55555555, 0xaaaaaaaa, Some(true)),
+        (22, 0xffffffff, 0xffffffff, 0xffffffff, Some(true)),
+        (22, 0x00000000, 0x00000000, 0xffffffff, Some(true)),
+        (24, 0xaaaaaaaa, 0x55555555, 0xffffffff, Some(true)),
+        (24, 0xffffffff, 0xffffffff, 0x00000000, Some(false)),
+        (24, 0x00000000, 0x00000000, 0xffffffff, Some(true)),
+        (26, 0xaaaaaaaa, 0x55555555, 0x00000000, Some(false)),
+        (26, 0xffffffff, 0xffffffff, 0x00000000, Some(false)),
+        (26, 0x00000000, 0x00000000, 0xffffffff, Some(true)),
+        (28, 0xaaaaaaaa, 0x55555555, 0x00000000, Some(false)),
+        (28, 0xffffffff, 0xffffffff, 0xffffffff, Some(true)),
+        (28, 0x00000000, 0x00000000, 0xffffffff, Some(true)),
+        (30, 0x00000001, 0x0000001f, 0x80000000, Some(true)),
+        (30, 0x00000001, 0x00000020, 0x00000001, Some(true)),
+        (30, 0x00000001, 0x00000021, 0x00000002, Some(true)),
+        (30, 0xffffffff, 0x0000001f, 0x80000000, Some(true)),
+        (30, 0x80000000, 0x00000001, 0x00000000, Some(false)),
+        (32, 0x80000000, 0x0000001f, 0x00000001, Some(true)),
+        (32, 0xffffffff, 0x00000020, 0xffffffff, Some(true)),
+        (32, 0x80000000, 0x00000021, 0x40000000, Some(true)),
+        (32, 0x00000001, 0x00000001, 0x00000000, Some(false)),
+        (32, 0x80000000, 0x00000000, 0x80000000, Some(true)),
+        (34, 0x80000000, 0x0000001f, 0xffffffff, Some(true)),
+        (34, 0x80000000, 0x00000020, 0x80000000, Some(true)),
+        (34, 0x80000000, 0x00000021, 0xc0000000, Some(true)),
+        (34, 0x7fffffff, 0x0000001f, 0x00000000, Some(false)),
+        (34, 0xffffffff, 0x00000000, 0xffffffff, Some(true)),
+        (36, 0x00000000, 0x00000000, 0x00000000, None),
+        (36, 0x0000001f, 0x00000001, 0xfffffffe, None),
+        (36, 0x00000020, 0x00000000, 0x00000000, None),
+        (36, 0x00000021, 0x00000021, 0x00000002, None),
+        (36, 0x00000004, 0x0000001f, 0x80000000, None),
+        (39, 0x80000000, 0x0001001f, 0x00000001, Some(true)),
+        (39, 0x80000000, 0x00200000, 0x80000000, Some(true)),
+        (39, 0x80000000, 0x007f0001, 0x40000000, Some(true)),
+        (39, 0xffff0080, 0x00080000, 0x00000080, Some(true)),
+        (39, 0xffffffff, 0x0000001f, 0x00000000, Some(false)),
+        (39, 0xffffffff, 0x001f0001, 0x7fffffff, Some(true)),
+        (40, 0x80000000, 0x0001001f, 0xffffffff, Some(true)),
+        (40, 0x80000000, 0x00200000, 0x80000000, Some(true)),
+        (40, 0x80000000, 0x007f0001, 0xc0000000, Some(true)),
+        (40, 0xffff0080, 0x00080000, 0xffffff80, Some(true)),
+        (40, 0xffffffff, 0x0000001f, 0x00000000, Some(false)),
+        (40, 0xffffffff, 0x001f0001, 0xffffffff, Some(true)),
+        (44, 0x80000000, 0x00000000, 0x80000000, Some(true)),
+        (44, 0x80000000, 0x00000001, 0x7fffffff, Some(true)),
+        (44, 0x7fffffff, 0xffffffff, 0x80000000, Some(true)),
+        (44, 0x00000007, 0x00000007, 0x00000000, Some(false)),
+        (46, 0x00000001, 0xffffffff, 0x00000001, Some(true)),
+        (47, 0x00000001, 0xffffffff, 0x00000003, Some(true)),
+        (48, 0x00000001, 0xffffffff, 0x00000007, Some(true)),
+        (49, 0x00000001, 0xffffffff, 0x0000000f, Some(true)),
+        (39, 0x80000000, 0x0002001f, 0x00000001, Some(true)),
+        (40, 0x80000000, 0x0002001f, 0xffffffff, Some(true)),
+        (39, 0x80000000, 0x00210001, 0x40000000, Some(true)),
+        (40, 0x80000000, 0x00210001, 0xc0000000, Some(true)),
+        (39, 0x00000080, 0xff88ffe0, 0x00000080, Some(true)),
+        (40, 0x00000080, 0xff88ffe0, 0xffffff80, Some(true)),
+        (46, 0x80000000, 0x00000000, 0x00000000, Some(true)),
+        (46, 0xffffffff, 0x00000001, 0xffffffff, Some(true)),
+        (46, 0x00000001, 0x00000001, 0x00000003, Some(false)),
+        (46, 0x00000000, 0x00000000, 0x00000000, Some(false)),
+        (47, 0x80000000, 0x00000000, 0x00000000, Some(true)),
+        (47, 0xffffffff, 0x00000001, 0xfffffffd, Some(true)),
+        (47, 0x00000001, 0x00000001, 0x00000005, Some(false)),
+        (47, 0x00000000, 0x00000000, 0x00000000, Some(false)),
+        (48, 0x80000000, 0x00000000, 0x00000000, Some(true)),
+        (48, 0xffffffff, 0x00000001, 0xfffffff9, Some(true)),
+        (48, 0x00000001, 0x00000001, 0x00000009, Some(false)),
+        (48, 0x00000000, 0x00000000, 0x00000000, Some(false)),
+        (49, 0x80000000, 0x00000000, 0x00000000, Some(true)),
+        (49, 0xffffffff, 0x00000001, 0xfffffff1, Some(true)),
+        (49, 0x00000001, 0x00000001, 0x00000011, Some(false)),
+        (49, 0x00000000, 0x00000000, 0x00000000, Some(false)),
+    ];
+    for &(opcode, a, b, result, changed) in cases {
+        for alias_right in [false, true] {
+            for constants in [false, true] {
+                let mut ps =
+                    include_bytes!("../../../../fixtures/rdna2/x9-scalar-mul-ps.bin").to_vec();
+                let dst = if alias_right { 33 } else { 32 };
+                ps[12..16].copy_from_slice(
+                    &(0x80000000 | opcode << 23 | dst << 16 | 33 << 8 | 32).to_le_bytes(),
+                );
+                ps[16] = dst as u8;
+                if constants {
+                    let mut prefix: Vec<u8> = [0xbea003ffu32, a, 0xbea103ff, b]
+                        .into_iter()
+                        .flat_map(u32::to_le_bytes)
+                        .collect();
+                    prefix.extend_from_slice(&ps[8..]);
+                    ps = prefix;
+                }
+                let pipeline = compile_graphics_pipeline(Architecture::Gfx1030, VS, &ps).unwrap();
+                for flag in [false, true] {
+                    for matches in [true, false] {
+                        let outgoing = changed.unwrap_or(flag);
+                        let draws = [TriangleDraw {
+                            vertices: &POS,
+                            colors: &COLORS,
+                            viewport: [1, 1],
+                        }];
+                        let states = [TriangleState::default()];
+                        let shaders = [TriangleShader {
+                            source: &pipeline.shader.msl,
+                            entries: ENTRIES,
+                        }];
+                        let uniforms = [DrawUniforms {
+                            required_mask: pipeline.required_uniform_mask,
+                            values: Some([
+                                a,
+                                b,
+                                u32::from(flag),
+                                result ^ u32::from(!matches),
+                                0,
+                                0,
+                                0,
+                                0,
+                            ]),
+                        }];
+                        let pass = TriangleTargetsPass {
+                            draws: &draws,
+                            states: &states,
+                            extent: [1, 1],
+                            clears: &[[7, 11, 13, 255]],
+                            clear_depth: None,
+                        };
+                        let actual = gpu
+                            .submit_view_binding_triangle_targets_with_uniforms_rgba8(
+                                &shaders,
+                                &pass,
+                                &[vec![]],
+                                None,
+                                &[None],
+                                &uniforms,
+                            )
+                            .unwrap()
+                            .wait()
+                            .unwrap();
+                        assert_eq!(
+                            actual,
+                            vec![vec![
+                                if matches { 255 } else { 0 },
+                                if outgoing { 255 } else { 0 },
+                                0,
+                                255
+                            ]]
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
