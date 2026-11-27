@@ -143,6 +143,13 @@ fn exact_opcode_scope_and_each_modifier_bit() {
         for bit in (8..16).chain(59..64) {
             let mut modified = bytes.clone();
             modified[bit / 8] |= 1 << (bit % 8);
+            if bit == 15 && [265, 267, 293, 294, 295].contains(&op) {
+                assert!(matches!(
+                    decode_at(Gfx1030, &modified, 0).unwrap().instruction,
+                    Instruction::VectorClampedE64 { .. }
+                ));
+                continue;
+            }
             assert!(matches!(
                 decode_at(Gfx1030, &modified, 0).unwrap_err().kind,
                 DecodeErrorKind::UnsupportedForm { mnemonic, .. }

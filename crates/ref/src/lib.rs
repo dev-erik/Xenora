@@ -76,6 +76,7 @@ pub enum Op {
         condition: BranchCondition,
     },
     Vector(VectorAlu, u8, CompareSource, u8),
+    Clamped(ClampOp, u8, CompareSource, CompareSource),
     /// VOP2 32-bit integer form: VDST, SRC0 (VGPR, SGPR, `vcc_lo`, inline
     /// integer or literal) and VSRC1. Writes neither VCC nor SCC.
     VectorBinaryAlias(VectorAlias, u8, CompareSource, CompareSource),
@@ -331,6 +332,16 @@ pub enum VectorAlu {
     Xor,
     FloatAdd,
     FloatMultiply,
+}
+
+/// Saturate the mathematical result before narrowing to its 32-bit destination.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ClampOp {
+    MulI24,
+    MulU24,
+    AddU32,
+    SubU32,
+    SubrevU32,
 }
 
 /// Canonical e64 aliases retain two independently decoded generic sources.
@@ -966,10 +977,14 @@ fn decode_vop3_integer(bytes: &[u8], offset: usize) -> Result<(Op, usize), Refer
             .try_into()
             .unwrap(),
     );
-    if first & 0xff00 != 0 || second >> 27 != 0 {
+    let clamp = first & 0x8000 != 0;
+    let opcode = (first >> 16) & 1023;
+    if first & 0x7f00 != 0
+        || second >> 27 != 0
+        || (clamp && !matches!(opcode, 265 | 267 | 293 | 294 | 295))
+    {
         return Err(error(offset, "unsupported VOP3 modifiers"));
     }
-    let opcode = (first >> 16) & 1023;
     let binary = matches!(
         opcode,
         361 | 362
@@ -1041,6 +1056,20 @@ fn decode_vop3_integer(bytes: &[u8], offset: usize) -> Result<(Op, usize), Refer
         .0;
     }
     let dst = first as u8;
+    if clamp {
+        let kind = match opcode {
+            265 => ClampOp::MulI24,
+            267 => ClampOp::MulU24,
+            293 => ClampOp::AddU32,
+            294 => ClampOp::SubU32,
+            295 => ClampOp::SubrevU32,
+            _ => unreachable!(),
+        };
+        return Ok((
+            Op::Clamped(kind, dst, args[0], args[1]),
+            if literal { 12 } else { 8 },
+        ));
+    }
     let op = match opcode {
         293 if matches!(
             (args[0], args[1]),
@@ -1328,6 +1357,7 @@ fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32
                 | Op::BitBinary(_, dst, ..)
                 | Op::VectorProduct(_, dst, ..)
                 | Op::VectorTernary(_, dst, ..)
+                | Op::Clamped(_, dst, ..)
                 | Op::VectorBinaryAlias(_, dst, ..)
                 | Op::VectorInteger(_, dst, ..)
                 | Op::VectorUnary(_, dst, _) => {
@@ -1454,7 +1484,8 @@ fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32
                     results[lane] = Some((dst, kind.apply(value)));
                 }
             }
-            Op::VectorBinaryAlias(_, dst, a, b)
+            Op::Clamped(_, dst, a, b)
+            | Op::VectorBinaryAlias(_, dst, a, b)
             | Op::VectorProduct(_, dst, a, b)
             | Op::BitBinary(_, dst, a, b)
             | Op::VectorTernary(_, dst, a, b, _) => {
@@ -1477,6 +1508,24 @@ fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32
                 for lane in (0..lanes).filter(|&lane| executes(lane)) {
                     let (a, b, c) = (source(lane, a)?, source(lane, b)?, source(lane, c)?);
                     let value = match op {
+                        Op::Clamped(kind, ..) => {
+                            let signed24 = |x: u32| i64::from(((x << 8) as i32) >> 8);
+                            let result = match kind {
+                                ClampOp::MulI24 => signed24(a) * signed24(b),
+                                ClampOp::MulU24 => {
+                                    i64::from(a & 0xffffff) * i64::from(b & 0xffffff)
+                                }
+                                ClampOp::AddU32 => i64::from(a) + i64::from(b),
+                                ClampOp::SubU32 => i64::from(a) - i64::from(b),
+                                ClampOp::SubrevU32 => i64::from(b) - i64::from(a),
+                            };
+                            let (low, high) = if kind == ClampOp::MulI24 {
+                                (i64::from(i32::MIN), i64::from(i32::MAX))
+                            } else {
+                                (0, i64::from(u32::MAX))
+                            };
+                            result.clamp(low, high) as u32
+                        }
                         Op::VectorBinaryAlias(VectorAlias::Integer(kind), ..) => kind.apply(a, b),
                         Op::VectorBinaryAlias(VectorAlias::Legacy(kind), ..) => {
                             vector_alu(kind, a, b, offset)?

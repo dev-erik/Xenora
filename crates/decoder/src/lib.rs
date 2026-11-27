@@ -5,7 +5,7 @@ use std::fmt;
 pub use xenora_isa::{
     Architecture, CompareRelation, ExportTarget, Instruction, InterpolationPhase, ScalarAluOp,
     ScalarCompareOp, ScalarSource, ScalarUnaryOp, VectorAluOp, VectorBinaryOp, VectorBitBinaryOp,
-    VectorCompareOp, VectorProductOp, VectorSource, VectorTernaryOp, VectorUnaryOp,
+    VectorClampOp, VectorCompareOp, VectorProductOp, VectorSource, VectorTernaryOp, VectorUnaryOp,
 };
 use xenora_isa::{
     BUFFER_LOAD_DWORD, BUFFER_STORE_DWORD, EXP, IMAGE_SAMPLE_LZ, IMAGE_STORE, S_BRANCH,
@@ -1109,6 +1109,18 @@ impl CheckedVectorOp {
             _ => return None,
         })
     }
+    fn clamp_op(&self) -> Option<VectorClampOp> {
+        Some(match self {
+            Self::BinaryAlias(VectorBinaryOp::Alu(VectorAluOp::MulI32I24)) => VectorClampOp::MulI24,
+            Self::BinaryAlias(VectorBinaryOp::Alu(VectorAluOp::MulU32U24)) => VectorClampOp::MulU24,
+            Self::BinaryAlias(VectorBinaryOp::Alu(VectorAluOp::AddNcU32)) => VectorClampOp::AddU32,
+            Self::BinaryAlias(VectorBinaryOp::Alu(VectorAluOp::SubNcU32)) => VectorClampOp::SubU32,
+            Self::BinaryAlias(VectorBinaryOp::Alu(VectorAluOp::SubrevNcU32)) => {
+                VectorClampOp::SubrevU32
+            }
+            _ => return None,
+        })
+    }
     fn arity(&self) -> usize {
         match self {
             Self::Product(_) | Self::BitBinary(_) | Self::BinaryAlias(_) => 2,
@@ -1141,7 +1153,13 @@ fn vector_integer_vop3(
 ) -> Result<(Instruction, u8), DecodeErrorKind> {
     let mnemonic = op.mnemonic();
     let second = word(bytes, 8)?;
-    if first & 0xff00 != 0 || second & 0xf8000000 != 0 {
+    let clamped = if first & 0x8000 != 0 {
+        op.clamp_op()
+    } else {
+        None
+    };
+    let forbidden_first = if clamped.is_some() { 0x7f00 } else { 0xff00 };
+    if first & forbidden_first != 0 || second & 0xf8000000 != 0 {
         return Err(unsupported(
             mnemonic,
             "expected no input or output modifiers",
@@ -1192,6 +1210,17 @@ fn vector_integer_vop3(
     }
     let dst = first as u8;
     let [src0, src1, src2] = sources;
+    if let Some(op) = clamped {
+        return Ok((
+            Instruction::VectorClampedE64 {
+                op,
+                dst,
+                src0,
+                src1,
+            },
+            len,
+        ));
+    }
     let instruction = match op {
         CheckedVectorOp::BinaryAlias(VectorBinaryOp::Alu(VectorAluOp::AddNcU32))
             if matches!(

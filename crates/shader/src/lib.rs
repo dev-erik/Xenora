@@ -15,8 +15,8 @@ pub use graphics::{
 pub use xenora_decoder::Architecture;
 use xenora_decoder::{
     DecodeError, DecodedInstruction, Instruction, ScalarSource, VectorBinary, VectorBinaryOp,
-    VectorBitBinaryOp, VectorCompareOp, VectorProductOp, VectorSource, VectorTernaryOp,
-    VectorUnaryOp,
+    VectorBitBinaryOp, VectorClampOp, VectorCompareOp, VectorProductOp, VectorSource,
+    VectorTernaryOp, VectorUnaryOp,
 };
 
 /// SGPR index of `vcc_lo`.
@@ -183,6 +183,7 @@ impl Op {
                         format!("{left} {symbol} ({right} & 31u)")
                     }
                     Binary::Vector(operation) => vector_expression(operation, &left, &right),
+                    Binary::Clamped(op) => clamped_expression(op, &left, &right),
                     _ => format!("{left} {symbol} {right}"),
                 }
             }
@@ -243,6 +244,7 @@ enum Binary {
     FloatMul,
     /// A registry VOP2 integer operation, lowered by its typed template.
     Vector(VectorBinary),
+    Clamped(VectorClampOp),
 }
 
 impl Binary {
@@ -257,6 +259,7 @@ impl Binary {
             Self::Xor => ("xor.b32", "^"),
             Self::FloatAdd => ("add.f32", "+"),
             Self::FloatMul => ("mul.f32", "*"),
+            Self::Clamped(op) => (op.mnemonic(), ""),
             Self::Vector(operation) => (
                 match operation {
                     VectorBinary::Add => "add.u32",
@@ -304,6 +307,30 @@ fn vector_expression(operation: VectorBinary, left: &str, right: &str) -> String
             format!("as_type<uint>(mulhi({}, {}))", i24(left), i24(right))
         }
         VectorBinary::MulHi24Unsigned => format!("mulhi({}, {})", u24(left), u24(right)),
+    }
+}
+
+// Integer saturation is applied to the mathematical result before narrowing.
+// Products use low/high32 words instead of requiring Metal64-bit arithmetic.
+fn clamped_expression(op: VectorClampOp, a: &str, b: &str) -> String {
+    match op {
+        VectorClampOp::AddU32 => {
+            format!("(({a}) > (0xffffffffu - ({b})) ? 0xffffffffu : (({a}) + ({b})))")
+        }
+        VectorClampOp::SubU32 => format!("(({a}) < ({b}) ? 0u : (({a}) - ({b})))"),
+        VectorClampOp::SubrevU32 => format!("(({b}) < ({a}) ? 0u : (({b}) - ({a})))"),
+        VectorClampOp::MulU24 => {
+            let low = vector_expression(VectorBinary::Mul24Unsigned, a, b);
+            let high = vector_expression(VectorBinary::MulHi24Unsigned, a, b);
+            format!("(({high}) != 0u ? 0xffffffffu : ({low}))")
+        }
+        VectorClampOp::MulI24 => {
+            let low = vector_expression(VectorBinary::Mul24Signed, a, b);
+            let high = vector_expression(VectorBinary::MulHi24Signed, a, b);
+            let limit =
+                format!("(((({a}) ^ ({b})) & 0x00800000u) != 0u ? 0x80000000u : 0x7fffffffu)");
+            format!("(({high}) == (0u - (({low}) >> 31u)) ? ({low}) : {limit})")
+        }
     }
 }
 
@@ -869,6 +896,7 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
                 | Instruction::VectorUnary { .. }
                 | Instruction::VectorUnaryE64 { .. }
                 | Instruction::VectorBinaryE64 { .. }
+                | Instruction::VectorClampedE64 { .. }
                 | Instruction::VectorProduct { .. }
                 | Instruction::VectorBitBinary { .. }
                 | Instruction::VectorTernary { .. } => continue,
@@ -1231,6 +1259,41 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
                     };
                 }
                 (Some(dst), Op::Product(op, values[0], values[1]))
+            }
+            Instruction::VectorClampedE64 {
+                op,
+                dst,
+                src0,
+                src1,
+            } => {
+                let mut values = [Value(0); 2];
+                for (slot, src) in values.iter_mut().zip([src0, src1]) {
+                    *slot = match src {
+                        VectorSource::Register(register) => read(register)?,
+                        VectorSource::Scalar(register) if usize::from(register) == VCC_LO => {
+                            match (lane_vcc, scalars[VCC_LO]) {
+                                (Some(mask), _) => mask,
+                                (None, Some(bits)) => {
+                                    constant(&mut operations, &mut facts, offset, bits)
+                                }
+                                (None, None) => {
+                                    return Err(error("VOP3 integer reads uninitialized VCC_LO"));
+                                }
+                            }
+                        }
+                        VectorSource::Scalar(register) => {
+                            let bits = read_scalar(ScalarSource::Register(register))?;
+                            constant(&mut operations, &mut facts, offset, bits)
+                        }
+                        VectorSource::Immediate(bits) => {
+                            constant(&mut operations, &mut facts, offset, bits)
+                        }
+                    };
+                }
+                (
+                    Some(dst),
+                    Op::Binary(Binary::Clamped(op), values[0], values[1]),
+                )
             }
             Instruction::VectorBinaryE64 {
                 op,

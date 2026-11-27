@@ -109,7 +109,7 @@ fn rejects_other_opcodes_and_noncanonical_operands() {
         (&[0x7d84_04f9, 0x0606_0601], "v_cmp_eq_u32_e32"), // SDWA.
         (&[0x7d84_04fa, 0], "v_cmp_eq_u32_e32"), // DPP16.
         (&[0x7e04_02fa, 0], "v_mov_b32_e32"),
-        (&[0xd525_8001, 0x0202_0501], "v_add_nc_u32_e64"),
+        (&[0xd525_8101, 0x0202_0501], "v_add_nc_u32_e64"),
         (&[0xd525_0001, 0x0002_0480], "v_add_nc_u32_e64"),
         (&[0xbf81_0001], "s_endpgm"),
         (&[0xbefc_0387], "s_mov_b32"),
@@ -590,6 +590,23 @@ fn reference_op(instruction: Instruction) -> Op {
             },
             src1,
         ),
+        Instruction::VectorClampedE64 {
+            op,
+            dst,
+            src0,
+            src1,
+        } => Op::Clamped(
+            match op {
+                xenora_decoder::VectorClampOp::MulI24 => xenora_ref::ClampOp::MulI24,
+                xenora_decoder::VectorClampOp::MulU24 => xenora_ref::ClampOp::MulU24,
+                xenora_decoder::VectorClampOp::AddU32 => xenora_ref::ClampOp::AddU32,
+                xenora_decoder::VectorClampOp::SubU32 => xenora_ref::ClampOp::SubU32,
+                xenora_decoder::VectorClampOp::SubrevU32 => xenora_ref::ClampOp::SubrevU32,
+            },
+            dst,
+            reference_vector_source(src0),
+            reference_vector_source(src1),
+        ),
         Instruction::VectorBinaryE64 {
             op,
             dst,
@@ -714,6 +731,7 @@ fn compares_fixture_instructions_against_llvm() {
         include_bytes!("../../../fixtures/rdna2/vop3-arithmetic.bin"),
         include_bytes!("../../../fixtures/rdna2/vop3-minmax.bin"),
         include_bytes!("../../../fixtures/rdna2/vop3-aliases.bin"),
+        include_bytes!("../../../fixtures/rdna2/vop3-clamp.bin"),
         include_bytes!("../../../fixtures/rdna2/vector-compare.bin"),
         high_registers,
         &matrix,
@@ -1183,6 +1201,9 @@ fn normalize_llvm_assembly(assembly: &str, next_offset: usize) -> String {
         | "v_ffbh_u32_e64"
         | "v_ffbl_b32_e64"
         | "v_ffbh_i32_e64" => {
+            let (operands, suffix) = operands
+                .strip_suffix(" clamp")
+                .map_or((operands, ""), |operands| (operands, " clamp"));
             let parts: Vec<_> = operands
                 .split(", ")
                 .map(|operand| {
@@ -1191,7 +1212,7 @@ fn normalize_llvm_assembly(assembly: &str, next_offset: usize) -> String {
                         .map_or_else(|| operand.to_owned(), |bits| format!("0x{bits:x}"))
                 })
                 .collect();
-            format!("{mnemonic} {}", parts.join(", "))
+            format!("{mnemonic} {}{suffix}", parts.join(", "))
         }
         // VOPC and the registry VOP2 forms print SRC0 (the second operand) as bits.
         mnemonic
@@ -2500,6 +2521,128 @@ fn llvm_vop3_alias_sources_match_exact_bytes_and_reference() {
         let output = llvm_mc(
             &[],
             format!("{name} v5, 0x12345678, 0x87654321\n").as_bytes(),
+        );
+        assert!(!output.status.success());
+        assert!(String::from_utf8_lossy(&output.stderr).contains("only one unique literal"));
+    }
+}
+
+#[test]
+#[ignore = "requires native LLVM with the AMDGPU target"]
+fn llvm_vop3_clamp_sources_match_exact_bytes_and_reference() {
+    let mut rows = Vec::new();
+    for (opcode, name, arity) in [
+        (265, "v_mul_i32_i24_e64", 2),
+        (267, "v_mul_u32_u24_e64", 2),
+        (293, "v_add_nc_u32_e64", 2),
+        (294, "v_sub_nc_u32_e64", 2),
+        (295, "v_subrev_nc_u32_e64", 2),
+    ] {
+        let mut add = |raw: [u32; 3], spellings: [&str; 3], dst: u32| {
+            let line = format!("{name} v{dst}, {} clamp", spellings[..arity].join(", "));
+            let mut words = vec![
+                0xd4008000 | opcode << 16 | dst,
+                raw[0] | raw[1] << 9 | raw[2] << 18,
+            ];
+            if raw[..arity].contains(&255) {
+                words.push(0x12345678);
+            }
+            rows.push((
+                line,
+                words
+                    .into_iter()
+                    .flat_map(u32::to_le_bytes)
+                    .collect::<Vec<_>>(),
+            ));
+        };
+        for position in 0..arity {
+            for (selector, spelling) in [
+                (0, "s0"),
+                (105, "s105"),
+                (106, "vcc_lo"),
+                (128, "0"),
+                (192, "64"),
+                (193, "-1"),
+                (208, "-16"),
+                (240, "0.5"),
+                (248, "0x3e22f983"),
+                (255, "0x12345678"),
+                (256, "v0"),
+                (511, "v255"),
+            ] {
+                let mut raw = [257, if arity == 1 { 128 } else { 258 }, 128];
+                let mut text = ["v1", "v2", "v3"];
+                raw[position] = selector;
+                text[position] = spelling;
+                for dst in [0, 255] {
+                    add(raw, text, dst);
+                }
+            }
+        }
+        for mask in 1..(1 << arity) {
+            let mut raw = [257, if arity == 1 { 128 } else { 258 }, 128];
+            let mut text = ["v1", "v2", "v3"];
+            for index in 0..arity {
+                if mask & (1 << index) != 0 {
+                    raw[index] = 255;
+                    text[index] = "0x12345678";
+                }
+            }
+            add(raw, text, 5);
+        }
+        if arity == 3 {
+            for (raw, text) in [
+                ([1, 1, 105], ["s1", "s1", "s105"]),
+                ([106, 105, 106], ["vcc_lo", "s105", "vcc_lo"]),
+                ([1, 105, 129], ["s1", "s105", "1"]),
+                ([1, 255, 255], ["s1", "0x12345678", "0x12345678"]),
+            ] {
+                add(raw, text, 5);
+            }
+        }
+    }
+    assert_eq!(rows.len(), 255);
+    let assembly = rows
+        .iter()
+        .map(|(line, _)| format!("{line}\n"))
+        .collect::<String>();
+    let output = llvm_mc(&[], assembly.as_bytes());
+    assert_llvm_success(&output);
+    let text = String::from_utf8(output.stdout).unwrap();
+    let encoded: Vec<_> = text
+        .lines()
+        .filter_map(|line| line.split_once("; encoding: ["))
+        .map(|(_, encoding)| encoding_bytes(encoding))
+        .collect();
+    assert_eq!(encoded.len(), rows.len());
+    for (actual, (line, expected)) in encoded.iter().zip(&rows) {
+        assert_eq!(actual, expected, "{line}");
+        let decoded = decode_at(Architecture::Gfx1030, actual, 0).unwrap();
+        assert_eq!(usize::from(decoded.byte_len), expected.len());
+        let reference = xenora_ref::decode(actual).unwrap();
+        assert_eq!(reference.len(), 1);
+        assert_eq!(reference[0].byte_len, expected.len());
+        assert_eq!(reference[0].op, reference_op(decoded.instruction), "{line}");
+    }
+    let stream: Vec<_> = encoded.into_iter().flatten().collect();
+    let decoded = decode(Architecture::Gfx1030, &stream).unwrap();
+    assert_eq!(decoded.len(), rows.len());
+    let mut offset = 0;
+    for (actual, (_, expected)) in decoded.iter().zip(&rows) {
+        assert_eq!(actual.offset, offset);
+        offset += expected.len();
+    }
+    assert_eq!(offset, stream.len());
+    for name in [
+        "v_mul_i32_i24_e64",
+        "v_mul_u32_u24_e64",
+        "v_add_nc_u32_e64",
+        "v_sub_nc_u32_e64",
+        "v_subrev_nc_u32_e64",
+    ] {
+        let output = llvm_mc(
+            &[],
+            format!("{name} v5, 0x12345678, 0x87654321 clamp\n").as_bytes(),
         );
         assert!(!output.status.success());
         assert!(String::from_utf8_lossy(&output.stderr).contains("only one unique literal"));

@@ -121,6 +121,7 @@ enum Insn {
         src0: CmpSrc,
         src1: u8,
     },
+    VSaturate(u32, u8, CmpSrc, CmpSrc),
     VAlias(u32, u8, CmpSrc, CmpSrc),
     VAddNc(u8, u8, u8),
     VMulLow(u8, CmpSrc, CmpSrc),
@@ -790,7 +791,8 @@ fn lane_step(
     let read_vcc = || sgpr[106].ok_or_else(|| format!("{offset:#x}: uninitialized vcc_lo"));
     // New VOP3 forms capture every source before committing, including SRC2.
     let vop3 = match insn {
-        Insn::VAlias(_, d, a, b)
+        Insn::VSaturate(_, d, a, b)
+        | Insn::VAlias(_, d, a, b)
         | Insn::VMulLow(d, a, b)
         | Insn::VMulHighUnsigned(d, a, b)
         | Insn::VMask(d, a, b)
@@ -850,6 +852,53 @@ fn lane_step(
                         .wrapping_sub(if b >= 0x80000000 { a } else { 0 }),
                 }
             }
+            Insn::VSaturate(kind, ..) => match kind {
+                265 | 267 => {
+                    let (fa, fb) = (a % 0x1000000, b % 0x1000000);
+                    let na = kind == 265 && fa >= 0x800000;
+                    let nb = kind == 265 && fb >= 0x800000;
+                    let ma = if na { 0x1000000 - fa } else { fa };
+                    let mb = if nb { 0x1000000 - fb } else { fb };
+                    let negative = na != nb;
+                    let limit = if kind == 267 {
+                        u32::MAX
+                    } else if negative {
+                        0x80000000
+                    } else {
+                        0x7fffffff
+                    };
+                    // Check magnitude against the quotient before multiplying.
+                    let magnitude = if mb != 0 && ma > limit / mb {
+                        limit
+                    } else {
+                        ma * mb
+                    };
+                    if negative {
+                        ripple(!magnitude, 0, true).0
+                    } else {
+                        magnitude
+                    }
+                }
+                293 => {
+                    let (sum, carry) = ripple(a, b, false);
+                    if carry { u32::MAX } else { sum }
+                }
+                294 => {
+                    if a < b {
+                        0
+                    } else {
+                        ripple(a, !b, true).0
+                    }
+                }
+                295 => {
+                    if b < a {
+                        0
+                    } else {
+                        ripple(b, !a, true).0
+                    }
+                }
+                _ => unreachable!(),
+            },
             Insn::VAlias(kind, ..) => match kind {
                 22 => b / 2u32.pow(a % 32),
                 24 => i64::from(b as i32).div_euclid(2i64.pow(a % 32)) as u32,
@@ -1412,7 +1461,11 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
         )
     {
         let next = word(code, offset + 4).map_err(|_| fail("truncated VOP3 instruction"))?;
-        if (first / 256) % 256 != 0 || next / (1 << 27) != 0 {
+        let clamp = (first / 32768) % 2 != 0;
+        if (first / 256) % 128 != 0
+            || next / (1 << 27) != 0
+            || (clamp && !matches!(opcode, 265 | 267 | 293 | 294 | 295))
+        {
             return Err(fail("unsupported VOP3 modifiers"));
         }
         let raw = [next % 512, (next / 512) % 512, (next / 262144) % 512];
@@ -1485,6 +1538,12 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
             };
         }
         let dst = first as u8;
+        if clamp {
+            return Ok((
+                Insn::VSaturate(opcode, dst, args[0], args[1]),
+                if has_literal { 12 } else { 8 },
+            ));
+        }
         let insn = match opcode {
             293 if raw[0] >= 256 && raw[1] >= 256 => Insn::VAddNc(dst, raw[0] as u8, raw[1] as u8),
             265 => Insn::VAlias(9, dst, args[0], args[1]),

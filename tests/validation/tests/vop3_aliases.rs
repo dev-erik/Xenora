@@ -304,7 +304,17 @@ fn decode_rejections_padding_modifiers_truncations() {
         for bit in (8..16).chain(27..32) {
             let mut w = insn(op, 2, [129, 129, 128]);
             w[usize::from(bit >= 27)] |= 1 << bit;
-            reject(&program(&w, 2), 12, true, "modifier");
+            if bit == 15 && matches!(op, 265 | 267 | 293..=295) {
+                // The five integer saturation modes now accept the clamp bit.
+                let expected = match op {
+                    265 | 267 => 1,
+                    293 => 2,
+                    _ => 0,
+                };
+                check(&program(&w, 2), &[0], &[expected]);
+            } else {
+                reject(&program(&w, 2), 12, true, "modifier");
+            }
         }
     }
 }

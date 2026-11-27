@@ -77,7 +77,7 @@ llvm = "three-way passed"
 
 [[instruction]]
 form = "v_add_nc_u32_e64"
-encoding = "VOP3; checked binary sources; canonical unused SRC2; original VGPR runtime-region behavior retained"
+encoding = "VOP3; checked binary sources; canonical unused SRC2; original VGPR runtime-region behavior retained; integer clamp bit15 supported"
 representation = "8 B or 12 B with shared literal"
 lowering = "MSL unsigned add"
 reference = "implemented"
@@ -86,6 +86,7 @@ gpu = "fixture verified"
 recognized = true
 decoded = true
 llvm = "three-way passed"
+
 
 [[instruction]]
 form = "buffer_store_dword"
@@ -1864,7 +1865,7 @@ llvm = "three-way passed"
 
 [[instruction]]
 form = "v_mul_i32_i24_e64"
-encoding = "VOP3; checked active sources and canonical unused inline-zero fields; modifiers excluded"
+encoding = "VOP3; checked active sources and canonical unused inline-zero fields; modifiers excluded; integer clamp bit15 supported"
 representation = "8 B or 12 B with shared literal"
 lowering = "existing integer primitive; compute and graphics"
 reference = "implemented"
@@ -1873,6 +1874,7 @@ gpu = "fixture verified"
 recognized = true
 decoded = true
 llvm = "three-way passed"
+
 
 [[instruction]]
 form = "v_mul_hi_i32_i24_e64"
@@ -1888,7 +1890,7 @@ llvm = "three-way passed"
 
 [[instruction]]
 form = "v_mul_u32_u24_e64"
-encoding = "VOP3; checked active sources and canonical unused inline-zero fields; modifiers excluded"
+encoding = "VOP3; checked active sources and canonical unused inline-zero fields; modifiers excluded; integer clamp bit15 supported"
 representation = "8 B or 12 B with shared literal"
 lowering = "existing integer primitive; compute and graphics"
 reference = "implemented"
@@ -1897,6 +1899,7 @@ gpu = "fixture verified"
 recognized = true
 decoded = true
 llvm = "three-way passed"
+
 
 [[instruction]]
 form = "v_mul_hi_u32_u24_e64"
@@ -1972,7 +1975,7 @@ llvm = "three-way passed"
 
 [[instruction]]
 form = "v_sub_nc_u32_e64"
-encoding = "VOP3; checked active sources and canonical unused inline-zero fields; modifiers excluded"
+encoding = "VOP3; checked active sources and canonical unused inline-zero fields; modifiers excluded; integer clamp bit15 supported"
 representation = "8 B or 12 B with shared literal"
 lowering = "existing integer primitive; compute and graphics"
 reference = "implemented"
@@ -1982,9 +1985,10 @@ recognized = true
 decoded = true
 llvm = "three-way passed"
 
+
 [[instruction]]
 form = "v_subrev_nc_u32_e64"
-encoding = "VOP3; checked active sources and canonical unused inline-zero fields; modifiers excluded"
+encoding = "VOP3; checked active sources and canonical unused inline-zero fields; modifiers excluded; integer clamp bit15 supported"
 representation = "8 B or 12 B with shared literal"
 lowering = "existing integer primitive; compute and graphics"
 reference = "implemented"
@@ -1993,6 +1997,7 @@ gpu = "fixture verified"
 recognized = true
 decoded = true
 llvm = "three-way passed"
+
 
 [[instruction]]
 form = "v_lshlrev_b32_e64"

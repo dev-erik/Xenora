@@ -760,6 +760,7 @@ fn lift(
                 | Instruction::VectorUnary { dst, .. }
                 | Instruction::VectorUnaryE64 { dst, .. }
                 | Instruction::VectorBinaryE64 { dst, .. }
+                | Instruction::VectorClampedE64 { dst, .. }
                 | Instruction::VectorProduct { dst, .. }
                 | Instruction::VectorBitBinary { dst, .. }
                 | Instruction::VectorTernary { dst, .. }
@@ -1159,6 +1160,39 @@ fn lift(
                     };
                 }
                 let result = ir.push(Some(offset), Op::IntegerProduct(op, values[0], values[1]));
+                registers[usize::from(dst)] = Some(result);
+            }
+            Instruction::VectorClampedE64 {
+                op,
+                dst,
+                src0,
+                src1,
+            } if !exporting => {
+                if stage == Stage::Pixel && dst < 2 {
+                    return Err(error("pixel VGPRs 0 and 1 are reserved for interpolation"));
+                }
+                let mut values = [Value(0); 2];
+                for (slot, src) in values.iter_mut().zip([src0, src1]) {
+                    *slot = match src {
+                        VectorSource::Register(register) => read(register)?,
+                        VectorSource::Immediate(bits) => {
+                            ir.push(Some(offset), Op::ScalarBits(ScalarValue::Constant(bits)))
+                        }
+                        VectorSource::Scalar(register) => {
+                            let source = read_scalar(
+                                ScalarSource::Register(register),
+                                &scalars,
+                                &mut ir.uniform_mask,
+                                offset,
+                            )?;
+                            ir.push(Some(offset), Op::ScalarBits(source))
+                        }
+                    };
+                }
+                let result = ir.push(
+                    Some(offset),
+                    Op::IntegerBinary(Binary::Clamped(op), values[0], values[1]),
+                );
                 registers[usize::from(dst)] = Some(result);
             }
             Instruction::VectorBinaryE64 {
@@ -2613,6 +2647,7 @@ fn emit_range(
                 let b = format!("as_type<uint>({right})");
                 let expression = match operator {
                     Binary::Vector(operation) => super::vector_expression(operation, &a, &b),
+                    Binary::Clamped(op) => super::clamped_expression(op, &a, &b),
                     Binary::Add => format!("{a} + {b}"),
                     Binary::And => format!("{a} & {b}"),
                     Binary::Or => format!("{a} | {b}"),

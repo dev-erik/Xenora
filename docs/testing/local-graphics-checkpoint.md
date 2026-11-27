@@ -6,6 +6,33 @@ claim of Xbox hardware equivalence. Supporting raw logs, mutation records and
 source manifests remain local and are not distributed with the repository.
 The array-range descriptor increment below was validated on 26 November 2026.
 
+## Stage 3.1 increment: five integer saturation modes
+
+27 November 2026. Integer clamp bit15 now saturates signed/unsigned24 multiply,
+unsigned ADD_NC, SUB_NC and SUBREV_NC before narrowing. These are five operand
+modes, with no new encoding identities. Both independent reviewers accepted the
+implementation. Multiplication saturation is derived from the AMD global clamp
+rule and operand/result types; ALIGNBIT clamp remains unsupported.
+
+Final unchanged-source checks passed348 CPU tests (fourteen ignored),27 LLVM
+tests including255 clamp-mode rows and1078 three-way comparisons across158
+forms,15 compute tests including52 native dispatches, and two native graphics
+tests covering225 draws. Graphics admission checks cover50 operation/mode
+combinations. Native execution used Apple M4 Max with API/shader validation;
+counts of dispatches/draws derive from loops. Wrapping and saturation are checked
+side by side, with signed boundary/cancellation-free multiply and upper-byte
+invariance anchors. Flags and old unclamped ADD runtime behavior are retained.
+
+Three mutations were assertion-killed and restored: wrapping addition instead
+of saturation, narrowing a signed product first, and reversed subtraction order.
+All nine gates passed in `artifacts/validation-full.j5Nwmu`: workspace1281
+passed/0 failed/170 ignored; GPU506 passed/0 failed/1 ignored (overlap).
+Native audit checked143 executables. The24-file final manifest and five logs are
+in `artifacts/s31-clamp/`; independent reports are
+`artifacts/s31-clamp-r1-review.md` and `s31-clamp-r2-review.md`.
+Only acceptance documentation changed afterward. Full S3.1 remains open; no
+AMD/Xbox hardware equivalence or game execution is established by these tests.
+
 ## Stage 3.1 increment: canonical integer e64 aliases
 
 27 November 2026. Eighteen binary and five unary aliases reuse existing integer

@@ -517,3 +517,6 @@ mod vop3_minmax_graphics;
 
 #[path = "native/vop3_alias_graphics.rs"]
 mod vop3_alias_graphics;
+
+#[path = "native/vop3_clamp_graphics.rs"]
+mod vop3_clamp_graphics;

@@ -116,6 +116,33 @@ impl VectorBinaryOp {
     }
 }
 
+/// Integer saturation to the signed or unsigned 32-bit destination range.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum VectorClampOp {
+    /// Saturating `v_mul_i32_i24`.
+    MulI24,
+    /// Saturating `v_mul_u32_u24`.
+    MulU24,
+    /// Saturating `v_add_nc_u32`.
+    AddU32,
+    /// Saturating `v_sub_nc_u32`.
+    SubU32,
+    /// Saturating `v_subrev_nc_u32`.
+    SubrevU32,
+}
+impl VectorClampOp {
+    /// Canonical e64 mnemonic (the clamp suffix belongs to the instruction).
+    pub const fn mnemonic(self) -> &'static str {
+        match self {
+            Self::MulI24 => "v_mul_i32_i24_e64",
+            Self::MulU24 => "v_mul_u32_u24_e64",
+            Self::AddU32 => "v_add_nc_u32_e64",
+            Self::SubU32 => "v_sub_nc_u32_e64",
+            Self::SubrevU32 => "v_subrev_nc_u32_e64",
+        }
+    }
+}
+
 /// Full-width, value-only 32-bit vector product.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum VectorProductOp {
@@ -362,6 +389,13 @@ pub enum Instruction {
         src0: VectorSource,
         src1: VectorSource,
     },
+    /// Saturating e64 integer operation; preserves SCC, VCC and EXEC.
+    VectorClampedE64 {
+        op: VectorClampOp,
+        dst: u8,
+        src0: VectorSource,
+        src1: VectorSource,
+    },
     /// Canonical e64 integer binary alias; preserves SCC, VCC and EXEC.
     VectorBinaryE64 {
         op: VectorBinaryOp,
@@ -580,6 +614,7 @@ impl Instruction {
             Self::MoveB32 { .. } => "v_mov_b32_e32",
             Self::AddNoCarryU32 { .. } => "v_add_nc_u32_e64",
             Self::VectorProduct { op, .. } => op.mnemonic(),
+            Self::VectorClampedE64 { op, .. } => op.mnemonic(),
             Self::VectorBinaryE64 { op, .. } => op.assembly_name(),
             Self::VectorUnaryE64 { op, .. } => match op {
                 VectorUnaryOp::NotB32 => "v_not_b32_e64",
@@ -702,6 +737,9 @@ impl fmt::Display for Instruction {
                 src2,
                 ..
             } => write!(formatter, " v{dst}, {src0}, {src1}, {src2}"),
+            Self::VectorClampedE64 {
+                dst, src0, src1, ..
+            } => write!(formatter, " v{dst}, {src0}, {src1} clamp"),
             Self::VectorUnary { dst, src, .. } | Self::VectorUnaryE64 { dst, src, .. } => {
                 write!(formatter, " v{dst}, {src}")
             }
