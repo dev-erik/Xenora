@@ -137,6 +137,18 @@ pub enum VectorTernaryOp {
     AddLshlU32,
     /// `v_lshl_or_b32`.
     LshlOrB32,
+    /// `v_min3_i32`.
+    Min3I32,
+    /// `v_min3_u32`.
+    Min3U32,
+    /// `v_max3_i32`.
+    Max3I32,
+    /// `v_max3_u32`.
+    Max3U32,
+    /// `v_med3_i32`.
+    Med3I32,
+    /// `v_med3_u32`.
+    Med3U32,
 }
 
 impl VectorTernaryOp {
@@ -154,6 +166,12 @@ impl VectorTernaryOp {
             Self::LshlAddU32 => "v_lshl_add_u32",
             Self::AddLshlU32 => "v_add_lshl_u32",
             Self::LshlOrB32 => "v_lshl_or_b32",
+            Self::Min3I32 => "v_min3_i32",
+            Self::Min3U32 => "v_min3_u32",
+            Self::Max3I32 => "v_max3_i32",
+            Self::Max3U32 => "v_max3_u32",
+            Self::Med3I32 => "v_med3_i32",
+            Self::Med3U32 => "v_med3_u32",
         }
     }
 }

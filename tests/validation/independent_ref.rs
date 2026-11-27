@@ -128,6 +128,12 @@ enum Insn {
     VBitSelect(u8, CmpSrc, CmpSrc, CmpSrc),
     VAddThree(u8, CmpSrc, CmpSrc, CmpSrc),
     VAndOr(u8, CmpSrc, CmpSrc, CmpSrc),
+    VLeastSigned(u8, CmpSrc, CmpSrc, CmpSrc),
+    VLeastUnsigned(u8, CmpSrc, CmpSrc, CmpSrc),
+    VGreatestSigned(u8, CmpSrc, CmpSrc, CmpSrc),
+    VGreatestUnsigned(u8, CmpSrc, CmpSrc, CmpSrc),
+    VMiddleSigned(u8, CmpSrc, CmpSrc, CmpSrc),
+    VMiddleUnsigned(u8, CmpSrc, CmpSrc, CmpSrc),
     VSignedField(u8, CmpSrc, CmpSrc, CmpSrc),
     VShiftThenSum(u8, CmpSrc, CmpSrc, CmpSrc),
     VSumThenShift(u8, CmpSrc, CmpSrc, CmpSrc),
@@ -788,7 +794,13 @@ fn lane_step(
         | Insn::VMask(d, a, b)
         | Insn::VCountAdd(d, a, b)
         | Insn::VMulHighSigned(d, a, b) => Some((d, [a, b, CmpSrc::Imm(0)])),
-        Insn::VSignedField(d, a, b, c)
+        Insn::VLeastSigned(d, a, b, c)
+        | Insn::VLeastUnsigned(d, a, b, c)
+        | Insn::VGreatestSigned(d, a, b, c)
+        | Insn::VGreatestUnsigned(d, a, b, c)
+        | Insn::VMiddleSigned(d, a, b, c)
+        | Insn::VMiddleUnsigned(d, a, b, c)
+        | Insn::VSignedField(d, a, b, c)
         | Insn::VShiftThenSum(d, a, b, c)
         | Insn::VSumThenShift(d, a, b, c)
         | Insn::VShiftUnion(d, a, b, c)
@@ -849,6 +861,53 @@ fn lane_step(
                 let low = a % 65536 + b % 65536 + c % 65536;
                 let high = a / 65536 + b / 65536 + c / 65536 + low / 65536;
                 low % 65536 + (high % 65536) * 65536
+            }
+            Insn::VLeastSigned(..)
+            | Insn::VLeastUnsigned(..)
+            | Insn::VGreatestSigned(..)
+            | Insn::VGreatestUnsigned(..)
+            | Insn::VMiddleSigned(..)
+            | Insn::VMiddleUnsigned(..) => {
+                // Bias only comparison keys. Select original words and use
+                // inclusive ranks so equal inputs retain their repeated value.
+                let bias = if matches!(
+                    insn,
+                    Insn::VLeastSigned(..) | Insn::VGreatestSigned(..) | Insn::VMiddleSigned(..)
+                ) {
+                    0x80000000
+                } else {
+                    0
+                };
+                let (ka, kb, kc) = (a ^ bias, b ^ bias, c ^ bias);
+                match insn {
+                    Insn::VLeastSigned(..) | Insn::VLeastUnsigned(..) => {
+                        if ka <= kb && ka <= kc {
+                            a
+                        } else if kb <= kc {
+                            b
+                        } else {
+                            c
+                        }
+                    }
+                    Insn::VGreatestSigned(..) | Insn::VGreatestUnsigned(..) => {
+                        if ka >= kb && ka >= kc {
+                            a
+                        } else if kb >= kc {
+                            b
+                        } else {
+                            c
+                        }
+                    }
+                    _ => {
+                        if (kb <= ka && ka <= kc) || (kc <= ka && ka <= kb) {
+                            a
+                        } else if (ka <= kb && kb <= kc) || (kc <= kb && kb <= ka) {
+                            b
+                        } else {
+                            c
+                        }
+                    }
+                }
             }
             Insn::VSignedField(..) => {
                 let start = b % 32;
@@ -1310,6 +1369,12 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
                 | 838
                 | 839
                 | 879
+                | 338
+                | 339
+                | 341
+                | 342
+                | 344
+                | 345
         )
     {
         let next = word(code, offset + 4).map_err(|_| fail("truncated VOP3 instruction"))?;
@@ -1364,6 +1429,12 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
             330 => Insn::VBitSelect(dst, args[0], args[1], args[2]),
             877 => Insn::VAddThree(dst, args[0], args[1], args[2]),
             881 => Insn::VAndOr(dst, args[0], args[1], args[2]),
+            338 => Insn::VLeastSigned(dst, args[0], args[1], args[2]),
+            339 => Insn::VLeastUnsigned(dst, args[0], args[1], args[2]),
+            341 => Insn::VGreatestSigned(dst, args[0], args[1], args[2]),
+            342 => Insn::VGreatestUnsigned(dst, args[0], args[1], args[2]),
+            344 => Insn::VMiddleSigned(dst, args[0], args[1], args[2]),
+            345 => Insn::VMiddleUnsigned(dst, args[0], args[1], args[2]),
             329 => Insn::VSignedField(dst, args[0], args[1], args[2]),
             838 => Insn::VShiftThenSum(dst, args[0], args[1], args[2]),
             839 => Insn::VSumThenShift(dst, args[0], args[1], args[2]),

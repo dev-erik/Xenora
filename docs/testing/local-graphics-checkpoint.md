@@ -6,6 +6,29 @@ claim of Xbox hardware equivalence. Supporting raw logs, mutation records and
 source manifests remain local and are not distributed with the repository.
 The array-range descriptor increment below was validated on 26 November 2026.
 
+## Stage 3.1 increment: three-input integer ordering
+
+27 November 2026. Signed and unsigned MIN3, MAX3 and MED3 preserve source words,
+including ties and all-equal inputs. Both independent reviewers accepted the six
+forms. Full S3.1 remains open beyond these bounded operand contracts.
+
+Final unchanged-source checks passed 335 CPU tests (twelve ignored), 25 LLVM
+tests including 498 new matrix rows and 964 three-way comparisons across 136
+forms, 16 compute tests including 85 native dispatches, and two native graphics
+tests covering 222 draws. Graphics admission tests cover all 22 VOP3 identities.
+Native results ran on Apple M4 Max with API/shader validation; draw/dispatch
+counts derive from test loops. Independent fixture answers cover twelve inputs.
+
+Two deliberate errors, unsigned substitution in signed minimum and replacing
+median selection with minimum, were assertion-killed and restored. All nine
+repository gates passed in `artifacts/validation-full.JOKpVL`: workspace 1242
+passed/0 failed/166 ignored; GPU suite 500 passed/0 failed/1 ignored (overlap).
+Native audit checked 139 executables. Final 23-file manifest and five command logs
+are under `artifacts/s31-minmax/`; independent acceptance reports are
+`artifacts/s31-minmax-r1-review.md` and `s31-minmax-r2-review.md`.
+Only acceptance documentation changed afterward. Synthetic Metal output is not
+evidence of Xbox hardware equivalence or game execution.
+
 ## Stage 3.1 increment: signed extraction and shift arithmetic
 
 27 November 2026. BFE_I32, LSHL_ADD, ADD_LSHL and LSHL_OR extend the three-source

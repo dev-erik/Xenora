@@ -1789,3 +1789,75 @@ gpu = "fixture verified"
 recognized = true
 decoded = true
 llvm = "three-way passed"
+
+[[instruction]]
+form = "v_min3_i32"
+encoding = "VOP3; three checked sources; two scalar identities; modifiers excluded"
+representation = "8 B or 12 B with shared literal"
+lowering = "MSL signed/unsigned integer ordering; compute and graphics"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_min3_u32"
+encoding = "VOP3; three checked sources; two scalar identities; modifiers excluded"
+representation = "8 B or 12 B with shared literal"
+lowering = "MSL signed/unsigned integer ordering; compute and graphics"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_max3_i32"
+encoding = "VOP3; three checked sources; two scalar identities; modifiers excluded"
+representation = "8 B or 12 B with shared literal"
+lowering = "MSL signed/unsigned integer ordering; compute and graphics"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_max3_u32"
+encoding = "VOP3; three checked sources; two scalar identities; modifiers excluded"
+representation = "8 B or 12 B with shared literal"
+lowering = "MSL signed/unsigned integer ordering; compute and graphics"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_med3_i32"
+encoding = "VOP3; three checked sources; two scalar identities; modifiers excluded"
+representation = "8 B or 12 B with shared literal"
+lowering = "MSL signed/unsigned integer ordering; compute and graphics"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_med3_u32"
+encoding = "VOP3; three checked sources; two scalar identities; modifiers excluded"
+representation = "8 B or 12 B with shared literal"
+lowering = "MSL signed/unsigned integer ordering; compute and graphics"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"

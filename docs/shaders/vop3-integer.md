@@ -106,6 +106,21 @@ in [LLVM AMDGPU lowering](https://llvm.googlesource.com/llvm-project/+/7aef15d44
 alongside the AMD ISA guide. ALIGNBYTE remains unsupported pending resolution
 of its large-count behavior; it is not treated as completed work.
 
+## Three-input integer ordering
+
+MIN3_I32/U32, MAX3_I32/U32 and MED3_I32/U32 have opcodes338/339,341/342 and
+344/345 respectively. They select the least, greatest or middle input word under
+signed two's-complement or unsigned ordering. Median chooses an input word;
+it does not average values. Equal inputs retain that repeated word, including
+all-equal triples. Signed lowering reinterprets words as int for comparisons and
+returns raw uint bits. No subtraction-based ordering or saturation is used.
+
+The same three-source admission, literal, alias, mask, flag and graphics
+provenance rules apply. Adjacent floating-point forms remain excluded. Synthetic
+native tests cover order permutations, ties, sign boundaries and NaN-shaped raw
+words. Both independent reviewers accepted this increment after separate
+full and focused validation recorded in the local checkpoint.
+
 ## Evidence and acceptance
 
 Semantics and fields follow the public [AMD RDNA2 ISA, sections 6.2.1, 12.12

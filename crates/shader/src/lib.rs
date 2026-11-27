@@ -363,6 +363,18 @@ fn vector_ternary_expression(op: VectorTernaryOp, a: &str, b: &str, c: &str) -> 
         VectorTernaryOp::LshlAddU32 => format!("(({a}) << (({b}) & 31u)) + ({c})"),
         VectorTernaryOp::AddLshlU32 => format!("(({a}) + ({b})) << (({c}) & 31u)"),
         VectorTernaryOp::LshlOrB32 => format!("(({a}) << (({b}) & 31u)) | ({c})"),
+        VectorTernaryOp::Min3U32 => format!("min(min({a}, {b}), {c})"),
+        VectorTernaryOp::Max3U32 => format!("max(max({a}, {b}), {c})"),
+        VectorTernaryOp::Med3U32 => format!("max(min({a}, {b}), min(max({a}, {b}), {c}))"),
+        VectorTernaryOp::Min3I32 => format!(
+            "as_type<uint>(min(min(as_type<int>({a}), as_type<int>({b})), as_type<int>({c})))"
+        ),
+        VectorTernaryOp::Max3I32 => format!(
+            "as_type<uint>(max(max(as_type<int>({a}), as_type<int>({b})), as_type<int>({c})))"
+        ),
+        VectorTernaryOp::Med3I32 => format!(
+            "as_type<uint>(max(min(as_type<int>({a}), as_type<int>({b})), min(max(as_type<int>({a}), as_type<int>({b})), as_type<int>({c}))))"
+        ),
     }
 }
 

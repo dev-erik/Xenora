@@ -105,6 +105,12 @@ pub enum BitBinary {
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum VectorTernary {
+    MinimumSigned,
+    MinimumUnsigned,
+    MaximumSigned,
+    MaximumUnsigned,
+    MedianSigned,
+    MedianUnsigned,
     ExtractSigned,
     ShiftAdd,
     AddShift,
@@ -511,6 +517,12 @@ pub fn decode(code: &[u8]) -> Result<Vec<DecodedInstruction>, ReferenceError> {
                                 | 838
                                 | 839
                                 | 879
+                                | 338
+                                | 339
+                                | 341
+                                | 342
+                                | 344
+                                | 345
                         )
                 } =>
             {
@@ -968,6 +980,30 @@ fn decode_vop3_integer(bytes: &[u8], offset: usize) -> Result<(Op, usize), Refer
         361 => Op::VectorProduct(VectorProduct::Low, dst, args[0], args[1]),
         362 => Op::VectorProduct(VectorProduct::HighUnsigned, dst, args[0], args[1]),
         364 => Op::VectorProduct(VectorProduct::HighSigned, dst, args[0], args[1]),
+        338 => Op::VectorTernary(VectorTernary::MinimumSigned, dst, args[0], args[1], args[2]),
+        339 => Op::VectorTernary(
+            VectorTernary::MinimumUnsigned,
+            dst,
+            args[0],
+            args[1],
+            args[2],
+        ),
+        341 => Op::VectorTernary(VectorTernary::MaximumSigned, dst, args[0], args[1], args[2]),
+        342 => Op::VectorTernary(
+            VectorTernary::MaximumUnsigned,
+            dst,
+            args[0],
+            args[1],
+            args[2],
+        ),
+        344 => Op::VectorTernary(VectorTernary::MedianSigned, dst, args[0], args[1], args[2]),
+        345 => Op::VectorTernary(
+            VectorTernary::MedianUnsigned,
+            dst,
+            args[0],
+            args[1],
+            args[2],
+        ),
         329 => Op::VectorTernary(VectorTernary::ExtractSigned, dst, args[0], args[1], args[2]),
         838 => Op::VectorTernary(VectorTernary::ShiftAdd, dst, args[0], args[1], args[2]),
         839 => Op::VectorTernary(VectorTernary::AddShift, dst, args[0], args[1], args[2]),
@@ -1287,6 +1323,30 @@ fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32
                         }
                         Op::BitBinary(BitBinary::CountBitsAdd, ..) => {
                             a.count_ones().wrapping_add(b)
+                        }
+                        Op::VectorTernary(VectorTernary::MinimumSigned, ..)
+                        | Op::VectorTernary(VectorTernary::MaximumSigned, ..)
+                        | Op::VectorTernary(VectorTernary::MedianSigned, ..) => {
+                            let mut ordered = [a as i32, b as i32, c as i32];
+                            ordered.sort_unstable();
+                            let rank = match op {
+                                Op::VectorTernary(VectorTernary::MinimumSigned, ..) => 0,
+                                Op::VectorTernary(VectorTernary::MaximumSigned, ..) => 2,
+                                _ => 1,
+                            };
+                            ordered[rank] as u32
+                        }
+                        Op::VectorTernary(VectorTernary::MinimumUnsigned, ..)
+                        | Op::VectorTernary(VectorTernary::MaximumUnsigned, ..)
+                        | Op::VectorTernary(VectorTernary::MedianUnsigned, ..) => {
+                            let mut ordered = [a, b, c];
+                            ordered.sort_unstable();
+                            let rank = match op {
+                                Op::VectorTernary(VectorTernary::MinimumUnsigned, ..) => 0,
+                                Op::VectorTernary(VectorTernary::MaximumUnsigned, ..) => 2,
+                                _ => 1,
+                            };
+                            ordered[rank]
                         }
                         Op::VectorTernary(VectorTernary::ExtractSigned, ..) => {
                             let width = (c & 31).min(32 - (b & 31));
