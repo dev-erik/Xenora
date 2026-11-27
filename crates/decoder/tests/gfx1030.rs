@@ -343,6 +343,16 @@ fn reference_op(instruction: Instruction) -> Op {
             index,
             resource,
         },
+        Instruction::ReadFirstLaneB32 { dst, src } => Op::ReadLane {
+            dst,
+            src,
+            index: None,
+        },
+        Instruction::ReadLaneB32 { dst, src, lane } => Op::ReadLane {
+            dst,
+            src,
+            index: Some(lane),
+        },
         Instruction::WaitLoad | Instruction::WaitVmcnt => Op::WaitRead,
         Instruction::WaitStore => Op::WaitWrite,
         Instruction::MoveB32 {
@@ -800,12 +810,13 @@ fn compares_fixture_instructions_against_llvm() {
         include_bytes!("../../../fixtures/rdna2/scc1-branch.bin"),
         include_bytes!("../../../fixtures/rdna2/wait-vmcnt.bin"),
         include_bytes!("../../../fixtures/rdna2/mbcnt.bin"),
+        include_bytes!("../../../fixtures/rdna2/lane-read.bin"),
         include_bytes!("../../../fixtures/rdna2/mask-nonzero-branch.bin"),
         include_bytes!("../../../fixtures/rdna2/buffer-narrow-load.bin"),
     ] {
         count += compare_against_llvm(fixture, &mut forms);
     }
-    assert_eq!(forms.len(), 174, "forms compared: {forms:?}");
+    assert_eq!(forms.len(), 176, "forms compared: {forms:?}");
     eprintln!(
         "{count} three-way instruction comparisons across {} forms",
         forms.len()

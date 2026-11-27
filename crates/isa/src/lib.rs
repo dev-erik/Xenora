@@ -433,6 +433,17 @@ impl BufferLoadKind {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[allow(missing_docs)]
 pub enum Instruction {
+    /// Copy VGPR lane zero selected by the bounded READFIRSTLANE contract to an SGPR.
+    ReadFirstLaneB32 {
+        dst: u8,
+        src: u8,
+    },
+    /// Read a VGPR lane selected by the low five bits of a normal SGPR.
+    ReadLaneB32 {
+        dst: u8,
+        src: u8,
+        lane: u8,
+    },
     /// Indexed 32-bit buffer read into a VGPR.
     BufferLoadDword {
         data: u8,
@@ -739,6 +750,8 @@ impl Instruction {
     /// Returns the mnemonic for the exact encoding family represented.
     pub fn mnemonic(self) -> &'static str {
         match self {
+            Self::ReadFirstLaneB32 { .. } => "v_readfirstlane_b32",
+            Self::ReadLaneB32 { .. } => "v_readlane_b32",
             Self::BufferLoadDword { .. } => "buffer_load_dword",
             Self::BufferLoadNarrow { kind, .. } => kind.mnemonic(),
             Self::BufferStoreDword { .. } => "buffer_store_dword",
@@ -808,6 +821,8 @@ impl fmt::Display for Instruction {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(self.mnemonic())?;
         match *self {
+            Self::ReadFirstLaneB32 { dst, src } => write!(formatter, " s{dst}, v{src}"),
+            Self::ReadLaneB32 { dst, src, lane } => write!(formatter, " s{dst}, v{src}, s{lane}"),
             Self::BufferLoadDword {
                 data,
                 index,

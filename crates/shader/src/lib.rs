@@ -118,6 +118,7 @@ impl MaskCondition {
 #[derive(Clone, Copy)]
 enum Op {
     Load(Option<BufferLoadKind>),
+    ReadLaneZero(Value),
     Constant(u32),
     Binary(Binary, Value, Value),
     Unary(VectorUnaryOp, Value),
@@ -163,6 +164,7 @@ impl Op {
         match self {
             Self::Load(_) | Self::Constant(_) | Self::ScalarBranch { .. } => Vec::new(),
             Self::Binary(_, left, right) => vec![left, right],
+            Self::ReadLaneZero(source) => vec![source],
             Self::Unary(_, source) => vec![source],
             Self::Product(_, a, b) => vec![a, b],
             Self::BitBinary(_, a, b) => vec![a, b],
@@ -250,7 +252,8 @@ impl Op {
                 name(fallthrough),
                 name(taken)
             ),
-            Self::Store(_)
+            Self::ReadLaneZero(_)
+            | Self::Store(_)
             | Self::ScalarBranch { .. }
             | Self::LaneMask { .. }
             | Self::RuntimeBranch { .. } => unreachable!("not a per-thread expression"),
@@ -685,7 +688,7 @@ pub fn compile(architecture: Architecture, bytes: &[u8]) -> Result<CompiledShade
     for (index, &(offset, operation)) in operations.iter().enumerate() {
         let dest = Value(index);
         uniform.push(match operation {
-            Op::Constant(_) | Op::LaneMask { .. } => true,
+            Op::Constant(_) | Op::LaneMask { .. } | Op::ReadLaneZero(_) => true,
             Op::Load(_)
             | Op::MergeLanes { .. }
             | Op::BitBinary(VectorBitBinaryOp::MbcntLoU32B32, _, _) => false,
@@ -693,6 +696,11 @@ pub fn compile(architecture: Architecture, bytes: &[u8]) -> Result<CompiledShade
         });
         let thread = |value: Value| value.to_string();
         let (step, statement) = match operation {
+            Op::ReadLaneZero(source) => {
+                let _ = writeln!(ir, "{offset:04x}: {dest} = read.lane0 {source}");
+                emit_lane_zero(&mut msl, &operations, &uniform, index, source);
+                continue;
+            }
             Op::Load(kind) => (
                 match kind {
                     None => format!("{dest} = load.u32 input[index]"),
@@ -804,6 +812,43 @@ pub fn compile(architecture: Architecture, bytes: &[u8]) -> Result<CompiledShade
     })
 }
 
+// Snapshot-based replay at the first existing invocation of this guest wave.
+// Lane zero exists for every nonempty partial wave; no host SIMD operation is used.
+fn emit_lane_zero(
+    msl: &mut String,
+    operations: &[(usize, Op)],
+    uniform: &[bool],
+    index: usize,
+    source: Value,
+) {
+    let mut cone = vec![false; index];
+    let mut pending = vec![source];
+    while let Some(value) = pending.pop() {
+        if uniform[value.0] || cone[value.0] {
+            continue;
+        }
+        cone[value.0] = true;
+        pending.extend(operations[value.0].1.operands());
+    }
+    let name = |value: Value| {
+        if cone[value.0] {
+            format!("r{index}_{}", value.0)
+        } else {
+            value.to_string()
+        }
+    };
+    for (position, &(_, operation)) in operations[..index].iter().enumerate() {
+        if cone[position] {
+            let _ = writeln!(
+                msl,
+                "    uint r{index}_{position} = {};",
+                operation.expression(&name, "(index & ~31u)", "0u")
+            );
+        }
+    }
+    let _ = writeln!(msl, "    uint {} = {};", Value(index), name(source));
+}
+
 /// Emit a Wave32 compare mask without any cross-thread operation: the thread
 /// recomputes the lane-dependent operands of each lane of its own RDNA wave
 /// (dispatch indices `(index & ~31) + n`) from those lanes' input words.
@@ -875,6 +920,7 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
     let mut stored = false;
     let mut store_pending = false;
     let mut scalars = [None; 128];
+    let mut lane_scalars = [None::<Value>; 106];
     let mut exec = u32::MAX; // The fixture starts with full Wave32 EXEC.
     scalars[126] = Some(exec);
     let mut scc = None;
@@ -1027,6 +1073,24 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
         if offset < skip_before {
             continue;
         }
+        // Constant scalar writes invalidate any older lane-derived value. Untaken
+        // conditional writes preserve both pieces of scalar state.
+        let scalar_write = match instruction.instruction {
+            Instruction::ScalarMoveB32 { dst, .. }
+            | Instruction::ScalarUnary { dst, .. }
+            | Instruction::ScalarAlu { dst, .. }
+            | Instruction::ScalarBitSetB32 { dst, .. } => Some(dst),
+            Instruction::ScalarConditionalMoveB32 { dst, .. }
+            | Instruction::ScalarConditionalMoveImmediateI32 { dst, .. }
+                if scc == Some(true) =>
+            {
+                Some(dst)
+            }
+            _ => None,
+        };
+        if let Some(dst) = scalar_write.and_then(|dst| lane_scalars.get_mut(usize::from(dst))) {
+            *dst = None;
+        }
         let read_scalar = |source| match source {
             ScalarSource::Immediate(value) => Ok(value),
             ScalarSource::Register(register) => scalars
@@ -1072,6 +1136,36 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
         }
         let next = Value(operations.len());
         let (dest, operation) = match instruction.instruction {
+            Instruction::ReadFirstLaneB32 { dst, src }
+            | Instruction::ReadLaneB32 { dst, src, .. } => {
+                if dst < 8 {
+                    return Err(error("lane read would modify a resource descriptor"));
+                }
+                let lane = match instruction.instruction {
+                    Instruction::ReadFirstLaneB32 { .. } => {
+                        if exec == 0 {
+                            0
+                        } else {
+                            exec.trailing_zeros()
+                        }
+                    }
+                    Instruction::ReadLaneB32 { lane, .. } => {
+                        read_scalar(ScalarSource::Register(lane))? & 31
+                    }
+                    _ => unreachable!(),
+                };
+                if lane != 0 {
+                    return Err(error(
+                        "lane read requires selected lane zero for partial-wave safety",
+                    ));
+                }
+                let source = read(src)?;
+                operations.push((offset, Op::ReadLaneZero(source)));
+                facts.push(KnownBits::UNKNOWN);
+                scalars[usize::from(dst)] = None;
+                lane_scalars[usize::from(dst)] = Some(next);
+                continue;
+            }
             Instruction::BufferLoadDword { data, .. }
             | Instruction::BufferLoadNarrow { data, .. } => {
                 let slot = usize::from(data);
@@ -1153,7 +1247,30 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
                 )?);
                 continue;
             }
-            // SGPR values are wave-uniform and known during translation.
+            Instruction::MoveB32 {
+                dst,
+                src: VectorSource::Scalar(register),
+            } if register <= 105
+                && scalars[usize::from(register)].is_none()
+                && let Some(value) = lane_scalars[usize::from(register)] =>
+            {
+                let slot = usize::from(dst);
+                if dst == 0 || pending_load.is_some_and(|(pending, _)| pending == slot) {
+                    return Err(error(
+                        "move writes the index register or replaces a pending load",
+                    ));
+                }
+                registers[slot] = Some(merge_lanes(
+                    &mut operations,
+                    &mut facts,
+                    offset,
+                    exec,
+                    value,
+                    registers[slot],
+                )?);
+                continue;
+            }
+            // Other SGPR values must be known during translation.
             Instruction::MoveB32 {
                 dst,
                 src: VectorSource::Scalar(register),

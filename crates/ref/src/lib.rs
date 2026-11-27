@@ -39,6 +39,12 @@ pub type ScalarSource = Source;
 /// Operations decoded independently by the reference interpreter.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Op {
+    /// A VGPR read into an SGPR; None chooses the first EXEC lane (zero when empty).
+    ReadLane {
+        dst: u8,
+        src: u8,
+        index: Option<u8>,
+    },
     Load {
         data: u8,
         index: u8,
@@ -552,6 +558,38 @@ pub fn decode(code: &[u8]) -> Result<Vec<DecodedInstruction>, ReferenceError> {
     let mut offset = 0;
     while let Some(bytes) = code.get(offset..).filter(|bytes| !bytes.is_empty()) {
         let (op, length) = match bytes {
+            [lo, packed, upper, tag @ 0x7e..=0x7f, ..] if upper & 1 == 0 && packed >> 1 == 2 => {
+                let dst = (upper >> 1) | ((tag & 1) << 7);
+                if dst > 105 || packed & 1 == 0 {
+                    return Err(error(offset, "lane read requires normal SGPR and VGPR"));
+                }
+                (
+                    Op::ReadLane {
+                        dst,
+                        src: *lo,
+                        index: None,
+                    },
+                    4,
+                )
+            }
+            [dst, flags, 0x60, 0xd7, rest @ ..] => {
+                let [a, b, c, d, ..] = rest else {
+                    return Err(error(offset, "truncated readlane"));
+                };
+                let lane = (u16::from(*b) >> 1) | (u16::from(*c & 3) << 7);
+                if *flags != 0 || *dst > 105 || b & 1 == 0 || lane > 105 || c & 0xfc != 0 || *d != 2
+                {
+                    return Err(error(offset, "unsupported readlane operands or modifiers"));
+                }
+                (
+                    Op::ReadLane {
+                        dst: *dst,
+                        src: *a,
+                        index: Some(lane as u8),
+                    },
+                    8,
+                )
+            }
             [_, _, _, _, ..]
                 if {
                     let first = u32::from_le_bytes(bytes[..4].try_into().unwrap());
@@ -1405,6 +1443,7 @@ fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32
     let lanes = input.len();
     let mut registers = vec![[None::<u32>; 256]; lanes];
     let mut scalars = [None; 128];
+    let mut lane_scalars = [None::<u32>; 106];
     let mut exec = u32::MAX;
     scalars[EXEC_LO] = Some(exec);
     let mut scc = None;
@@ -1418,6 +1457,21 @@ fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32
     for (position, &DecodedInstruction { offset, op, .. }) in program.iter().enumerate() {
         if offset < target {
             continue;
+        }
+        let scalar_write = match op {
+            Op::ScalarMove(dst, _)
+            | Op::ScalarUnary(_, dst, _)
+            | Op::Scalar(_, dst, _, _)
+            | Op::ScalarBitSet(dst, _, _) => Some(dst),
+            Op::ScalarConditionalMove(dst, _) | Op::ScalarConditionalMoveImmediate(dst, _)
+                if scc == Some(true) =>
+            {
+                Some(dst)
+            }
+            _ => None,
+        };
+        if let Some(dst) = scalar_write.and_then(|dst| lane_scalars.get_mut(usize::from(dst))) {
+            *dst = None;
         }
         let read_scalar = |source| match source {
             Source::Register(reg) => scalars[usize::from(reg)]
@@ -1460,8 +1514,10 @@ fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32
                     // As in translation, an SGPR source must be known even for an inactive lane.
                     if let Op::MoveScalar(_, src) = op
                         && exec != 0
+                        && scalars[usize::from(src)].is_none()
+                        && (src > 105 || lane_scalars[usize::from(src)].is_none())
                     {
-                        read_scalar(Source::Register(src))?;
+                        return Err(error(offset, "read from uninitialized SGPR"));
                     }
                 }
                 Op::Load { .. } | Op::LoadNarrow { .. } | Op::Store { .. } => {
@@ -1473,6 +1529,25 @@ fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32
         // Per-lane results of a vector ALU instruction, applied after all lanes read.
         let mut results: Vec<Option<(u8, u32)>> = vec![None; lanes];
         match op {
+            Op::ReadLane { dst, src, index } => {
+                if dst < 8 {
+                    return Err(error(offset, "lane read writes resource descriptor"));
+                }
+                let lane = if let Some(index) = index {
+                    read_scalar(Source::Register(index))? % 32
+                } else {
+                    (0..32).find(|bit| exec & (1 << bit) != 0).unwrap_or(0)
+                };
+                if lane != 0 {
+                    return Err(error(
+                        offset,
+                        "lane read requires selected lane zero for partial-wave safety",
+                    ));
+                }
+                let value = read(0, src)?;
+                scalars[usize::from(dst)] = None;
+                lane_scalars[usize::from(dst)] = Some(value);
+            }
             Op::Load { data: dst, .. } | Op::LoadNarrow { data: dst, .. } => {
                 if dst == 0 || pending_read.is_some() {
                     return Err(error(
@@ -1541,7 +1616,10 @@ fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32
             }
             Op::MoveScalar(dst, src) => {
                 for lane in (0..lanes).filter(|&lane| executes(lane)) {
-                    results[lane] = Some((dst, read_scalar(Source::Register(src))?));
+                    let value = scalars[usize::from(src)]
+                        .or_else(|| lane_scalars.get(usize::from(src)).copied().flatten())
+                        .ok_or_else(|| error(offset, "read from uninitialized SGPR"))?;
+                    results[lane] = Some((dst, value));
                 }
             }
             Op::Vector(operator, dst, lhs, rhs) => {
@@ -2060,11 +2138,17 @@ fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32
                     BranchCondition::VccZero | BranchCondition::VccNonZero
                 ) && lane_derived_vcc
                 {
+                    let mut region_scalars = scalars;
+                    for (slot, value) in lane_scalars.iter().copied().enumerate() {
+                        if region_scalars[slot].is_none() {
+                            region_scalars[slot] = value;
+                        }
+                    }
                     check_runtime_region(
                         &program[position + 1..],
                         destination,
                         &registers,
-                        &scalars,
+                        &region_scalars,
                         exec,
                         pending_read.is_some(),
                         offset,

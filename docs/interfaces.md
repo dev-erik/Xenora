@@ -1698,3 +1698,20 @@ synthetic compute pending-load completion transition with `S_WAITCNT vmcnt(0)`.
 It does not complete pending stores or modify SCC, and redundant waits are allowed.
 Only exact word `0xBC7D0000` is admitted; other registers/thresholds and graphics
 use are rejected. This is not a general hardware counter or memory-barrier model.
+
+## Bounded Wave32 lane-read scalar values
+
+The compute translator admits VOP1 `v_readfirstlane_b32` and VOP3
+`v_readlane_b32` when the selected lane is provably zero. Sources are initialized
+ordinary VGPRs; scalar destinations are s8–s105. READLANE uses a known ordinary
+SGPR selector whose low five bits are zero. READFIRSTLANE selects zero for
+empty EXEC, or requires bit zero set. Both access the retained source value
+regardless of EXEC. Other selected lanes and graphics uses remain rejected.
+
+The compiler captures the source's IR version and recomputes pure input-derived
+values at the logical wave base `(index & ~31)`, without host SIMD operations.
+The resulting scalar is uniform within that logical wave and may be consumed
+by `v_mov_b32`; unsupported scalar consumers reject it. Scalar writes invalidate
+old lane-derived values. Lane zero exists for every nonempty partial wave, so
+this contract does not invent values for missing lanes or read outside input.
+See [remaining wave/lane requirements](shaders/control-wave-memory.md).

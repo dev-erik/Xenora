@@ -46,7 +46,7 @@ const fn concat_forms<const N: usize>() -> [(&'static str, EncodingFamily); N] {
 }
 
 /// Decoded forms not yet described by the semantic registry.
-const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 118] = [
+const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 120] = [
     ("V_MBCNT_LO_U32_B32", EncodingFamily::Vop3),
     ("V_MBCNT_HI_U32_B32", EncodingFamily::Vop3),
     ("V_MAD_I32_I24", EncodingFamily::Vop3),
@@ -77,6 +77,8 @@ const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 118] = [
     ("V_FFBH_U32", EncodingFamily::Vop3),
     ("V_FFBL_B32", EncodingFamily::Vop3),
     ("V_FFBH_I32", EncodingFamily::Vop3),
+    ("V_READFIRSTLANE_B32", EncodingFamily::Vop1),
+    ("V_READLANE_B32", EncodingFamily::Vop3),
     ("BUFFER_LOAD_DWORD", EncodingFamily::Mubuf),
     ("BUFFER_LOAD_UBYTE", EncodingFamily::Mubuf),
     ("BUFFER_LOAD_SBYTE", EncodingFamily::Mubuf),
@@ -348,6 +350,44 @@ fn unsupported(mnemonic: &'static str, detail: &'static str) -> DecodeErrorKind 
 fn decode_gfx1030(bytes: &[u8], offset: usize) -> Result<(Instruction, u8), DecodeErrorKind> {
     let first = word(bytes, 4)?;
 
+    // Handwritten matches from pinned AMD rdna2.jsonl; generators remain unchanged.
+    if first & 0xfe01fe00 == 0x7e000400 {
+        let dst = ((first >> 17) & 255) as u8;
+        let source = first & 511;
+        if dst > 105 || source < 256 {
+            return Err(unsupported(
+                "v_readfirstlane_b32",
+                "expected normal SGPR destination and VGPR source",
+            ));
+        }
+        return Ok((
+            Instruction::ReadFirstLaneB32 {
+                dst,
+                src: source as u8,
+            },
+            4,
+        ));
+    }
+    if first & 0xffff0000 == 0xd7600000 {
+        let second = word(bytes, 8)?;
+        let dst = first as u8;
+        let source = second & 511;
+        let lane = (second >> 9) & 511;
+        if first & 0xff00 != 0 || second >> 18 != 128 || dst > 105 || source < 256 || lane > 105 {
+            return Err(unsupported(
+                "v_readlane_b32",
+                "expected unmodified VGPR source, normal SGPR destination/index and inline-zero SRC2",
+            ));
+        }
+        return Ok((
+            Instruction::ReadLaneB32 {
+                dst,
+                src: source as u8,
+                lane: lane as u8,
+            },
+            8,
+        ));
+    }
     for (opcode, kind) in [
         (BUFFER_LOAD_UBYTE, BufferLoadKind::Ubyte),
         (BUFFER_LOAD_SBYTE, BufferLoadKind::Sbyte),

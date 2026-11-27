@@ -11,3 +11,12 @@ byte/halfword loads select the low subword of that invocation's little-endian
 input element and extend it into one 32-bit destination. This is not packed
 one-byte/two-byte array indexing. The existing single-pending-load, full-EXEC,
 zero-offset and explicit-wait rules apply to all four narrow forms.
+
+
+Pure lane-read replay may read an earlier immutable input value at the current
+logical wave's first index. This extends internal input access beyond the
+caller's own element, while preserving disjoint outputs and input bounds:
+lane zero exists for every nonempty partial Wave32 group. It does not admit
+shared writable memory, arbitrary addresses or values for absent lanes. The
+[bounded lane-read interface](../interfaces.md#bounded-wave32-lane-read-scalar-values)
+defines operand and consumer restrictions.

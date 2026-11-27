@@ -2322,3 +2322,27 @@ gpu = "fixture verified"
 recognized = true
 decoded = true
 llvm = "three-way passed"
+
+[[instruction]]
+form = "v_readfirstlane_b32"
+encoding = "VOP1, ordinary VGPR and SGPR destination 8..105; Wave32 compute, selected lane zero only"
+representation = "4 B"
+lowering = "MSL snapshot replay at logical wave lane zero; runtime scalar result consumed through vector move; other lanes and graphics rejected"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_readlane_b32"
+encoding = "VOP3; ordinary VGPR, SGPR destination 8..105 and known SGPR selector with low five bits zero; modifiers excluded"
+representation = "8 B"
+lowering = "MSL snapshot replay at logical wave lane zero independent of EXEC; runtime scalar result consumed through vector move"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"

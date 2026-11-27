@@ -721,6 +721,15 @@ fn lift(
     extended: bool,
 ) -> Result<StageIr, CompileError> {
     for decoded in decoded {
+        if matches!(
+            decoded.instruction,
+            Instruction::ReadFirstLaneB32 { .. } | Instruction::ReadLaneB32 { .. }
+        ) {
+            return Err(CompileError::Verify {
+                offset: decoded.offset,
+                reason: "lane reads require the bounded Wave32 compute contract",
+            });
+        }
         if matches!(decoded.instruction, Instruction::BufferLoadNarrow { .. }) {
             return Err(CompileError::Verify {
                 offset: decoded.offset,

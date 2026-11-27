@@ -10,20 +10,20 @@ Implemented increments: SCC1 complements SCC0; Wave32 compute EXECNZ/VCCNZ compl
 
 ## S3.4 wave and lane
 
-Current increment: MBCNT LO/HI under an explicit Wave32 compute contract. LO counts selected bits below the guest lane and adds the accumulator; HI adds no bits for lanes below 32. Typed decoding, compute lowering and an independent CPU reference are implemented. Native validation is recorded in the checkpoint; this does not complete wave/lane support.
+Implemented subsets: MBCNT LO/HI and bounded lane-zero reads under an explicit Wave32 compute contract. LO counts selected bits below the guest lane and adds the accumulator; HI adds no bits for lanes below 32. Typed decoding, compute lowering and an independent CPU reference are implemented. Native validation is recorded in the checkpoint; this does not complete wave/lane support.
 
 | Family | Form | Decoder present at audit |
 | --- | --- | --- |
 | DS | `DS_BPERMUTE_B32` | no |
 | DS | `DS_PERMUTE_B32` | no |
 | DS | `DS_SWIZZLE_B32` | no |
-| VOP1 | `V_READFIRSTLANE_B32` | no |
+| VOP1 | `V_READFIRSTLANE_B32` | yes; lane-zero compute subset |
 | VOP3 | `V_MBCNT_HI_U32_B32` | yes; Wave32 compute subset |
 | VOP3 | `V_MBCNT_LO_U32_B32` | yes; Wave32 compute subset |
 | VOP3 | `V_PERMLANE16_B32` | no |
 | VOP3 | `V_PERMLANEX16_B32` | no |
 | VOP3 | `V_READFIRSTLANE_B32` | no |
-| VOP3 | `V_READLANE_B32` | no |
+| VOP3 | `V_READLANE_B32` | yes; lane-zero compute subset |
 | VOP3 | `V_WRITELANE_B32` | no |
 
 The implemented compute contract is Wave32 only, with guest lane `index & 31`:
@@ -56,7 +56,7 @@ Waits cannot be blanket no-ops. Resource graphs and local readback tests do not 
 
 ## Evidence and next gates
 
-The [first-increment checkpoint](../testing/stage3-control-memory-opening.md) records SCC1 and VMCNT evidence. S3.4 has the bounded masked-bit-count increment; the other nine forms remain undecoded.
+The [first-increment checkpoint](../testing/stage3-control-memory-opening.md) records SCC1 and VMCNT evidence. S3.4 has bounded masked-bit-count and lane-zero-read increments; seven forms remain undecoded.
 
 The [opening plan](../superpowers/plans/2026-11-27-stage3-opening.md) tracks the first increments. Require exact encoding checks, independent CPU expectations, applicable native compute/graphics readback and independent review before acceptance. Checkpoint results must identify the tested source version; this document alone records no passing GPU tests.
 
@@ -69,7 +69,7 @@ These are dependency groups, not equal-sized tasks or a complete operand matrix.
 | Stage | Next bounded work | Architectural work still required |
 | --- | --- | --- |
 | S3.2 | Additional proven loop shapes | Compute loops and live-out joins; code addresses and calls/returns; exceptions; dynamic EXEC and reconvergence |
-| S3.4 | Explicit contracts for the remaining nine lane forms | Inactive/absent source lanes; cross-lane data movement; graphics/helper lanes; Wave64; DPP/SDWA mode coverage |
+| S3.4 | Expand lane-read selection and establish contracts for seven remaining forms | Inactive/absent source lanes; cross-lane data movement; graphics/helper lanes; Wave64; DPP/SDWA mode coverage |
 | S3.5 | More buffer transfer forms with explicit addressing and destination spans | Multiple outstanding transfers; descriptors and address spaces; scalar/private/LDS memory; atomics and rendezvous; image/stage-interface matrices |
 
 Each accepted increment needs exact source and destination modes, negative cases,
@@ -96,3 +96,67 @@ resource restrictions. It does not decode hardware resource descriptors or
 permit cross-lane addressing. Graphics and other memory modes remain rejected.
 The opcode meanings are specified by AMD RDNA2 §12.14; the stride and restricted
 bindings are the project ABI, not an inferred Xbox descriptor layout.
+
+## Wave/lane closure dependencies
+
+The implementation order is S3.4 before S3.2; the [continuation checklist](../superpowers/plans/2026-11-27-stage3-opening.md#execution-order-complete-wavelane-support-before-broader-control-flow)
+records the full sequence. Numbering does not require completing all control
+flow before implementing lane operations. Dynamic execution masks, graphics
+helper lanes and pending DS results still need explicit cross-stage integration.
+
+Primary-source contract audit (AMD document 70648, printed pages 137,
+183–187 and 205–208):
+
+| Operation group | Contract that must be preserved |
+| --- | --- |
+| READFIRSTLANE | Select the lowest set EXEC bit, or lane zero for zero EXEC; the access itself ignores EXEC. |
+| READLANE / WRITELANE | Select low five lane bits in Wave32 or six in Wave64; ignore EXEC for the lane access. Scalar and vector register banks differ by operation. |
+| DS_BPERMUTE | Address selects a source lane; source EXEC affects the fetched value and destination EXEC affects the write. Pending-result rules need their own contract. |
+| DS_PERMUTE | Scatter active source lanes to selected destinations; apply destination EXEC separately. The guide's pseudocode and prose disagree on whether duplicate writers deterministically select the highest lane. Resolve or explicitly bound that case before acceptance. |
+| DS_SWIZZLE | Cover basic quad/bitmask modes, rotate and FFT modes separately; validate invalid source-lane behavior. |
+| PERMLANE16 / PERMLANEX16 | Distinguish same-row from adjacent-row gathers; OP_SEL bits encode fetch-inactive and bound control rather than ordinary arithmetic selection. |
+
+A partial dispatch does not supply arbitrary absent-lane register contents.
+Synthetic input bounds and guest register validity are separate requirements;
+no implementation may turn an absent-lane read into an unchecked input access.
+This audit records required semantics, not completed implementations or native
+test evidence. Special sources and graphics applicability remain open.
+
+### Architecture required for full S3.4 acceptance
+
+The current `compile(Architecture, bytes)` entry point implies Wave32. Wave64
+requires explicit options or validated external metadata; changing constants
+from 32 to 64 is insufficient because some DS routes remain within 32-lane
+halves. The legacy entry point can remain a Wave32 wrapper.
+
+Lane-read results are runtime, wave-uniform scalar values. Their uses require
+IR representation, source-version capture and stale-state invalidation across
+scalar writes. Pure operand recomputation may support immutable input loads;
+it must not replay shared-memory writes, atomics or other side effects.
+
+Graphics acceptance additionally needs guest wave membership, quad topology,
+coverage versus execution masks and helper-lane side-effect suppression. The
+existing graphics function signatures do not provide that state. These are
+architectural prerequisites, not missing opcode-table entries. Both independent
+read-only reviews identified these requirements; neither review certifies new
+implementation or hardware results.
+
+### Bounded lane-read increment
+
+The first lane-read increment admits VOP1 READFIRSTLANE and VOP3 READLANE
+only when the selected logical Wave32 lane is provably zero. This lane exists
+in every nonempty partial wave. READFIRSTLANE therefore admits EXEC zero or
+EXEC with bit zero set. READLANE takes an ordinary, compile-time-known SGPR
+selector whose low five bits are zero; it ignores EXEC. Other selected lanes,
+inline selector encodings, LDS-direct access and VOP3 READFIRSTLANE remain
+outside this increment.
+
+Sources are initialized ordinary VGPRs; destination SGPRs are 8–105. Resource
+slots and special scalar registers are excluded. The result is runtime and
+wave-uniform, with immutable source-version capture and vector-move consumption.
+Scalar arithmetic and other unsupported consumers reject the value rather than
+using a stale constant. The existing scalar-write paths invalidate previous
+lane-derived state. Graphics and lane-read instructions inside runtime branch
+regions remain rejected. Native evidence is recorded in the
+[checkpoint](../testing/stage3-control-memory-opening.md#lane-zero-read-continuation);
+this increment does not complete S3.4.

@@ -50,3 +50,45 @@ inactive and absent source lanes; masked bit count alone does not provide it.
 
 Full closure of S3.2/S3.4/S3.5 still requires the architectural work listed in the
 [scope document](../../shaders/control-wave-memory.md#remaining-closure-work).
+
+## Execution order: complete wave/lane support before broader control flow
+
+The requested order is S3.4, then S3.2. Stage numbers do not impose a strict
+sequence. Implement execution-mask prerequisites where a wave operation needs
+them; retain unsupported-mode errors until those contracts exist. Finishing an
+instruction subset is not full-stage completion.
+
+S3.4 closure sequence:
+
+- [ ] Lane reads: READFIRSTLANE VOP1/VOP3 and READLANE; scalar destinations,
+  EXEC-independent access, source snapshots and safe final-partial-wave behavior.
+- [ ] Lane writes: WRITELANE; scalar sources and lane selection, writes that
+  ignore EXEC, aliasing and preservation of other lanes.
+- [ ] Gather/scatter: DS_BPERMUTE and DS_PERMUTE; address/offset rules,
+  source and destination masks, duplicate writers and pending-result ordering.
+- [ ] Swizzles: DS_SWIZZLE basic, rotate and FFT modes; every admitted offset
+  mode needs an independent source-derived expectation.
+- [ ] Row permutations: PERMLANE16/PERMLANEX16; row selection, inactive fetch,
+  bound control, scalar selectors and preserved destination values.
+- [ ] Complete the operand/mode ledger: Wave32/Wave64, DPP/SDWA applicability,
+  special sources, modifiers, inactive/absent lanes and graphics helper/quad lanes.
+- [ ] Integrate lane operations with comparisons, divergent state, memory waits
+  and graphics interfaces; close any required S3.3/S3.5 prerequisites explicitly.
+- [ ] Independent reviews, native boundary/negative tests, mutation checks,
+  full validation and updated accepted-evidence maps before declaring closure.
+
+S3.2 follows S3.4 acceptance:
+
+- [ ] Extend proven loops and live-out register/flag joins to compute.
+- [ ] Model dynamic EXEC, nested divergence and reconvergence with lane operations.
+- [ ] Establish code-address semantics for indirect branches, calls and returns.
+- [ ] Define trap, exception, halt and ordered termination contracts.
+- [ ] Cover debug/state branch forms and subvector loops with explicit contracts.
+- [ ] Validate memory interactions, target boundaries, termination budgets and
+  stage applicability, then run integrated acceptance and update the evidence maps.
+
+The current one-invocation-per-input-word fixture ABI has no supplied initial
+register state for lanes outside its final partial wave. Reading those lanes
+cannot silently invent a zero value. Admission or a separately specified launch
+contract must resolve this before general lane reads are accepted. This is a
+project ABI constraint, not a claim about Xbox hardware.

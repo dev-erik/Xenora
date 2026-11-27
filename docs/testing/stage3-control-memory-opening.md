@@ -160,3 +160,43 @@ Final combined validation: all nine gates passed on native ARM64 Metal. Workspac
 516 passed, zero failed, 1 ignored. Ignored tests do not count as verified.
 Logs: `artifacts/validation-full.L6zk4W`. Source hashes and gate counts:
 `artifacts/s35-narrow-load/verified-source.json`.
+
+
+## Lane-zero read continuation
+
+VOP1 READFIRSTLANE and VOP3 READLANE now admit provably selected lane zero
+under the [bounded interface](../interfaces.md#bounded-wave32-lane-read-scalar-values).
+The immutable source version is replayed at the logical Wave32 base; runtime
+scalar results may be consumed through vector moves. EXEC zero and inactive
+source retention are handled explicitly. Nonzero selected lanes, Wave64,
+VOP3 READFIRSTLANE, graphics and unsupported scalar consumers remain rejected.
+
+- Independent suite: 7 passed, zero ignored, including 312 original native
+  programs with Metal API and shader validation enabled. Expected outputs are
+  derived in the test independently of the primary reference and production
+  compiler; the separate secondary interpreter is not extended by this increment.
+- Six dispatch lengths cover 1/31/32/33/63/65, retained inactive lane zero,
+  selector masking, repeated snapshots, conditional scalar overwrites, comparison
+  masks and VCC branch joins. Malformed operands and unready sources reject.
+- LLVM oracle: 28 tests passed, including 1,261 three-way instruction comparisons
+  across 176 forms. Original fixture reassembly passed.
+- Two independent static reviews found no remaining blocker in the bounded slice.
+- A deliberately wrong generated-MSL lane selection was caught by the native
+  output assertion. The temporary test mutation was restored exactly; this is
+  fault injection into generated MSL, not a full production-source mutation campaign.
+- Logs: `artifacts/s34-lane-read/native.log`, `llvm.log`, `assembly.log` and
+  `wrong-lane-mutation.log`.
+
+```sh
+MTL_DEBUG_LAYER=1 MTL_SHADER_VALIDATION=1 CARGO_BUILD_JOBS=2 cargo test --locked --target aarch64-apple-darwin -p xenora-semantic-review --test lane_read_independent -- --include-ignored --nocapture --test-threads=1
+```
+
+S3.4 has **4/11 decoded forms**, with these two new forms accepted only for the
+lane-zero subset. Seven encoding forms and substantial operand/architecture
+work remain. S3.2 remains **8/24**, deferred behind the requested S3.4 work.
+Full-stage completion requires explicit wave configuration, broader scalar and
+lane state, graphics participation, and the remaining transfer/permute modes.
+
+Full validation for this increment: all nine gates passed. Workspace: **1,402
+passed, zero failed, 178 ignored**. GPU gate: **517 passed, zero failed, one
+ignored**. Ignored tests are not verification. Logs: `artifacts/validation-full.TsSVQl`.

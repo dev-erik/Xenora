@@ -10,12 +10,12 @@ For the Xbox Series X|S target and non-shader requirements, see the [master comp
 
 | Status | Forms | Meaning |
 | --- | ---: | --- |
-| Converted subset; fixture accepted | 107 | Translation is recorded and the status registry records accepted native fixture evidence; only the documented operand subset is covered. |
+| Converted subset; fixture accepted | 109 | Translation is recorded and the status registry records accepted native fixture evidence; only the documented operand subset is covered. |
 | Converted subset; acceptance pending | 82 | Translation is recorded, but the registry does not record accepted native fixture evidence. This may reflect pending acceptance or documentation lag. |
 | Decoded; translation evidence unrecorded | 5 | The decoder lists the form, but no translation evidence row is recorded. This is an evidence gap, not proof that lowering is absent. |
-| Not converted | 1271 | No supported decoder identity exists. Opcode recognition from metadata alone does not implement execution. |
+| Not converted | 1269 | No supported decoder identity exists. Opcode recognition from metadata alone does not implement execution. |
 
-**Decoder coverage: 194/1465. Not yet decoded: 1271.**
+**Decoder coverage: 196/1465. Not yet decoded: 1269.**
 
 No row means “all operand modes complete.” Sources, literals, modifiers, register widths, execution masks, graphics versus compute applicability, control-flow interactions and numerical behavior still require their own contracts and tests. This list covers the pinned inventory, not every future AMD instruction or every Xbox graphics method.
 
@@ -23,7 +23,7 @@ The evidence columns reproduce `docs/status.toml` without turning local readback
 
 ## Stage 3 planning map
 
-**All S3 stages remain open.** See the [latest validated checkpoint](../testing/stage3-control-memory-opening.md) for bounded scalar/mask branches, compute loads and waits, and Wave32 masked bit count. Other wave/lane operations remain open.
+**All S3 stages remain open.** See the [latest validated checkpoint](../testing/stage3-control-memory-opening.md) for bounded scalar/mask branches, compute loads and waits, and Wave32 masked bit counts and bounded lane-zero reads. Other wave/lane operations remain open.
 
 The partition below includes SOPP control flow and memory families alongside arithmetic. It is provisional, not a claim that a stage is complete or that forms outside arithmetic are optional. S3.6 numerical correctness applies across floating-point operations and is not counted as a disjoint opcode bucket. State assignments remain explicit gaps; scalar comparisons retain their historical arithmetic assignment pending a separate ownership audit. Counts exclude operand-mode debt such as DPP/SDWA, wave sizes, masks and ordering. The earlier 7/8/12 totals for S3.2/S3.4/S3.5 excluded whole families and were not stage completion denominators.
 
@@ -32,7 +32,7 @@ The partition below includes SOPP control flow and memory families alongside ari
 | S3.1 Arithmetic | 480 | 158 | 322 |
 | S3.2 Control flow | 24 | 8 | 16 |
 | S3.3 Masks / comparisons | 419 | 12 | 407 |
-| S3.4 Wave / lane | 11 | 2 | 9 |
+| S3.4 Wave / lane | 11 | 4 | 7 |
 | S3.5 Memory / interfaces | 509 | 14 | 495 |
 | State / assignment pending | 22 | 0 | 22 |
 
@@ -57,9 +57,9 @@ The partition below includes SOPP control flow and memory families alongside ari
 | [SOPK](#sopk) | 27 | 18 | 0 | 0 | 9 |
 | [SOPP](#sopp) | 36 | 7 | 2 | 0 | 27 |
 | [VINTRP](#vintrp) | 3 | 0 | 0 | 2 | 1 |
-| [VOP1](#vop1) | 81 | 6 | 0 | 0 | 75 |
+| [VOP1](#vop1) | 81 | 7 | 0 | 0 | 74 |
 | [VOP2](#vop2) | 47 | 7 | 13 | 0 | 27 |
-| [VOP3](#vop3) | 416 | 53 | 0 | 0 | 363 |
+| [VOP3](#vop3) | 416 | 54 | 0 | 0 | 362 |
 | [VOP3P](#vop3p) | 29 | 0 | 0 | 0 | 29 |
 | [VOP3SDST](#vop3sdst) | 10 | 0 | 0 | 0 | 10 |
 | [VOPC](#vopc) | 190 | 0 | 12 | 0 | 178 |
@@ -848,7 +848,7 @@ Update the implementation and its evidence in `docs/status.toml`, then regenerat
 | ---: | --- | --- | --- | --- | --- |
 | 0 | `V_NOP` | Not converted | — | — | — |
 | 1 | `V_MOV_B32` | Converted subset; fixture accepted | constant or register value | fixture verified | fixture verified |
-| 2 | `V_READFIRSTLANE_B32` | Not converted | — | — | — |
+| 2 | `V_READFIRSTLANE_B32` | Converted subset; fixture accepted | MSL snapshot replay at logical wave lane zero; runtime scalar result consumed through vector move; other lanes and graphics rejected | fixture verified | fixture verified |
 | 3 | `V_CVT_I32_F64` | Not converted | — | — | — |
 | 4 | `V_CVT_F64_I32` | Not converted | — | — | — |
 | 5 | `V_CVT_F32_I32` | Not converted | — | — | — |
@@ -1379,7 +1379,7 @@ Update the implementation and its evidence in `docs/status.toml`, then regenerat
 | 858 | `V_INTERP_P2_F16` | Not converted | — | — | — |
 | 862 | `V_MAD_I16` | Not converted | — | — | — |
 | 863 | `V_DIV_FIXUP_F16` | Not converted | — | — | — |
-| 864 | `V_READLANE_B32` | Not converted | — | — | — |
+| 864 | `V_READLANE_B32` | Converted subset; fixture accepted | MSL snapshot replay at logical wave lane zero independent of EXEC; runtime scalar result consumed through vector move | fixture verified | fixture verified |
 | 865 | `V_WRITELANE_B32` | Not converted | — | — | — |
 | 866 | `V_LDEXP_F32` | Not converted | — | — | — |
 | 867 | `V_BFM_B32` | Converted subset; fixture accepted | MSL uint masked width and offset mask creation; compute and graphics | fixture verified | fixture verified |
