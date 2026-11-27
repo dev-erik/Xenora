@@ -1587,5 +1587,55 @@ queue rejects without consuming a logical point or committing resource states.
 Mapping survives successful collection; generation reinitialization clears it.
 All four timelines are recreated during recovery, and old-generation points and
 outputs remain invalid. Payload ceilings and the sixteen-node graph limit do not
-increase. This is a bounded S2.7 increment; broader graph-wide acceptance remains
-open. See the [plan](superpowers/plans/2026-11-27-four-queue-graphs.md).
+increase. The initial increment is recorded in its
+[plan](superpowers/plans/2026-11-27-four-queue-graphs.md); subsequent bounded S2.7
+acceptance is recorded in the [local checkpoint](testing/local-graphics-checkpoint.md#s27-acceptance-bounded-mixed-resource-graphs).
+
+
+### Bounded resource dependency contract
+
+The opt-in graph API is a directed acyclic graph of already admitted submissions.
+Guest waits name retained queue points in the current generation; unknown, future,
+duplicate and failed points reject before admission. The loader adds the latest
+retained same-queue predecessor and computes a bounded transitive closure. Native
+produced inputs also retain and infer their producer edges. Previously obtained native output clones and dependency points can remain usable
+after collection within the same healthy generation; collection removes the entry
+needed for another collection or output lookup. Guest waits can name released
+receipts while descendants retain them, but reject their points after pruning.
+Neither API supports waiting on future signals or forming cycles.
+
+Resource state and content lineage are distinct. A barrier-only use does not
+create a new content version. A unique descendant definition wins over its
+ancestors; incomparable definitions reject independently of wait-record order.
+Selected-root composition separately names semantic ancestors (shader inputs and
+attachment Load) and composition ancestors (the destination backing for copy-back).
+An ordering edge alone must not substitute newer pixels for a selected semantic
+version. Hazards remain conservative at whole-root granularity.
+
+The graph has two independent node limits: sixteen retained logical receipts
+(including released ancestors still referenced by descendants), and sixteen
+uncollected native stages. An attachment transaction consumes seed, render and
+copy-back stages, so it can hit native capacity before sixteen logical receipts.
+Collection frees native slots; guest release/pruning frees logical receipts.
+Four logical queue mappings persist for a worker generation, even after all work
+has completed. A fifth distinct queue rejects until generation recovery. Existing
+payload ceilings apply across all resource roles; external native output leases
+continue to charge their backings after collection.
+
+Native polling and draining preserve ancestor failure and same-queue order. Host
+recovery signals cannot pass a producer that is still writing. Guest publication
+validates ancestors first; a failed ancestor invalidates pending descendants even
+if their native commands have completed. Failure poisons the generation and blocks
+new admission until all retained receipts have been released and pruned, including
+previously successful receipts. Recovery creates fresh event
+timelines and queue mappings; stale native points and produced outputs reject.
+Already published successful submissions are not rolled back by a later failure.
+
+Descriptor revisions, geometry inputs, selected attachments and shader storage
+retain exact input versions under their existing finite contracts. Explicit guest
+mirror import/export remains an idle boundary operation: retained submission
+references prevent synchronization, and GPU completion does not write guest memory.
+Unbounded graphs, subresource-parallel hazards, automatic coherence and console
+execution are outside this contract. Acceptance evidence is recorded in the
+[local checkpoint](testing/local-graphics-checkpoint.md) and the
+[acceptance checklist](superpowers/plans/2026-11-27-resource-graph-acceptance.md).

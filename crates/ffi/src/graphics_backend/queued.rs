@@ -136,6 +136,13 @@ impl State {
             poisoned: false,
         })
     }
+    fn reject(&mut self, producer: GraphicsQueuePoint) {
+        if self.entries.contains_key(&producer) {
+            self.fail(GraphicsError::BackendError(
+                "producer publication rejected".into(),
+            ));
+        }
+    }
     fn fail(&mut self, reason: GraphicsError) {
         self.poisoned = true;
         // Native drainage visits producers before consumers. It never supplies a
@@ -1741,13 +1748,7 @@ where
                         let result = state.submit(&request, completed);
                         let _ = committed.send(result);
                     }
-                    Ok(Message::Reject(producer)) => {
-                        if state.entries.contains_key(&producer) {
-                            state.fail(GraphicsError::BackendError(
-                                "producer publication rejected".into(),
-                            ));
-                        }
-                    }
+                    Ok(Message::Reject(producer)) => state.reject(producer),
                     Ok(Message::Release(point)) => {
                         state.entries.remove(&point);
                     }
@@ -2490,6 +2491,237 @@ mod tests {
             done.send(()).unwrap();
             watchdog.join().unwrap();
             assert!(!timed_out.load(Ordering::SeqCst));
+        }
+    }
+
+    #[test]
+    fn queued_four_queue_copy_buffer_region_fanin_publication_failure_and_recovery() {
+        fn point(queue: u64, value: u64) -> GraphicsQueuePoint {
+            GraphicsQueuePoint {
+                queue: GraphicsHandle::from_u64(queue),
+                value,
+            }
+        }
+        fn version(point: GraphicsQueuePoint) -> GraphicsProducedVersion {
+            GraphicsProducedVersion {
+                point,
+                output: GraphicsProducedOutput::Copy(0),
+            }
+        }
+        fn copy(
+            generation: u64,
+            point: GraphicsQueuePoint,
+            waits: Vec<GraphicsQueuePoint>,
+            source: GraphicsCopyInput,
+        ) -> GraphicsQueuedWorkRequest {
+            GraphicsQueuedWorkRequest::Copy(GraphicsQueuedCopyRequest {
+                generation,
+                point,
+                waits,
+                layout: GraphicsCopyLayout::Buffer { byte_len: 8 },
+                source,
+                output: version(point),
+            })
+        }
+        fn submit(
+            state: &mut State,
+            request: GraphicsQueuedWorkRequest,
+        ) -> mpsc::Receiver<Completion> {
+            let (sent, received) = mpsc::channel();
+            state.submit(&request, sent).unwrap();
+            received
+        }
+        fn reject(state: &mut State, request: GraphicsQueuedWorkRequest) {
+            let before = (state.entries.len(), state.queues.len());
+            let (sent, received) = mpsc::channel();
+            assert!(state.submit(&request, sent).is_err());
+            assert_eq!((state.entries.len(), state.queues.len()), before);
+            assert!(matches!(
+                received.try_recv(),
+                Err(mpsc::TryRecvError::Disconnected)
+            ));
+        }
+
+        let left = [11u8, 22, 33, 44, 55, 66, 77, 88];
+        let right = [101u8, 102, 103, 104, 105, 106, 107, 108];
+        // Mixed Copy/BufferRegion operations, not mixed graphics resources.
+        // Exercise the shared Message::Reject handler on each fan-in branch.
+        // This is controlled publication rejection, not a Metal hardware fault.
+        for rejected_branch in [0, 1] {
+            let mut state = State::new().unwrap();
+            let old = [101, 102, 103, 104].map(|queue| point(queue, 1));
+            let mut receipts = Vec::new();
+            for (producer, bytes) in old[..2].iter().zip([left, right]) {
+                receipts.push(submit(
+                    &mut state,
+                    copy(
+                        1,
+                        *producer,
+                        vec![],
+                        GraphicsCopyInput::Host(Arc::from(bytes)),
+                    ),
+                ));
+            }
+            receipts.push(submit(
+                &mut state,
+                GraphicsQueuedWorkRequest::BufferRegion(GraphicsQueuedBufferRegionRequest {
+                    generation: 1,
+                    point: old[2],
+                    waits: vec![old[0], old[1]],
+                    source_byte_len: 8,
+                    destination_byte_len: 8,
+                    source: GraphicsCopyInput::Produced(version(old[0])),
+                    destination: GraphicsCopyInput::Produced(version(old[1])),
+                    source_offset: 0,
+                    destination_offset: 4,
+                    byte_len: 4,
+                    output: version(old[2]),
+                }),
+            ));
+            receipts.push(submit(
+                &mut state,
+                copy(
+                    1,
+                    old[3],
+                    vec![old[2]],
+                    GraphicsCopyInput::Produced(version(old[2])),
+                ),
+            ));
+            assert_eq!(state.queues.len(), 4);
+            let fifth = point(105, 1);
+            reject(
+                &mut state,
+                copy(1, fifth, vec![], GraphicsCopyInput::Host(Arc::from(left))),
+            );
+            assert!(!state.poisoned);
+            // Let the native descendant finish without State::progress collecting
+            // or publishing it. Rejection must still suppress its ready output.
+            let deadline = std::time::Instant::now() + Duration::from_secs(10);
+            while !state
+                .cohort
+                .is_complete(&state.entries[&old[3]].point)
+                .unwrap()
+            {
+                assert!(std::time::Instant::now() < deadline, "descendant timed out");
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            // Unknown identity on a mapped queue must leave every pending receipt
+            // and mapping intact, even when native results are ready to collect.
+            let mappings = state.queues.clone();
+            state.reject(GraphicsQueuePoint {
+                queue: old[rejected_branch].queue,
+                value: 99,
+            });
+            assert!(!state.poisoned);
+            assert_eq!(state.queues, mappings);
+            assert_eq!(state.entries.len(), 4);
+            for (producer, receipt) in old.iter().zip(&receipts) {
+                assert!(state.entries[producer].completed.is_some());
+                assert!(matches!(receipt.try_recv(), Err(mpsc::TryRecvError::Empty)));
+            }
+            state.reject(old[rejected_branch]);
+            state.progress();
+            for receipt in receipts {
+                assert!(matches!(
+                    receipt.recv_timeout(Duration::from_secs(10)).unwrap(),
+                    Err(GraphicsError::BackendError(reason))
+                        if reason == "producer publication rejected"
+                ));
+                assert!(matches!(
+                    receipt.try_recv(),
+                    Err(mpsc::TryRecvError::Disconnected)
+                ));
+            }
+            assert!(state.poisoned);
+            reject(
+                &mut state,
+                copy(2, fifth, vec![], GraphicsCopyInput::Host(Arc::from(left))),
+            );
+            // Mirror Release for every drained receipt, retaining the poisoned
+            // cohort and its mappings until a new generation is admitted.
+            for producer in old {
+                assert!(state.entries.remove(&producer).is_some());
+            }
+            let fresh = [fifth, point(101, 2), point(102, 2), point(103, 2)];
+            let mut recovered = vec![submit(
+                &mut state,
+                copy(
+                    2,
+                    fresh[0],
+                    vec![],
+                    GraphicsCopyInput::Host(Arc::from(left)),
+                ),
+            )];
+            assert_eq!(state.generation, Some(2));
+            assert!(!state.poisoned);
+            assert_eq!(state.queues.len(), 1);
+            // Check stale dependencies separately from stale produced outputs.
+            reject(
+                &mut state,
+                copy(
+                    2,
+                    fresh[1],
+                    vec![old[0]],
+                    GraphicsCopyInput::Host(Arc::from(left)),
+                ),
+            );
+            reject(
+                &mut state,
+                copy(
+                    2,
+                    fresh[1],
+                    vec![fresh[0]],
+                    GraphicsCopyInput::Produced(version(old[rejected_branch])),
+                ),
+            );
+            for index in 1..4 {
+                recovered.push(submit(
+                    &mut state,
+                    copy(
+                        2,
+                        fresh[index],
+                        vec![fresh[index - 1]],
+                        GraphicsCopyInput::Produced(version(fresh[index - 1])),
+                    ),
+                ));
+            }
+            assert_eq!(state.queues.len(), 4);
+            for (logical, native) in fresh.iter().zip([
+                RenderQueue::First,
+                RenderQueue::Second,
+                RenderQueue::Third,
+                RenderQueue::Fourth,
+            ]) {
+                assert_eq!(state.queues.get(&logical.queue), Some(&native));
+            }
+            let deadline = std::time::Instant::now() + Duration::from_secs(10);
+            for receipt in recovered {
+                let output = loop {
+                    state.progress();
+                    match receipt.try_recv() {
+                        Ok(output) => break output.unwrap(),
+                        Err(mpsc::TryRecvError::Empty) => {}
+                        Err(mpsc::TryRecvError::Disconnected) => panic!("lost recovery receipt"),
+                    }
+                    assert!(std::time::Instant::now() < deadline, "recovery timed out");
+                    std::thread::sleep(Duration::from_millis(1));
+                };
+                match output {
+                    GraphicsQueuedWorkOutput::Copy { layout, bytes } => {
+                        assert_eq!(layout, GraphicsCopyLayout::Buffer { byte_len: 8 });
+                        assert_eq!(bytes, left);
+                    }
+                    _ => panic!("expected recovered buffer copy"),
+                }
+                assert!(matches!(
+                    receipt.try_recv(),
+                    Err(mpsc::TryRecvError::Disconnected)
+                ));
+            }
+            for producer in fresh {
+                assert!(state.entries.remove(&producer).is_some());
+            }
+            assert!(state.entries.is_empty());
         }
     }
 

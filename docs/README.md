@@ -16,6 +16,8 @@ either path. The [changelog](../CHANGELOG.md) records notable changes.
 
 ## Native Metal graphics
 
+- [Bounded resource dependencies](interfaces.md#bounded-resource-dependency-contract) — Version selection, failure/lifetime rules and [acceptance checklist](superpowers/plans/2026-11-27-resource-graph-acceptance.md).
+
 - [Four-queue resource graphs](interfaces.md#four-queue-graph-increment) — Expanded opt-in queue admission, recovery and [increment checklist](superpowers/plans/2026-11-27-four-queue-graphs.md).
 
 - [Guest resource synchronization](graphics-call-v1.md#explicit-guest-resource-synchronization) — Packed texture/buffer bindings and atomic import/export; [completion plan](superpowers/plans/2026-11-27-guest-synchronization.md).

@@ -6488,3 +6488,6 @@ mod guest_sync;
 
 #[path = "guest_graphics/four_queue_graphs.rs"]
 mod four_queue_graphs;
+
+#[path = "guest_graphics/resource_graph_acceptance.rs"]
+mod resource_graph_acceptance;

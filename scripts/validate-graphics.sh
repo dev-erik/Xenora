@@ -7,7 +7,7 @@ usage() {
 Usage: scripts/validate-graphics.sh [quick|full]
 
 quick (default): focused CPU and native Metal checks for produced geometry,
-                 guest synchronization, image sources, descriptor tables/indexing, views, samplers, guest-backed copies, R8 sampling, mip/slice transfers, array sampling, storage writes, typed formats/roles and compute caching.
+                 resource graphs, guest synchronization, image sources, descriptor tables/indexing, views, samplers, guest-backed copies, R8 sampling, mip/slice transfers, array sampling, storage writes, typed formats/roles and compute caching.
 full:            all nine repository validation gates, including the GPU suite.
 
 Run on native Apple Silicon with the repository build dependencies installed.
@@ -90,6 +90,10 @@ run_tests() {
 }
 printf 'Running %s validation. Logs: %s\n' "$mode" "$log_dir"
 if [[ "$mode" == quick ]]; then
+    run_tests graph-loader cargo test --locked -p xenora-loader --test queued_graphs
+    run_tests graph-worker-recovery cargo test --locked -p xenora-ffi --features gpu-tests --lib queued_four_queue_copy_buffer_region_fanin_publication_failure_and_recovery -- --nocapture --test-threads=1
+    run_tests graph-acceptance-native cargo test --locked -p xenora-metal --features gpu-tests --test native_compute resource_graph_acceptance:: -- --nocapture --test-threads=1
+    run_tests graph-acceptance-guest cargo test --locked -p xenora-ffi --features gpu-tests --test guest_graphics resource_graph_acceptance:: -- --nocapture --test-threads=1
     run_tests four-queue-native cargo test --locked -p xenora-metal --features gpu-tests --test native_compute four_queue_graphs:: -- --nocapture --test-threads=1
     run_tests four-queue-guest cargo test --locked -p xenora-ffi --features gpu-tests --test guest_graphics original_guest_four_queue_ -- --nocapture --test-threads=1
     run_tests guest-sync-cpu cargo test --locked -p xenora-loader --test guest_sync

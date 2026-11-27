@@ -16,6 +16,61 @@ run ends with `PASS`. Quick mode also rejects filters that select no passing tes
 Use `--help` for prerequisites. These tests render offscreen and compare pixels;
 they do not open an application window. Avoid other GPU test runs at the same time.
 
+## S2.7 acceptance: bounded mixed-resource graphs
+
+27 November 2026. The [dependency contract](../interfaces.md#bounded-resource-dependency-contract)
+combines the existing four-queue graph with produced geometry, descriptor revisions,
+attachment Load, storage writes, transfers and explicit guest mirrors. Logical
+receipts and native stages each have a sixteen-entry ceiling; attachment transactions
+can consume several native stages. No queue or payload limit was raised.
+
+New focused coverage comprises two native tests, one original guest test, one
+worker test and one CPU-only test. The native mixed graph fills sixteen slots,
+uses literal full-texture oracles and separately gates geometry and attachment
+fan-in producers. It preserves untouched storage pixels and retained exact outputs
+across collection. Invalid GPU-produced indices prevent descendant publication;
+this is guarded geometry validation, not an injected hardware fault.
+
+The guest program connects sixteen retained receipts across all four queues,
+including produced attributes, storage, descriptor sampling, attachment Load and
+copies. Native transaction stages are collected at explicit boundaries while
+logical receipts remain retained. Clearing descriptor tables after recording must
+not change captured revisions. Capacity rejection, released ancestors, resource
+retirement, unchanged mirror guards and export only after pruning are checked in
+both collection orders. Publication remains monotonic: the program's four render
+submissions produce three presentation updates because node6 is collected before
+node5; the older result cannot replace the newer presentation.
+
+The worker test calls the same selected-point rejection handler as message dispatch,
+after native descendants complete but before their results are delivered. Rejection
+of either branch fails all unpublished tickets; an unknown point does nothing.
+After draining and releasing entries, a previously rejected fifth queue becomes
+the first mapping of a fresh generation. Stale inputs reject and four fresh mappings
+produce literal buffers. This exercises worker state directly, not channel dispatch
+or a Metal command fault. The CPU test checks malformed ancestor output, failed
+publication, retained budget and generation recovery independently of the GPU.
+
+Four isolated source faults compiled and failed runtime checks: lost loader generation
+invalidation, retained worker queue mappings, omitted geometry validation and omitted
+attachment Load dependencies. The last fault failed a pixel oracle, not the early
+queue-marker assertion. Exact source restoration is recorded in
+`artifacts/s27-acceptance-mutations`. The first loader-fault attempt also panicked
+during cleanup; supplying the controlled result before assertions yielded a clean
+assertion failure on rerun. Test expectations were not weakened.
+
+Focused native/guest/worker runs passed with Metal API and shader validation; logs
+are `artifacts/s27-*-acceptance.log`. All nine gates passed on restored sources in
+`artifacts/validation-full.tN7aM4`: **1,013 workspace tests passed, zero failed,
+146 ignored**; native suites reported **461 passed, zero failed, one ignored**.
+The suites overlap; ignored tests are not GPU evidence. Executed native/guest test
+binaries were verified as ARM64; native dependencies use Apple's Metal framework.
+
+Two independent reviewers accepted the bounded implementation and evidence, with
+their full-gate condition satisfied by that run. They independently checked literal
+outputs, presentation ordering, gate placement, recovery, mutation failures and
+restoration hashes. **S2.7 is complete within the documented finite contract.**
+Final integrated Stage2 acceptance remains separate.
+
 ## S2.7 increment: four-queue resource graphs
 
 27 November 2026. Opt-in graph cohorts now admit four logical/native queues with
@@ -44,8 +99,8 @@ increment with their full-gate condition satisfied by the recorded run.
 
 The [increment checklist](../superpowers/plans/2026-11-27-four-queue-graphs.md)
 records scope and validation. Legacy cohorts currently allocate all four physical
-queues/events while admitting only the original two. **S2.7 remains open** for
-mixed attachment/copy/geometry/descriptor/storage/synchronization graph acceptance,
+queues/events while admitting only the original two. At this increment, S2.7 was
+still open for mixed attachment/copy/geometry/descriptor/storage/synchronization graph acceptance,
 wider failure and lifetime pressure, and a final dependency contract. Final
 integrated Stage2 acceptance remains separate.
 

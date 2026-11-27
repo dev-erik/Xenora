@@ -1032,3 +1032,15 @@ cohorts retain two-queue admission. The sixteen-node limit and payload ceilings
 remain shared across the whole graph. Queue assignments persist after successful
 collection and reset on generation recovery; a fifth distinct queue rejects
 without publication. See the [increment contract](interfaces.md#four-queue-graph-increment).
+
+
+Queue waits name already admitted retained points; future points, duplicates and
+failed ancestors reject. The loader includes same-queue ordering automatically.
+The sixteen-receipt limit includes released ancestors still retained by descendants.
+Selected attachment transactions additionally consume multiple native stages, with
+a separate sixteen-uncollected-stage ceiling. Resource payload limits do not grow
+with queue count. Successful collection retains the generation's queue mappings;
+failure recovery requires draining and pruning all retained receipts before fresh
+admission, including previously successful receipts.
+See the [bounded dependency contract](interfaces.md#bounded-resource-dependency-contract)
+for version selection, composition ancestry, publication and lifetime rules.

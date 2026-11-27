@@ -36,7 +36,7 @@ struct Harness {
     ctx: GraphicsContext,
     memory: GuestMemory,
     device: GraphicsHandle,
-    queues: [GraphicsHandle; 2],
+    queues: [GraphicsHandle; 4],
     backend: Arc<Mutex<Backend>>,
 }
 impl Harness {
@@ -495,4 +495,104 @@ fn cpu_graph_barrier_only_use_preserves_ancestor_output_and_retired_ticket_chain
         h.ctx.destroy_resource(z).is_err(),
         "publication must not resurrect a destroyed destination"
     );
+}
+
+#[test]
+fn cpu_graph_four_queue_failed_diamond_rejects_publication_and_recovers() {
+    for reverse in [false, true] {
+        let mut h = Harness::new();
+        let seed = h.resource([17, 83, 149, 231]);
+        let roots = [
+            h.resource([1; 4]),
+            h.resource([2; 4]),
+            h.resource([3; 4]),
+            h.resource([4; 4]),
+        ];
+        let (la, aa) = h.copy_list(seed, roots[0], false);
+        let a = h.submit(0, la, &[]).unwrap();
+        let pa = h.point(a);
+        let (lb, ab) = h.copy_list(roots[0], roots[1], true);
+        let b = h.submit(1, lb, &[pa]).unwrap();
+        let (lc, ac) = h.copy_list(roots[0], roots[2], true);
+        let c = h.submit(2, lc, &[pa]).unwrap();
+        let (ld, ad) = h.copy_list(roots[0], roots[3], true);
+        let waits = if reverse {
+            [h.point(c), h.point(b)]
+        } else {
+            [h.point(b), h.point(c)]
+        };
+        let d = h.submit(3, ld, &waits).unwrap();
+        h.assert_source(3, pa, &[pa, h.point(b), h.point(c)]);
+        // Native-like descendants have complete results before the ancestor's
+        // malformed output is discovered. None may become a published success.
+        h.complete(0, &[17]);
+        for i in 1..4 {
+            h.complete(i, &[17, 83, 149, 231]);
+        }
+        assert_eq!(
+            h.ctx.wait_submission(d).unwrap(),
+            GraphicsSubmissionStatus::Failed
+        );
+        for receipt in [a, b, c, d] {
+            assert_eq!(
+                h.ctx.wait_submission(receipt).unwrap(),
+                GraphicsSubmissionStatus::Failed
+            );
+            assert!(h.ctx.submission_copy_outcome(receipt).unwrap().is_none());
+        }
+        for (list, allocator) in [(la, aa), (lb, ab), (lc, ac), (ld, ad)] {
+            h.ctx.reset_command_list(list, allocator).unwrap();
+        }
+        // Release ancestors first: descendants still pin their payload budget.
+        let charged = h.ctx.queued_copy_allocation_bytes();
+        for receipt in [a, b, c] {
+            h.ctx.release_submission(receipt).unwrap();
+        }
+        assert_eq!(h.ctx.queued_copy_allocation_bytes(), charged);
+        h.ctx.release_submission(d).unwrap();
+        assert_eq!(h.ctx.queued_copy_allocation_bytes(), 0);
+        for state in &h.backend.lock().unwrap().states {
+            assert_eq!(state.lock().unwrap().drops, 1);
+        }
+        // Original destination states survived failure: this COPY_DEST barrier
+        // would reject if the failed graph had published its state transitions.
+        for (i, root) in roots.into_iter().enumerate() {
+            let out = h.resource([0; 4]);
+            let (list, _) = h.copy_list(root, out, false);
+            assert!(h.submit(i, list, &[pa]).is_err(), "old point must reject");
+            let receipt = h.submit(i, list, &[]).unwrap();
+            assert_eq!(
+                h.point(receipt).value,
+                2,
+                "rejection must not consume a point"
+            );
+            let expected = [i as u8 + 1; 4];
+            // Supply cleanup's result before assertions so a detected regression
+            // cannot turn a useful assertion failure into a destructor panic.
+            h.complete(4 + i, &expected);
+            let (bytes, generation, old_generation) = {
+                let backend = h.backend.lock().unwrap();
+                let GraphicsQueuedWorkRequest::Copy(request) = &backend.requests[4 + i] else {
+                    panic!("copy")
+                };
+                let GraphicsCopyInput::Host(bytes) = &request.source else {
+                    panic!("host after recovery")
+                };
+                let GraphicsQueuedWorkRequest::Copy(old) = &backend.requests[0] else {
+                    panic!("copy")
+                };
+                (bytes.to_vec(), request.generation, old.generation)
+            };
+            assert_eq!(bytes, expected);
+            assert_eq!(generation, old_generation + 1);
+            assert_eq!(
+                h.ctx.wait_submission(receipt).unwrap(),
+                GraphicsSubmissionStatus::Complete
+            );
+            h.ctx.release_submission(receipt).unwrap();
+            assert_eq!(h.read(out), expected);
+        }
+        assert_eq!(h.ctx.queued_copy_allocation_bytes(), 0);
+        assert_eq!(h.ctx.last_presentation.lock().unwrap().frame_index, 0);
+    }
 }

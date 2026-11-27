@@ -18,6 +18,10 @@ remains unsupported.
 - Extended the read-only RDNA2 planning CLI (`python3 -m qa rdna2`) with family/status filters, compact summaries, Codex-ready manifests under `artifacts/`, active-claim exclusion (family claims exclude those families; path-only claims block overlapping permitted files), coverage reconcile against `semantic_coverage` without inflating counts, and inventory diffs. Covered by `tests/qa/test_rdna2_plan.py`; planning only, no GPU production edits.
 
 ### Added
+- Added connected four-queue resource graph acceptance tests combining produced
+  geometry, attachment loads, descriptor sampling, storage writes and copies.
+  Coverage checks bounded admission, retained versions, explicit guest mirrors
+  and generation recovery; see the local graphics checkpoint for executed evidence.
 - Opt-in resource graphs now admit four logical/native queues while retaining the
   sixteen-node and existing payload limits. Legacy cohorts still admit only their
   original two queues; recovery recreates all four independent event timelines.

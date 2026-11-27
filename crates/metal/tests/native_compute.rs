@@ -486,3 +486,6 @@ mod shader_array_views;
 
 #[path = "native/four_queue_graphs.rs"]
 mod four_queue_graphs;
+
+#[path = "native/resource_graph_acceptance.rs"]
+mod resource_graph_acceptance;
