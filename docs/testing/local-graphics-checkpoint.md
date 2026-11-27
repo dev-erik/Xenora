@@ -6,6 +6,32 @@ claim of Xbox hardware equivalence. Supporting raw logs, mutation records and
 source manifests remain local and are not distributed with the repository.
 The array-range descriptor increment below was validated on 26 November 2026.
 
+## Stage 3.1 increment: full-width products and three-source integer operations
+
+27 November 2026. Six VOP3 forms add full-width low/high multiplication, bit
+selection, three-input addition and AND/OR composition. The
+[operand contract](../shaders/vop3-integer.md) describes shared literals, scalar
+source limits and graphics provenance. Both independent reviewers accepted the
+increment; full S3.1 remains open.
+
+Final unchanged-source validation passed 319 CPU tests (nine ignored), 22 LLVM
+tests including 928 three-way comparisons across 120 forms, 14 compute tests
+including 79 native dispatches, and three native graphics tests covering 690
+draws. Eight focused graphics CPU tests cover every active operand position.
+Native execution used Apple M4 Max with Metal API/shader validation; dispatch
+and draw counts are derived from test loops, not separate test-case counts.
+
+Three deliberate mutations were assertion-killed: unsigned substitution for
+signed high product, swapped bit-selection sources, and omitted third-source
+uniform metadata checking. Sources were restored. All nine repository gates
+passed in `artifacts/validation-full.gs4hXm`: workspace 1187 passed/0 failed/160
+ignored; GPU suite 491 passed/0 failed/1 ignored (overlapping counts). Native
+architecture/dependency audit checked 133 executables. Focused logs and the
+25-file source manifest are under `artifacts/s31-vop3-integer/`; independent
+reviews are `artifacts/s31-vop3-r1-review.md` and `s31-vop3-r2-review.md`.
+Only acceptance documentation changed after the final source-bound run.
+Synthetic Metal evidence does not establish AMD/Xbox hardware equivalence.
+
 ## Stage 3.1 increment: scalar bit tests, updates and conditional writes
 
 27 November 2026. Six new 32-bit scalar forms implement BITSET0/1, BITCMP0/1,

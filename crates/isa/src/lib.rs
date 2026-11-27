@@ -72,6 +72,50 @@ impl fmt::Display for VectorSource {
     }
 }
 
+/// Full-width, value-only 32-bit vector product.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum VectorProductOp {
+    /// `v_mul_lo_u32`.
+    MulLoU32,
+    /// `v_mul_hi_u32`.
+    MulHiU32,
+    /// `v_mul_hi_i32`.
+    MulHiI32,
+}
+
+impl VectorProductOp {
+    /// Returns the unmodified VOP3 mnemonic.
+    pub const fn mnemonic(self) -> &'static str {
+        match self {
+            Self::MulLoU32 => "v_mul_lo_u32",
+            Self::MulHiU32 => "v_mul_hi_u32",
+            Self::MulHiI32 => "v_mul_hi_i32",
+        }
+    }
+}
+
+/// Value-only three-source 32-bit vector operation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum VectorTernaryOp {
+    /// `v_bfi_b32`.
+    BfiB32,
+    /// `v_add3_u32`.
+    Add3U32,
+    /// `v_and_or_b32`.
+    AndOrB32,
+}
+
+impl VectorTernaryOp {
+    /// Returns the unmodified VOP3 mnemonic.
+    pub const fn mnemonic(self) -> &'static str {
+        match self {
+            Self::BfiB32 => "v_bfi_b32",
+            Self::Add3U32 => "v_add3_u32",
+            Self::AndOrB32 => "v_and_or_b32",
+        }
+    }
+}
+
 /// A scalar 32-bit source.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ScalarSource {
@@ -207,6 +251,21 @@ pub enum Instruction {
     MoveB32 { dst: u8, src: VectorSource },
     /// VOP3 unsigned 32-bit addition with no carry or input/output modifiers.
     AddNoCarryU32 { dst: u8, src0: u8, src1: u8 },
+    /// Unmodified full-width product; preserves SCC, VCC and EXEC.
+    VectorProduct {
+        op: VectorProductOp,
+        dst: u8,
+        src0: VectorSource,
+        src1: VectorSource,
+    },
+    /// Unmodified three-source integer operation; preserves SCC, VCC and EXEC.
+    VectorTernary {
+        op: VectorTernaryOp,
+        dst: u8,
+        src0: VectorSource,
+        src1: VectorSource,
+        src2: VectorSource,
+    },
     /// SOP1 32-bit move to a normal SGPR or an EXEC/VCC half.
     ScalarMoveB32 { dst: u8, src: ScalarSource },
     /// SOP1 read/modify/write of one old-destination bit; preserves SCC.
@@ -396,6 +455,8 @@ impl Instruction {
             Self::WaitStore => "s_waitcnt_vscnt",
             Self::MoveB32 { .. } => "v_mov_b32_e32",
             Self::AddNoCarryU32 { .. } => "v_add_nc_u32_e64",
+            Self::VectorProduct { op, .. } => op.mnemonic(),
+            Self::VectorTernary { op, .. } => op.mnemonic(),
             Self::ScalarMoveB32 { .. } => "s_mov_b32",
             Self::ScalarBitSetB32 { value: false, .. } => "s_bitset0_b32",
             Self::ScalarBitSetB32 { value: true, .. } => "s_bitset1_b32",
@@ -492,6 +553,16 @@ impl fmt::Display for Instruction {
             Self::VectorCompare { src0, src1, .. } => {
                 write!(formatter, " vcc_lo, {src0}, v{src1}")
             }
+            Self::VectorProduct {
+                dst, src0, src1, ..
+            } => write!(formatter, " v{dst}, {src0}, {src1}"),
+            Self::VectorTernary {
+                dst,
+                src0,
+                src1,
+                src2,
+                ..
+            } => write!(formatter, " v{dst}, {src0}, {src1}, {src2}"),
             Self::VectorUnary { dst, src, .. } => write!(formatter, " v{dst}, {src}"),
             Self::VectorAlu {
                 dst, src0, src1, ..

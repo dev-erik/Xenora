@@ -4,8 +4,8 @@ use std::fmt;
 
 pub use xenora_isa::{
     Architecture, CompareRelation, ExportTarget, Instruction, InterpolationPhase, ScalarAluOp,
-    ScalarCompareOp, ScalarSource, ScalarUnaryOp, VectorAluOp, VectorCompareOp, VectorSource,
-    VectorUnaryOp,
+    ScalarCompareOp, ScalarSource, ScalarUnaryOp, VectorAluOp, VectorCompareOp, VectorProductOp,
+    VectorSource, VectorTernaryOp, VectorUnaryOp,
 };
 use xenora_isa::{
     BUFFER_LOAD_DWORD, BUFFER_STORE_DWORD, EXP, IMAGE_SAMPLE_LZ, IMAGE_STORE, S_BRANCH,
@@ -43,7 +43,7 @@ const fn concat_forms<const N: usize>() -> [(&'static str, EncodingFamily); N] {
 }
 
 /// Decoded forms not yet described by the semantic registry.
-const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 58] = [
+const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 64] = [
     ("BUFFER_LOAD_DWORD", EncodingFamily::Mubuf),
     ("BUFFER_STORE_DWORD", EncodingFamily::Mubuf),
     ("EXP", EncodingFamily::Exp),
@@ -78,6 +78,12 @@ const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 58] = [
     ("S_MOV_B32", EncodingFamily::Sop1),
     ("S_WAITCNT", EncodingFamily::Sopp),
     ("S_WAITCNT_VSCNT", EncodingFamily::Sopk),
+    ("V_MUL_LO_U32", EncodingFamily::Vop3),
+    ("V_MUL_HI_U32", EncodingFamily::Vop3),
+    ("V_MUL_HI_I32", EncodingFamily::Vop3),
+    ("V_BFI_B32", EncodingFamily::Vop3),
+    ("V_ADD3_U32", EncodingFamily::Vop3),
+    ("V_AND_OR_B32", EncodingFamily::Vop3),
     ("V_ADD_F32", EncodingFamily::Vop2),
     ("V_ADD_NC_U32", EncodingFamily::Vop3),
     ("V_AND_B32", EncodingFamily::Vop2),
@@ -430,6 +436,12 @@ fn decode_gfx1030(bytes: &[u8], offset: usize) -> Result<(Instruction, u8), Deco
                 return vector_compare(VectorCompareOp { relation, signed }, first, bytes);
             }
         }
+    }
+    if matches!(
+        first & 0xffff0000,
+        0xd5690000 | 0xd56a0000 | 0xd56c0000 | 0xd54a0000 | 0xd76d0000 | 0xd7710000
+    ) {
+        return vector_integer_vop3(first, bytes);
     }
     if V_ADD_NC_U32.matches(first) {
         let len = V_ADD_NC_U32.byte_len();
@@ -1004,6 +1016,87 @@ fn move_b32(first: u32, bytes: &[u8]) -> Result<(Instruction, u8), DecodeErrorKi
         }
     };
     Ok((Instruction::MoveB32 { dst, src }, len))
+}
+
+// This checked path is deliberately separate from the existing VGPR-only ADD.
+fn vector_integer_vop3(first: u32, bytes: &[u8]) -> Result<(Instruction, u8), DecodeErrorKind> {
+    let product = match first & 0xffff0000 {
+        0xd5690000 => Some(VectorProductOp::MulLoU32),
+        0xd56a0000 => Some(VectorProductOp::MulHiU32),
+        0xd56c0000 => Some(VectorProductOp::MulHiI32),
+        _ => None,
+    };
+    let ternary = match first & 0xffff0000 {
+        0xd54a0000 => VectorTernaryOp::BfiB32,
+        0xd76d0000 => VectorTernaryOp::Add3U32,
+        _ => VectorTernaryOp::AndOrB32,
+    };
+    let mnemonic = product.map_or(ternary.mnemonic(), VectorProductOp::mnemonic);
+    let second = word(bytes, 8)?;
+    if first & 0xff00 != 0 || second & 0xf8000000 != 0 {
+        return Err(unsupported(
+            mnemonic,
+            "expected no input or output modifiers",
+        ));
+    }
+    let raw = [second & 511, (second >> 9) & 511, (second >> 18) & 511];
+    if product.is_some() && raw[2] != 128 {
+        return Err(unsupported(
+            mnemonic,
+            "expected canonical unused SRC2 inline zero",
+        ));
+    }
+    let active = &raw[..if product.is_some() { 2 } else { 3 }];
+    // Preserve selector identity: a forced literal equal to an inline constant
+    // still consumes one scalar-bus slot. All literal positions share one key.
+    let mut scalar_keys = [u32::MAX; 2];
+    for &selector in active {
+        if (selector <= 106 || selector == 255) && !scalar_keys.contains(&selector) {
+            if let Some(slot) = scalar_keys.iter_mut().find(|key| **key == u32::MAX) {
+                *slot = selector;
+            } else {
+                return Err(unsupported(
+                    mnemonic,
+                    "expected at most two distinct scalar-bus inputs",
+                ));
+            }
+        }
+    }
+    let len = if active.contains(&255) { 12 } else { 8 };
+    let literal = if len == 12 {
+        Some(word(bytes, len)?)
+    } else {
+        None
+    };
+    // Nonliteral selectors use the existing bounded vector-source domain.
+    // Every active literal position receives the same single trailing word.
+    let mut sources = [VectorSource::Immediate(0); 3];
+    for (slot, &selector) in sources.iter_mut().zip(active) {
+        *slot = if let Some(value) = literal.filter(|_| selector == 255) {
+            VectorSource::Immediate(value)
+        } else {
+            vector_src0(selector, bytes, mnemonic)?.0
+        };
+    }
+    let dst = first as u8;
+    let [src0, src1, src2] = sources;
+    let instruction = if let Some(op) = product {
+        Instruction::VectorProduct {
+            op,
+            dst,
+            src0,
+            src1,
+        }
+    } else {
+        Instruction::VectorTernary {
+            op: ternary,
+            dst,
+            src0,
+            src1,
+            src2,
+        }
+    };
+    Ok((instruction, len))
 }
 
 fn add_u32(first: u32, second: u32) -> Result<Instruction, DecodeErrorKind> {

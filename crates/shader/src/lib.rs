@@ -15,7 +15,7 @@ pub use graphics::{
 pub use xenora_decoder::Architecture;
 use xenora_decoder::{
     DecodeError, DecodedInstruction, Instruction, ScalarSource, VectorBinary, VectorCompareOp,
-    VectorSource, VectorUnaryOp,
+    VectorProductOp, VectorSource, VectorTernaryOp, VectorUnaryOp,
 };
 
 /// SGPR index of `vcc_lo`.
@@ -98,6 +98,8 @@ enum Op {
     Constant(u32),
     Binary(Binary, Value, Value),
     Unary(VectorUnaryOp, Value),
+    Product(VectorProductOp, Value, Value),
+    Ternary(VectorTernaryOp, Value, Value, Value),
     MergeLanes {
         mask: u32,
         active: Value,
@@ -136,6 +138,8 @@ impl Op {
             Self::Load | Self::Constant(_) | Self::ScalarBranch { .. } => Vec::new(),
             Self::Binary(_, left, right) => vec![left, right],
             Self::Unary(_, source) => vec![source],
+            Self::Product(_, a, b) => vec![a, b],
+            Self::Ternary(_, a, b, c) => vec![a, b, c],
             Self::MergeLanes {
                 active, inactive, ..
             } => vec![active, inactive],
@@ -157,6 +161,10 @@ impl Op {
             Self::Load => format!("input[{index}]"),
             Self::Constant(value) => format!("0x{value:08x}u"),
             Self::Unary(op, source) => vector_unary_expression(op, &name(source)),
+            Self::Product(op, a, b) => vector_product_expression(op, &name(a), &name(b)),
+            Self::Ternary(op, a, b, c) => {
+                vector_ternary_expression(op, &name(a), &name(b), &name(c))
+            }
             Self::Binary(operator, left, right) => {
                 let (left, right) = (name(left), name(right));
                 let (_, symbol) = operator.operator();
@@ -308,6 +316,23 @@ fn vector_unary_expression(op: VectorUnaryOp, source: &str) -> String {
             let differing = format!("(({source}) ^ (0u - (({source}) >> 31u)))");
             format!("({differing} == 0u) ? 0xffffffffu : clz({differing})")
         }
+    }
+}
+
+fn vector_product_expression(op: VectorProductOp, a: &str, b: &str) -> String {
+    match op {
+        VectorProductOp::MulLoU32 => format!("({a}) * ({b})"),
+        VectorProductOp::MulHiU32 => format!("mulhi({a}, {b})"),
+        VectorProductOp::MulHiI32 => {
+            format!("as_type<uint>(mulhi(as_type<int>({a}), as_type<int>({b})))")
+        }
+    }
+}
+fn vector_ternary_expression(op: VectorTernaryOp, a: &str, b: &str, c: &str) -> String {
+    match op {
+        VectorTernaryOp::BfiB32 => format!("(({a}) & ({b})) | (~({a}) & ({c}))"),
+        VectorTernaryOp::Add3U32 => format!("(({a}) + ({b})) + ({c})"),
+        VectorTernaryOp::AndOrB32 => format!("(({a}) & ({b})) | ({c})"),
     }
 }
 
@@ -480,6 +505,14 @@ pub fn compile(architecture: Architecture, bytes: &[u8]) -> Result<CompiledShade
             ),
             Op::Unary(op, source) => (
                 format!("{dest} = {} {source}", op.mnemonic()),
+                format!("uint {dest} = {};", operation.expression(&thread, "", "")),
+            ),
+            Op::Product(op, a, b) => (
+                format!("{dest} = {} {a}, {b}", op.mnemonic()),
+                format!("uint {dest} = {};", operation.expression(&thread, "", "")),
+            ),
+            Op::Ternary(op, a, b, c) => (
+                format!("{dest} = {} {a}, {b}, {c}", op.mnemonic()),
                 format!("uint {dest} = {};", operation.expression(&thread, "", "")),
             ),
             Op::ScalarBranch { target, taken } => {
@@ -773,7 +806,9 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
                 | Instruction::VectorAddF32 { .. }
                 | Instruction::VectorMulF32 { .. }
                 | Instruction::VectorAlu { .. }
-                | Instruction::VectorUnary { .. } => continue,
+                | Instruction::VectorUnary { .. }
+                | Instruction::VectorProduct { .. }
+                | Instruction::VectorTernary { .. } => continue,
                 _ => {}
             }
         }
@@ -1101,6 +1136,71 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
                         taken: true,
                     },
                 )
+            }
+            Instruction::VectorProduct {
+                op,
+                dst,
+                src0,
+                src1,
+            } => {
+                let mut values = [Value(0); 2];
+                for (slot, src) in values.iter_mut().zip([src0, src1]) {
+                    *slot = match src {
+                        VectorSource::Register(register) => read(register)?,
+                        VectorSource::Scalar(register) if usize::from(register) == VCC_LO => {
+                            match (lane_vcc, scalars[VCC_LO]) {
+                                (Some(mask), _) => mask,
+                                (None, Some(bits)) => {
+                                    constant(&mut operations, &mut facts, offset, bits)
+                                }
+                                (None, None) => {
+                                    return Err(error("VOP3 integer reads uninitialized VCC_LO"));
+                                }
+                            }
+                        }
+                        VectorSource::Scalar(register) => {
+                            let bits = read_scalar(ScalarSource::Register(register))?;
+                            constant(&mut operations, &mut facts, offset, bits)
+                        }
+                        VectorSource::Immediate(bits) => {
+                            constant(&mut operations, &mut facts, offset, bits)
+                        }
+                    };
+                }
+                (Some(dst), Op::Product(op, values[0], values[1]))
+            }
+            Instruction::VectorTernary {
+                op,
+                dst,
+                src0,
+                src1,
+                src2,
+            } => {
+                let mut values = [Value(0); 3];
+                for (slot, src) in values.iter_mut().zip([src0, src1, src2]) {
+                    *slot = match src {
+                        VectorSource::Register(register) => read(register)?,
+                        VectorSource::Scalar(register) if usize::from(register) == VCC_LO => {
+                            match (lane_vcc, scalars[VCC_LO]) {
+                                (Some(mask), _) => mask,
+                                (None, Some(bits)) => {
+                                    constant(&mut operations, &mut facts, offset, bits)
+                                }
+                                (None, None) => {
+                                    return Err(error("VOP3 integer reads uninitialized VCC_LO"));
+                                }
+                            }
+                        }
+                        VectorSource::Scalar(register) => {
+                            let bits = read_scalar(ScalarSource::Register(register))?;
+                            constant(&mut operations, &mut facts, offset, bits)
+                        }
+                        VectorSource::Immediate(bits) => {
+                            constant(&mut operations, &mut facts, offset, bits)
+                        }
+                    };
+                }
+                (Some(dst), Op::Ternary(op, values[0], values[1], values[2]))
             }
             Instruction::VectorUnary { op, dst, src } => {
                 let source = match src {

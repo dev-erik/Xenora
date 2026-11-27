@@ -23,6 +23,10 @@ remains unsupported.
 - Extended the read-only RDNA2 planning CLI (`python3 -m qa rdna2`) with family/status filters, compact summaries, Codex-ready manifests under `artifacts/`, active-claim exclusion (family claims exclude those families; path-only claims block overlapping permitted files), coverage reconcile against `semantic_coverage` without inflating counts, and inventory diffs. Covered by `tests/qa/test_rdna2_plan.py`; planning only, no GPU production edits.
 
 ### Added
+- Six ordinary VOP3 integer forms: full-width low/high products, bit selection,
+  three-input addition and AND-OR. The decoder checks scalar-source identities,
+  shared literal payloads and canonical binary padding before lowering operands.
+  Compute and graphics retain exact integer words and existing mask/flag rules.
 - Six ordinary 32-bit scalar bit-update, bit-test and conditional-move forms.
   Bit updates preserve the rest of the destination; conditional moves retain
   untaken destination state and preserve SCC. Graphics supports runtime scalar

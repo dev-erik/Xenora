@@ -476,6 +476,40 @@ fn reference_op(instruction: Instruction) -> Op {
         Instruction::VectorXorB32 { dst, src0, src1 } => {
             Op::Vector(VectorAlu::Xor, dst, reference_vector_source(src0), src1)
         }
+        Instruction::VectorProduct {
+            op,
+            dst,
+            src0,
+            src1,
+        } => Op::VectorProduct(
+            match op {
+                xenora_decoder::VectorProductOp::MulLoU32 => xenora_ref::VectorProduct::Low,
+                xenora_decoder::VectorProductOp::MulHiU32 => {
+                    xenora_ref::VectorProduct::HighUnsigned
+                }
+                xenora_decoder::VectorProductOp::MulHiI32 => xenora_ref::VectorProduct::HighSigned,
+            },
+            dst,
+            reference_vector_source(src0),
+            reference_vector_source(src1),
+        ),
+        Instruction::VectorTernary {
+            op,
+            dst,
+            src0,
+            src1,
+            src2,
+        } => Op::VectorTernary(
+            match op {
+                xenora_decoder::VectorTernaryOp::BfiB32 => xenora_ref::VectorTernary::BitSelect,
+                xenora_decoder::VectorTernaryOp::Add3U32 => xenora_ref::VectorTernary::AddThree,
+                xenora_decoder::VectorTernaryOp::AndOrB32 => xenora_ref::VectorTernary::AndOr,
+            },
+            dst,
+            reference_vector_source(src0),
+            reference_vector_source(src1),
+            reference_vector_source(src2),
+        ),
         Instruction::VectorAddF32 { dst, src0, src1 } => {
             Op::Vector(VectorAlu::FloatAdd, dst, CompareSource::Vector(src0), src1)
         }
@@ -584,13 +618,14 @@ fn compares_fixture_instructions_against_llvm() {
         include_bytes!("../../../fixtures/rdna2/vector-integer.bin"),
         include_bytes!("../../../fixtures/rdna2/vector-unary.bin"),
         include_bytes!("../../../fixtures/rdna2/scalar-conditional.bin"),
+        include_bytes!("../../../fixtures/rdna2/vop3-integer.bin"),
         include_bytes!("../../../fixtures/rdna2/vector-compare.bin"),
         high_registers,
         &matrix,
     ] {
         count += compare_against_llvm(fixture, &mut forms);
     }
-    assert_eq!(forms.len(), 114, "forms compared: {forms:?}");
+    assert_eq!(forms.len(), 120, "forms compared: {forms:?}");
     eprintln!(
         "{count} three-way instruction comparisons across {} forms",
         forms.len()
@@ -968,6 +1003,18 @@ fn normalize_llvm_assembly(assembly: &str, next_offset: usize) -> String {
             let displacement: usize = operands.parse().unwrap();
             let target = next_offset + displacement * 4;
             format!("{mnemonic} -> 0x{target:04x}")
+        }
+        "v_mul_lo_u32" | "v_mul_hi_u32" | "v_mul_hi_i32" | "v_bfi_b32" | "v_add3_u32"
+        | "v_and_or_b32" => {
+            let parts: Vec<_> = operands
+                .split(", ")
+                .map(|operand| {
+                    literal_bits(operand)
+                        .or_else(|| operand.parse::<i32>().ok().map(|v| v as u32))
+                        .map_or_else(|| operand.to_owned(), |bits| format!("0x{bits:x}"))
+                })
+                .collect();
+            format!("{mnemonic} {}", parts.join(", "))
         }
         // VOPC and the registry VOP2 forms print SRC0 (the second operand) as bits.
         mnemonic
@@ -1633,4 +1680,125 @@ fn llvm_scalar_bit_and_conditional_source_matrix_matches_exact_bytes() {
         offset += expected.len();
     }
     assert_eq!(offset, stream.len());
+}
+
+#[test]
+#[ignore = "requires native LLVM with the AMDGPU target"]
+fn llvm_vop3_integer_sources_match_exact_bytes_and_reference() {
+    let mut rows = Vec::new();
+    for (opcode, name, arity) in [
+        (361, "v_mul_lo_u32", 2),
+        (362, "v_mul_hi_u32", 2),
+        (364, "v_mul_hi_i32", 2),
+        (330, "v_bfi_b32", 3),
+        (877, "v_add3_u32", 3),
+        (881, "v_and_or_b32", 3),
+    ] {
+        let mut add = |raw: [u32; 3], spellings: [&str; 3], dst: u32| {
+            let line = format!("{name} v{dst}, {}", spellings[..arity].join(", "));
+            let mut words = vec![
+                0xd4000000 | opcode << 16 | dst,
+                raw[0] | raw[1] << 9 | raw[2] << 18,
+            ];
+            if raw[..arity].contains(&255) {
+                words.push(0x12345678);
+            }
+            rows.push((
+                line,
+                words
+                    .into_iter()
+                    .flat_map(u32::to_le_bytes)
+                    .collect::<Vec<_>>(),
+            ));
+        };
+        for position in 0..arity {
+            for (selector, spelling) in [
+                (0, "s0"),
+                (105, "s105"),
+                (106, "vcc_lo"),
+                (128, "0"),
+                (192, "64"),
+                (193, "-1"),
+                (208, "-16"),
+                (240, "0.5"),
+                (248, "0x3e22f983"),
+                (255, "0x12345678"),
+                (256, "v0"),
+                (511, "v255"),
+            ] {
+                let mut raw = [257, 258, if arity == 2 { 128 } else { 259 }];
+                let mut text = ["v1", "v2", "v3"];
+                raw[position] = selector;
+                text[position] = spelling;
+                for dst in [0, 255] {
+                    add(raw, text, dst);
+                }
+            }
+        }
+        for mask in 1..(1 << arity) {
+            let mut raw = [257, 258, if arity == 2 { 128 } else { 259 }];
+            let mut text = ["v1", "v2", "v3"];
+            for index in 0..arity {
+                if mask & (1 << index) != 0 {
+                    raw[index] = 255;
+                    text[index] = "0x12345678";
+                }
+            }
+            add(raw, text, 5);
+        }
+        if arity == 3 {
+            for (raw, text) in [
+                ([1, 1, 105], ["s1", "s1", "s105"]),
+                ([106, 105, 106], ["vcc_lo", "s105", "vcc_lo"]),
+                ([1, 105, 129], ["s1", "s105", "1"]),
+                ([1, 255, 255], ["s1", "0x12345678", "0x12345678"]),
+            ] {
+                add(raw, text, 5);
+            }
+        }
+    }
+    assert_eq!(rows.len(), 402);
+    let assembly = rows
+        .iter()
+        .map(|(line, _)| format!("{line}\n"))
+        .collect::<String>();
+    let output = llvm_mc(&[], assembly.as_bytes());
+    assert_llvm_success(&output);
+    let text = String::from_utf8(output.stdout).unwrap();
+    let encoded: Vec<_> = text
+        .lines()
+        .filter_map(|line| line.split_once("; encoding: ["))
+        .map(|(_, encoding)| encoding_bytes(encoding))
+        .collect();
+    assert_eq!(encoded.len(), rows.len());
+    for (actual, (line, expected)) in encoded.iter().zip(&rows) {
+        assert_eq!(actual, expected, "{line}");
+        let decoded = decode_at(Architecture::Gfx1030, actual, 0).unwrap();
+        assert_eq!(usize::from(decoded.byte_len), expected.len());
+        let reference = xenora_ref::decode(actual).unwrap();
+        assert_eq!(reference.len(), 1);
+        assert_eq!(reference[0].byte_len, expected.len());
+        assert_eq!(reference[0].op, reference_op(decoded.instruction), "{line}");
+    }
+    let stream: Vec<_> = encoded.into_iter().flatten().collect();
+    let decoded = decode(Architecture::Gfx1030, &stream).unwrap();
+    assert_eq!(decoded.len(), rows.len());
+    let mut offset = 0;
+    for (actual, (_, expected)) in decoded.iter().zip(&rows) {
+        assert_eq!(actual.offset, offset);
+        offset += expected.len();
+    }
+    assert_eq!(offset, stream.len());
+    for name in ["v_bfi_b32", "v_add3_u32", "v_and_or_b32"] {
+        for (sources, diagnostic) in [
+            ("s1, s2, s3", "constant bus restrictions"),
+            ("s1, s2, lit(1)", "constant bus restrictions"),
+            ("vcc_lo, s105, s0", "constant bus restrictions"),
+            ("0x12345678, 0x87654321, v1", "only one unique literal"),
+        ] {
+            let output = llvm_mc(&[], format!("{name} v5, {sources}\n").as_bytes());
+            assert!(!output.status.success());
+            assert!(String::from_utf8_lossy(&output.stderr).contains(diagnostic));
+        }
+    }
 }

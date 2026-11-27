@@ -122,6 +122,12 @@ enum Insn {
         src1: u8,
     },
     VAddNc(u8, u8, u8),
+    VMulLow(u8, CmpSrc, CmpSrc),
+    VMulHighUnsigned(u8, CmpSrc, CmpSrc),
+    VMulHighSigned(u8, CmpSrc, CmpSrc),
+    VBitSelect(u8, CmpSrc, CmpSrc, CmpSrc),
+    VAddThree(u8, CmpSrc, CmpSrc, CmpSrc),
+    VAndOr(u8, CmpSrc, CmpSrc, CmpSrc),
     VAnd(u8, CmpSrc, u8),
     VOr(u8, CmpSrc, u8),
     VShiftLeft(u8, CmpSrc, u8),
@@ -765,6 +771,71 @@ fn lane_step(
         sgpr[reg as usize].ok_or_else(|| format!("{offset:#x}: uninitialized s{reg}"))
     };
     let read_vcc = || sgpr[106].ok_or_else(|| format!("{offset:#x}: uninitialized vcc_lo"));
+    // New VOP3 forms capture every source before committing, including SRC2.
+    let vop3 = match insn {
+        Insn::VMulLow(d, a, b)
+        | Insn::VMulHighUnsigned(d, a, b)
+        | Insn::VMulHighSigned(d, a, b) => Some((d, [a, b, CmpSrc::Imm(0)])),
+        Insn::VBitSelect(d, a, b, c) | Insn::VAddThree(d, a, b, c) | Insn::VAndOr(d, a, b, c) => {
+            Some((d, [a, b, c]))
+        }
+        _ => None,
+    };
+    if let Some((dst, sources)) = vop3 {
+        if execution_mask == 0 {
+            return Ok(());
+        }
+        if execution_mask != u32::MAX && lane.vgpr[dst as usize].is_none() {
+            return Err(format!("{offset:#x}: partial EXEC on uninitialized VGPR"));
+        }
+        let mut values = [0u32; 3];
+        for (i, src) in sources.into_iter().enumerate() {
+            values[i] = match src {
+                CmpSrc::Sgpr(r) => read_s(r)?,
+                CmpSrc::Vcc => read_vcc()?,
+                CmpSrc::Vgpr(r) => read_vgpr(lane, r, offset)?,
+                CmpSrc::Imm(v) => v,
+            };
+        }
+        if execution_mask & (1 << lane_index) == 0 {
+            return Ok(());
+        }
+        check_destination(dst, lane.pending_read, offset)?;
+        let [a, b, c] = values;
+        let result = match insn {
+            Insn::VMulLow(..) | Insn::VMulHighUnsigned(..) | Insn::VMulHighSigned(..) => {
+                let (a0, a1, b0, b1) = (a % 65536, a / 65536, b % 65536, b / 65536);
+                let (p00, p01, p10, p11) = (a0 * b0, a0 * b1, a1 * b0, a1 * b1);
+                let middle = p00 / 65536 + p01 % 65536 + p10 % 65536;
+                let high = p11 + p01 / 65536 + p10 / 65536 + middle / 65536;
+                match insn {
+                    Insn::VMulLow(..) => p00 % 65536 + 65536 * (middle % 65536),
+                    Insn::VMulHighUnsigned(..) => high,
+                    _ => high
+                        .wrapping_sub(if a >= 0x80000000 { b } else { 0 })
+                        .wrapping_sub(if b >= 0x80000000 { a } else { 0 }),
+                }
+            }
+            Insn::VBitSelect(..) => {
+                let mut out = 0;
+                for bit in 0..32 {
+                    let weight = 2u32.pow(bit);
+                    let selected = if (a / weight) % 2 != 0 { b } else { c };
+                    out += ((selected / weight) % 2) * weight;
+                }
+                out
+            }
+            Insn::VAddThree(..) => {
+                let low = a % 65536 + b % 65536 + c % 65536;
+                let high = a / 65536 + b / 65536 + c / 65536 + low / 65536;
+                low % 65536 + (high % 65536) * 65536
+            }
+            Insn::VAndOr(..) => !((!a | !b) & !c),
+            _ => unreachable!(),
+        };
+        lane.vgpr[dst as usize] = Some(result);
+        return Ok(());
+    }
     if execution_mask.count_ones() < 32 {
         match insn {
             Insn::Load(_) | Insn::Store(_) => {
@@ -1129,6 +1200,63 @@ fn decode(code: &[u8]) -> Result<Vec<(usize, Insn)>, String> {
 fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
     let first = word(code, offset)?;
     let fail = |detail: &str| format!("{offset:#x}: {detail}");
+    let opcode = (first / 65536) % 1024;
+    if first >> 26 == 53 && matches!(opcode, 361 | 362 | 364 | 330 | 877 | 881) {
+        let next = word(code, offset + 4).map_err(|_| fail("truncated VOP3 instruction"))?;
+        if (first / 256) % 256 != 0 || next / (1 << 27) != 0 {
+            return Err(fail("unsupported VOP3 modifiers"));
+        }
+        let raw = [next % 512, (next / 512) % 512, (next / 262144) % 512];
+        let count = if matches!(opcode, 361 | 362 | 364) {
+            2
+        } else {
+            3
+        };
+        if count == 2 && raw[2] != 128 {
+            return Err(fail("noncanonical VOP3 binary SRC2"));
+        }
+        let mut identities = 0;
+        for i in 0..count {
+            let selector = raw[i];
+            if !matches!(selector,0..=106|128..=208|240..=248|255..=511) {
+                return Err(fail("bad VOP3 source"));
+            }
+            if (selector <= 106 || selector == 255) && !raw[..i].contains(&selector) {
+                identities += 1;
+            }
+        }
+        if identities > 2 {
+            return Err(fail("VOP3 scalar bus exceeds two distinct identities"));
+        }
+        let has_literal = raw[..count].contains(&255);
+        let literal = if has_literal {
+            word(code, offset + 8).map_err(|_| fail("truncated VOP3 literal"))?
+        } else {
+            0
+        };
+        let mut args = [CmpSrc::Imm(0); 3];
+        for i in 0..count {
+            args[i] = match raw[i] {
+                0..=105 => CmpSrc::Sgpr(raw[i] as u8),
+                106 => CmpSrc::Vcc,
+                255 => CmpSrc::Imm(literal),
+                other => match vector_source(other).unwrap() {
+                    Src::Reg(v) => CmpSrc::Vgpr(v),
+                    Src::Imm(bits) => CmpSrc::Imm(bits),
+                },
+            };
+        }
+        let dst = first as u8;
+        let insn = match opcode {
+            361 => Insn::VMulLow(dst, args[0], args[1]),
+            362 => Insn::VMulHighUnsigned(dst, args[0], args[1]),
+            364 => Insn::VMulHighSigned(dst, args[0], args[1]),
+            330 => Insn::VBitSelect(dst, args[0], args[1], args[2]),
+            877 => Insn::VAddThree(dst, args[0], args[1], args[2]),
+            _ => Insn::VAndOr(dst, args[0], args[1], args[2]),
+        };
+        return Ok((insn, if has_literal { 12 } else { 8 }));
+    }
 
     // The synthetic ABI permits only idxen with zero offsets. Only the
     // data VGPR varies across each complete eight-byte encoding.

@@ -502,3 +502,6 @@ mod vector_unary_graphics;
 
 #[path = "native/scalar_conditional_graphics.rs"]
 mod scalar_conditional_graphics;
+
+#[path = "native/vop3_integer_graphics.rs"]
+mod vop3_integer_graphics;

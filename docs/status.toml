@@ -1597,3 +1597,75 @@ gpu = "fixture verified"
 recognized = true
 decoded = true
 llvm = "three-way passed"
+
+[[instruction]]
+form = "v_mul_lo_u32"
+encoding = "VOP3; 2 checked vector sources; at most two scalar-bus identities; modifiers excluded; flags unchanged; unused SRC2=128"
+representation = "8 B or 12 B with one shared literal"
+lowering = "MSL uint wrapping full-width low product; compute lane retention and graphics raw-word carrier"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_mul_hi_u32"
+encoding = "VOP3; 2 checked vector sources; at most two scalar-bus identities; modifiers excluded; flags unchanged; unused SRC2=128"
+representation = "8 B or 12 B with one shared literal"
+lowering = "MSL unsigned mulhi full-width high product; compute lane retention and graphics raw-word carrier"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_mul_hi_i32"
+encoding = "VOP3; 2 checked vector sources; at most two scalar-bus identities; modifiers excluded; flags unchanged; unused SRC2=128"
+representation = "8 B or 12 B with one shared literal"
+lowering = "MSL signed mulhi with uint result bitcast; compute lane retention and graphics raw-word carrier"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_bfi_b32"
+encoding = "VOP3; 3 checked vector sources; at most two scalar-bus identities; modifiers excluded; flags unchanged"
+representation = "8 B or 12 B with one shared literal"
+lowering = "MSL uint mask selection (a & b) OR (~a & c); compute lane retention and graphics raw-word carrier"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_add3_u32"
+encoding = "VOP3; 3 checked vector sources; at most two scalar-bus identities; modifiers excluded; flags unchanged"
+representation = "8 B or 12 B with one shared literal"
+lowering = "MSL uint wrapping three-input addition; compute lane retention and graphics raw-word carrier"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_and_or_b32"
+encoding = "VOP3; 3 checked vector sources; at most two scalar-bus identities; modifiers excluded; flags unchanged"
+representation = "8 B or 12 B with one shared literal"
+lowering = "MSL uint (a & b) OR c; compute lane retention and graphics raw-word carrier"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"

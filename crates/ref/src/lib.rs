@@ -80,7 +80,28 @@ pub enum Op {
     /// integer or literal) and VSRC1. Writes neither VCC nor SCC.
     VectorInteger(VectorInteger, u8, CompareSource, u8),
     VectorUnary(VectorUnary, u8, CompareSource),
+    VectorProduct(VectorProduct, u8, CompareSource, CompareSource),
+    VectorTernary(
+        VectorTernary,
+        u8,
+        CompareSource,
+        CompareSource,
+        CompareSource,
+    ),
     End,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum VectorProduct {
+    Low,
+    HighUnsigned,
+    HighSigned,
+}
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum VectorTernary {
+    BitSelect,
+    AddThree,
+    AndOr,
 }
 
 /// Independent VOP1 integer semantics (AMD RDNA 2 section 12.8).
@@ -455,6 +476,15 @@ pub fn decode(code: &[u8]) -> Result<Vec<DecodedInstruction>, ReferenceError> {
     let mut offset = 0;
     while let Some(bytes) = code.get(offset..).filter(|bytes| !bytes.is_empty()) {
         let (op, length) = match bytes {
+            [_, _, _, _, ..]
+                if {
+                    let first = u32::from_le_bytes(bytes[..4].try_into().unwrap());
+                    first & 0xfc000000 == 0xd4000000
+                        && matches!((first >> 16) & 1023, 361 | 362 | 364 | 330 | 877 | 881)
+                } =>
+            {
+                decode_vop3_integer(bytes, offset)?
+            }
             [
                 0,
                 0x20,
@@ -853,6 +883,67 @@ fn decode_scalar(
 
 /// A vector SRC0 selector (bits 0-8: `lo` and bit 0 of `packed`): s0-s105 or
 /// `vcc_lo` (106), an inline integer, a literal dword from `tail`, or a VGPR.
+fn decode_vop3_integer(bytes: &[u8], offset: usize) -> Result<(Op, usize), ReferenceError> {
+    let first = u32::from_le_bytes(bytes[..4].try_into().unwrap());
+    let second = u32::from_le_bytes(
+        bytes
+            .get(4..8)
+            .ok_or_else(|| error(offset, "truncated VOP3 instruction"))?
+            .try_into()
+            .unwrap(),
+    );
+    if first & 0xff00 != 0 || second >> 27 != 0 {
+        return Err(error(offset, "unsupported VOP3 modifiers"));
+    }
+    let opcode = (first >> 16) & 1023;
+    let binary = matches!(opcode, 361 | 362 | 364);
+    let raw = [second & 511, (second >> 9) & 511, (second >> 18) & 511];
+    if binary && raw[2] != 128 {
+        return Err(error(offset, "noncanonical VOP3 binary SRC2"));
+    }
+    let active = &raw[..if binary { 2 } else { 3 }];
+    let mut keys = std::collections::BTreeSet::new();
+    for &src in active {
+        if !matches!(src, 0..=106 | 128..=208 | 240..=248 | 255..=511) {
+            return Err(error(offset, "unsupported VOP3 source"));
+        }
+        if src <= 106 || src == 255 {
+            keys.insert(src);
+        }
+    }
+    if keys.len() > 2 {
+        return Err(error(
+            offset,
+            "VOP3 scalar bus exceeds two distinct identities",
+        ));
+    }
+    let literal = active.contains(&255);
+    if literal && bytes.len() < 12 {
+        return Err(error(offset, "truncated VOP3 literal"));
+    }
+    let mut args = [CompareSource::Immediate(0); 3];
+    for (i, &src) in active.iter().enumerate() {
+        args[i] = decode_vector_source(
+            src as u8,
+            (src >> 8) as u8,
+            &bytes[8..],
+            offset,
+            "unsupported VOP3 source",
+        )?
+        .0;
+    }
+    let dst = first as u8;
+    let op = match opcode {
+        361 => Op::VectorProduct(VectorProduct::Low, dst, args[0], args[1]),
+        362 => Op::VectorProduct(VectorProduct::HighUnsigned, dst, args[0], args[1]),
+        364 => Op::VectorProduct(VectorProduct::HighSigned, dst, args[0], args[1]),
+        330 => Op::VectorTernary(VectorTernary::BitSelect, dst, args[0], args[1], args[2]),
+        877 => Op::VectorTernary(VectorTernary::AddThree, dst, args[0], args[1], args[2]),
+        _ => Op::VectorTernary(VectorTernary::AndOr, dst, args[0], args[1], args[2]),
+    };
+    Ok((op, if literal { 12 } else { 8 }))
+}
+
 fn decode_vector_source(
     lo: u8,
     packed: u8,
@@ -979,6 +1070,8 @@ fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32
                 | Op::MoveScalar(dst, _)
                 | Op::Add(dst, ..)
                 | Op::Vector(_, dst, ..)
+                | Op::VectorProduct(_, dst, ..)
+                | Op::VectorTernary(_, dst, ..)
                 | Op::VectorInteger(_, dst, ..)
                 | Op::VectorUnary(_, dst, _) => {
                     if exec != 0
@@ -1102,6 +1195,45 @@ fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32
                         CompareSource::Immediate(bits) => bits,
                     };
                     results[lane] = Some((dst, kind.apply(value)));
+                }
+            }
+            Op::VectorProduct(_, dst, a, b) | Op::VectorTernary(_, dst, a, b, _) => {
+                let c = match op {
+                    Op::VectorTernary(_, _, _, _, c) => c,
+                    _ => CompareSource::Immediate(0),
+                };
+                let source = |lane, src| match src {
+                    CompareSource::Vector(reg) => read(lane, reg),
+                    CompareSource::Scalar(reg) => read_scalar(Source::Register(reg)),
+                    CompareSource::Immediate(bits) => Ok(bits),
+                };
+                if exec != 0 {
+                    for lane in 0..lanes {
+                        for src in [a, b, c] {
+                            source(lane, src)?;
+                        }
+                    }
+                }
+                for lane in (0..lanes).filter(|&lane| executes(lane)) {
+                    let (a, b, c) = (source(lane, a)?, source(lane, b)?, source(lane, c)?);
+                    let value = match op {
+                        Op::VectorProduct(VectorProduct::Low, ..) => {
+                            (u64::from(a) * u64::from(b)) as u32
+                        }
+                        Op::VectorProduct(VectorProduct::HighUnsigned, ..) => {
+                            ((u64::from(a) * u64::from(b)) >> 32) as u32
+                        }
+                        Op::VectorProduct(VectorProduct::HighSigned, ..) => {
+                            ((i64::from(a as i32) * i64::from(b as i32)) >> 32) as u32
+                        }
+                        Op::VectorTernary(VectorTernary::BitSelect, ..) => (a & b) | (!a & c),
+                        Op::VectorTernary(VectorTernary::AddThree, ..) => {
+                            a.wrapping_add(b).wrapping_add(c)
+                        }
+                        Op::VectorTernary(VectorTernary::AndOr, ..) => (a & b) | c,
+                        _ => unreachable!(),
+                    };
+                    results[lane] = Some((dst, value));
                 }
             }
             Op::VectorInteger(kind, dst, src0, src1) => {
