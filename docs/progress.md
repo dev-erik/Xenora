@@ -11,8 +11,8 @@ records the current bounded resource milestone separately from shader coverage.
 ## Reading the progress graphic
 
 - **Decoded forms** counts rows marked decoded in the [status registry](status.toml), out of all rows in that reviewed gfx1030 instruction inventory.
-- **Accepted Metal forms** counts rows with accepted native fixture readback, over the same inventory. See the [form-by-form results](shaders/instruction-coverage.md) and [implementation checkpoint](testing/phase-02-baseline.md#implementation-checkpoint) for historical class A evidence from Apple M5. The scalar packing and signed-immediate increments in the
-  [local checkpoint](testing/local-graphics-checkpoint.md#stage-31-increment-signed-scalar-immediates) records Apple M4 Max evidence separately.
+- **Accepted Metal forms** counts rows with accepted native fixture readback, over the same inventory. See the [form-by-form results](shaders/instruction-coverage.md) and [implementation checkpoint](testing/phase-02-baseline.md#implementation-checkpoint) for historical class A evidence from Apple M5. The scalar packing, signed-immediate and immediate-comparison increments in the
+  [local checkpoint](testing/local-graphics-checkpoint.md#stage-31-increment-scalar-immediate-comparisons) record Apple M4 Max evidence separately.
 
 ## Feature status
 

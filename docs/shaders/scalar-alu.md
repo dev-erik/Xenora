@@ -245,3 +245,20 @@ independently implemented references. `compares_sopk_fixture_against_llvm`
 checks instruction bytes, offsets and normalized semantics while explicitly
 checking all three original SOPK identities. Native tests are synthetic Metal
 checks, not evidence of AMD or Xbox hardware equivalence.
+
+## Scalar immediate comparisons
+
+All twelve gfx1030 SOPK `s_cmpk_{eq,lg,gt,ge,lt,le}_{i32,u32}` forms are
+implemented for s0–s105 sources. The SDST field supplies a read-only scalar
+source. Signed operations sign-extend the 16-bit immediate; unsigned operations
+zero-extend it. Every comparison replaces SCC with its predicate and preserves
+the source register. Special registers remain outside this subset; an
+uninitialized source rejects in compute and graphics consumers.
+
+The four-byte encoding normalizes to existing scalar comparison operations.
+The LLVM oracle separately checks the original twelve SOPK identities. Compute
+uses statically resolved scalars; graphics compares constants or runtime
+uniform/local values. Literal relation masks and original shaders test the
+[public AMD RDNA2 guide](https://docs.amd.com/api/khub/documents/Et~wpu9g~Ffl7d9q0QZ~Og/content),
+section 12.2, independently of the production evaluator. This does not establish
+AMD or Xbox hardware equivalence or complete S3.1.

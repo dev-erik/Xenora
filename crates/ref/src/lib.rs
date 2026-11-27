@@ -492,16 +492,29 @@ pub fn decode(code: &[u8]) -> Result<Vec<DecodedInstruction>, ReferenceError> {
                 };
                 (op, left_length.max(right_length))
             }
-            // AMD RDNA 2 ISA guide 12.2, 13.1.2: SOPK uses a signed
-            // 16-bit immediate, no literal dword. ADDK/MULK read old SDST.
+            // AMD RDNA 2 ISA guide 12.2, 13.1.2: SOPK has no literal dword.
+            // CMPK reads SDST and writes only SCC; unsigned CMPK zero-extends.
             [lo, hi, dst, encoding @ 0xb0..=0xbf, ..]
-                if dst & 0x7f <= 105 && matches!((encoding & 0xf) << 1 | dst >> 7, 0 | 15 | 16) =>
+                if dst & 0x7f <= 105 && matches!((encoding & 0xf) << 1 | dst >> 7, 0 | 3..=16) =>
             {
                 let opcode = (encoding & 0xf) << 1 | dst >> 7;
                 let dst = dst & 0x7f;
-                let immediate = Source::Immediate(i32::from(i16::from_le_bytes([*lo, *hi])) as u32);
+                let immediate = Source::Immediate(if (9..=14).contains(&opcode) {
+                    u32::from(u16::from_le_bytes([*lo, *hi]))
+                } else {
+                    i32::from(i16::from_le_bytes([*lo, *hi])) as u32
+                });
                 let op = match opcode {
                     0 => Op::ScalarMove(dst, immediate),
+                    3 | 9 => Op::CompareEqual(Source::Register(dst), immediate),
+                    4..=8 | 10..=14 => Op::ScalarCompare(
+                        Comparison {
+                            offset: [2, 5, 4, 6, 1, 3][usize::from((opcode - 3) % 6)],
+                            signed: opcode < 9,
+                        },
+                        Source::Register(dst),
+                        immediate,
+                    ),
                     15 => Op::Scalar(ScalarAlu::AddSigned, dst, Source::Register(dst), immediate),
                     _ => Op::Scalar(ScalarAlu::Multiply, dst, Source::Register(dst), immediate),
                 };
@@ -1506,5 +1519,109 @@ mod tests {
                 },
             ])
         );
+    }
+}
+
+#[cfg(test)]
+mod cmpk_tests {
+    use super::*;
+
+    fn bytes(words: &[u32]) -> Vec<u8> {
+        words.iter().flat_map(|word| word.to_le_bytes()).collect()
+    }
+
+    #[test]
+    fn cmpk_relations_extension_scc_and_source_preservation() {
+        // EQ, LG, GT, GE, LT, LE; immediate sign boundaries and full-width SGPRs.
+        let equal = [true, false, false, true, false, true];
+        let less = [false, true, false, false, true, true];
+        let greater = [false, true, true, true, false, false];
+        for (signed, value, imm, expected) in [
+            (true, 0xffff_8000, 0x8000, equal),
+            (true, 0xffff_7fff, 0x8000, less),
+            (true, 0x0000_8000, 0x8000, greater),
+            (true, 0xffff_ffff, 0xffff, equal),
+            (true, 0x8000_0000, 0xffff, less),
+            (true, 0x7fff_ffff, 0x7fff, greater),
+            (false, 0x0000_8000, 0x8000, equal),
+            (false, 0x0000_7fff, 0x8000, less),
+            (false, 0xffff_8000, 0x8000, greater),
+            (false, 0x0000_ffff, 0xffff, equal),
+            (false, 0, 0xffff, less),
+            (false, 0xffff_ffff, 0xffff, greater),
+            (true, 0, 0, equal),
+            (false, 0, 0, equal),
+        ] {
+            for (relation, flag) in expected.into_iter().enumerate() {
+                let opcode = if signed { 3 } else { 9 } + relation as u32;
+                for register in [8, 105] {
+                    for previous in [None, Some(false), Some(true)] {
+                        let mut words = vec![0xbe80_03ff | register << 16, value];
+                        if let Some(previous) = previous {
+                            words.push(if previous { 0xbf06_8080 } else { 0xbf06_8180 });
+                        }
+                        words.push(0xb000_0000 | opcode << 23 | register << 16 | imm);
+                        let finish = |prefix: &[u32], source| {
+                            let mut code = prefix.to_vec();
+                            code.extend([
+                                0x7e02_0200 | source,
+                                0xe070_2000,
+                                0x8001_0100,
+                                0xbbfd_0000,
+                                0xbf81_0000,
+                            ]);
+                            bytes(&code)
+                        };
+                        assert_eq!(
+                            execute(&finish(&words, register), &[0]).unwrap(),
+                            vec![value]
+                        );
+                        words.push(0x850a_8281); // CSELECT s10, 1, 2 observes SCC.
+                        assert_eq!(
+                            execute(&finish(&words, 10), &[0]).unwrap(),
+                            vec![if flag { 1 } else { 2 }]
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn cmpk_eq_normalizes_like_sopc_with_correct_immediate_extension() {
+        for (opcode, imm, expected) in [
+            (3, 0x7fff, 0x0000_7fff),
+            (3, 0x8000, 0xffff_8000),
+            (3, 0xffff, 0xffff_ffff),
+            (9, 0x7fff, 0x0000_7fff),
+            (9, 0x8000, 0x0000_8000),
+            (9, 0xffff, 0x0000_ffff),
+        ] {
+            let instruction = 0xb008_0000 | opcode << 23 | imm;
+            let program = decode(&bytes(&[instruction, 0xbf81_0000])).unwrap();
+            assert_eq!(
+                program[0].op,
+                Op::CompareEqual(Source::Register(8), Source::Immediate(expected))
+            );
+            assert_eq!(program[1].offset, 4);
+        }
+    }
+
+    #[test]
+    fn cmpk_register_bounds_length_and_uninitialized_read() {
+        for opcode in 3..=14 {
+            for register in 0..=127 {
+                let instruction = 0xb000_ffff | opcode << 23 | register << 16;
+                let code = bytes(&[instruction, 0xbf81_0000]);
+                assert_eq!(decode(&code).is_ok(), register <= 105);
+            }
+            let instruction = 0xb069_ffff | opcode << 23;
+            let code = bytes(&[instruction, 0xbf81_0000]);
+            // s105 is a read, so CMPK cannot initialize it.
+            assert!(execute(&code, &[0]).is_err());
+            for length in 1..4 {
+                assert!(decode(&code[..length]).is_err());
+            }
+        }
     }
 }

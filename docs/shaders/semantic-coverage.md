@@ -27,7 +27,7 @@ acceptance remain outside the verified count. All results concern synthetic fixt
 | SOP1 | 65 | 12 | 11 | 12 | 12 | 12 | 1 | 1 | 11 |
 | SOP2 | 51 | 36 | 36 | 36 | 36 | 36 | 3 | 3 | 12 |
 | SOPC | 18 | 12 | 12 | 12 | 12 | 12 | 1 | 1 | 7 |
-| SOPK | 27 | 4 | 0 | 4 | 4 | 4 | 4 | 4 | 0 |
+| SOPK | 27 | 16 | 0 | 16 | 16 | 16 | 16 | 16 | 0 |
 | SOPP | 36 | 6 | 0 | 6 | 6 | 6 | 4 | 4 | 0 |
 | VINTRP | 3 | 0 | 0 | 2 | 0 | 0 | 0 | 0 | 0 |
 | VOP1 | 81 | 1 | 0 | 1 | 1 | 1 | 1 | 1 | 0 |
@@ -36,7 +36,7 @@ acceptance remain outside the verified count. All results concern synthetic fixt
 | VOP3P | 29 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | VOP3SDST | 10 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | VOPC | 190 | 12 | 0 | 12 | 12 | 12 | 0 | 0 | 0 |
-| **Total** | 1465 | 106 | 71 | 111 | 106 | 106 | 24 | 24 | 37 |
+| **Total** | 1465 | 118 | 71 | 123 | 118 | 118 | 36 | 36 | 37 |
 
 ## Unsupported operand variants
 

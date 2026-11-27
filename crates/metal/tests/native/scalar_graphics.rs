@@ -798,3 +798,94 @@ fn translated_scalar_immediates_preserve_flags_and_signed_results() {
         }
     }
 }
+
+#[test]
+fn translated_immediate_comparisons_preserve_source_and_replace_scc() {
+    let gpu = NativeCompute::new().unwrap();
+    let original = include_bytes!("../../../../fixtures/rdna2/x9-scalar-cmpk-ps.bin");
+    // Independent literal outcome masks EQ/LG/GT/GE/LT/LE, signed then unsigned.
+    let rows = [
+        (0u32, 0u16, 0x29u8, 0x29u8),
+        (0xffffffff, 0xffff, 0x29, 0x0e),
+        (0xffff8000, 0x8000, 0x29, 0x0e),
+        (0x8000, 0x8000, 0x0e, 0x29),
+        (0x80000000, 0, 0x32, 0x0e),
+        (0, 0xffff, 0x0e, 0x32),
+    ];
+    for (a, imm, signed, unsigned) in rows {
+        for op in 3..=14u32 {
+            let mask = if op < 9 { signed } else { unsigned };
+            let outgoing = mask & (1 << ((op - 3) % 6)) != 0;
+            for constants in [false, true] {
+                let mut ps = original.to_vec();
+                ps[12..16].copy_from_slice(
+                    &(0xb0000000 | op << 23 | 32 << 16 | u32::from(imm)).to_le_bytes(),
+                );
+                if constants {
+                    let mut prefix: Vec<u8> = [0xbea003ffu32, a]
+                        .into_iter()
+                        .flat_map(u32::to_le_bytes)
+                        .collect();
+                    prefix.extend_from_slice(&ps[4..]);
+                    ps = prefix;
+                }
+                let pipeline = compile_graphics_pipeline(Architecture::Gfx1030, VS, &ps).unwrap();
+                for flag in [false, true] {
+                    for matches in [true, false] {
+                        let draws = [TriangleDraw {
+                            vertices: &POS,
+                            colors: &COLORS,
+                            viewport: [1, 1],
+                        }];
+                        let states = [TriangleState::default()];
+                        let shaders = [TriangleShader {
+                            source: &pipeline.shader.msl,
+                            entries: ENTRIES,
+                        }];
+                        let uniforms = [DrawUniforms {
+                            required_mask: pipeline.required_uniform_mask,
+                            values: Some([
+                                a,
+                                0,
+                                u32::from(flag),
+                                a ^ u32::from(!matches),
+                                0,
+                                0,
+                                0,
+                                0,
+                            ]),
+                        }];
+                        let pass = TriangleTargetsPass {
+                            draws: &draws,
+                            states: &states,
+                            extent: [1, 1],
+                            clears: &[[7, 11, 13, 255]],
+                            clear_depth: None,
+                        };
+                        let actual = gpu
+                            .submit_view_binding_triangle_targets_with_uniforms_rgba8(
+                                &shaders,
+                                &pass,
+                                &[vec![]],
+                                None,
+                                &[None],
+                                &uniforms,
+                            )
+                            .unwrap()
+                            .wait()
+                            .unwrap();
+                        assert_eq!(
+                            actual,
+                            vec![vec![
+                                if matches { 255 } else { 0 },
+                                if outgoing { 255 } else { 0 },
+                                0,
+                                255
+                            ]]
+                        );
+                    }
+                }
+            }
+        }
+    }
+}

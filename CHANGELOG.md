@@ -20,6 +20,10 @@ remains unsupported.
 - Extended the read-only RDNA2 planning CLI (`python3 -m qa rdna2`) with family/status filters, compact summaries, Codex-ready manifests under `artifacts/`, active-claim exclusion (family claims exclude those families; path-only claims block overlapping permitted files), coverage reconcile against `semantic_coverage` without inflating counts, and inventory diffs. Covered by `tests/qa/test_rdna2_plan.py`; planning only, no GPU production edits.
 
 ### Added
+- Twelve gfx1030 scalar-immediate comparisons: signed and unsigned equality,
+  inequality and ordering. Comparisons preserve their source register and replace
+  SCC, with signed or zero extension selected by the instruction. Original CPU,
+  LLVM and native Metal cases cover the bounded Stage 3.1 addition.
 - Signed 16-bit immediate scalar move, add and multiply (SOPK) for gfx1030.
   Both compute references and translation enforce the existing register subset;
   graphics supports constant and runtime operands, including scalar SOP2 multiply.

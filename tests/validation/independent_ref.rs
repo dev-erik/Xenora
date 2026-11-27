@@ -1099,22 +1099,24 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
         let (src, len) = scalar_source(code, offset, first as u8)?;
         return Ok((Insn::SMov(dst, src), len));
     }
-    // AMD RDNA 2 ISA guide 12.2 / 13.1.2: SOPK MOVK, ADDK and MULK.
-    // Normalize to independent operations; only ADDK writes SCC (overflow).
+    // AMD RDNA 2 ISA guide 12.2 / 13.1.2: CMPK reads SDST, writes only
+    // SCC, and uses an unsigned immediate for opcodes 9-14. Normalize to
+    // this interpreter's SOPC operations, independently of production decoding.
     let sopk_op = (first >> 23) & 31;
-    if first >> 28 == 0xb && matches!(sopk_op, 0 | 15 | 16) {
+    if first >> 28 == 0xb && matches!(sopk_op, 0 | 3..=16) {
         let dst = ((first >> 16) & 127) as u8;
         if dst > 105 {
-            return Err(fail("unsupported SOPK destination"));
+            return Err(fail("unsupported SOPK register"));
         }
         let low = first & 0xffff;
-        let immediate = Src::Imm(if low & 0x8000 != 0 {
+        let immediate = Src::Imm(if !(9..=14).contains(&sopk_op) && low & 0x8000 != 0 {
             low | 0xffff_0000
         } else {
             low
         });
         let insn = match sopk_op {
             0 => Insn::SMov(dst, immediate),
+            3..=14 => Insn::SCmp(sopk_op - 3, Src::Reg(dst), immediate),
             15 => Insn::SAlu(2, dst, Src::Reg(dst), immediate),
             _ => Insn::SAlu(38, dst, Src::Reg(dst), immediate),
         };
@@ -1383,6 +1385,90 @@ mod sopk_tests {
                 } else {
                     assert!(result.is_ok());
                 }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod cmpk_tests {
+    use super::*;
+
+    fn bytes(words: &[u32]) -> Vec<u8> {
+        words.iter().flat_map(|word| word.to_le_bytes()).collect()
+    }
+
+    #[test]
+    fn cmpk_relations_extension_scc_and_source_preservation() {
+        // EQ, LG, GT, GE, LT, LE; immediate sign boundaries and full-width SGPRs.
+        let equal = [true, false, false, true, false, true];
+        let less = [false, true, false, false, true, true];
+        let greater = [false, true, true, true, false, false];
+        for (signed, value, imm, expected) in [
+            (true, 0xffff_8000, 0x8000, equal),
+            (true, 0xffff_7fff, 0x8000, less),
+            (true, 0x0000_8000, 0x8000, greater),
+            (true, 0xffff_ffff, 0xffff, equal),
+            (true, 0x8000_0000, 0xffff, less),
+            (true, 0x7fff_ffff, 0x7fff, greater),
+            (false, 0x0000_8000, 0x8000, equal),
+            (false, 0x0000_7fff, 0x8000, less),
+            (false, 0xffff_8000, 0x8000, greater),
+            (false, 0x0000_ffff, 0xffff, equal),
+            (false, 0, 0xffff, less),
+            (false, 0xffff_ffff, 0xffff, greater),
+            (true, 0, 0, equal),
+            (false, 0, 0, equal),
+        ] {
+            for (relation, flag) in expected.into_iter().enumerate() {
+                let opcode = if signed { 3 } else { 9 } + relation as u32;
+                for register in [8, 105] {
+                    for previous in [None, Some(false), Some(true)] {
+                        let mut words = vec![0xbe80_03ff | register << 16, value];
+                        if let Some(previous) = previous {
+                            words.push(if previous { 0xbf06_8080 } else { 0xbf06_8180 });
+                        }
+                        words.push(0xb000_0000 | opcode << 23 | register << 16 | imm);
+                        let finish = |prefix: &[u32], source| {
+                            let mut code = prefix.to_vec();
+                            code.extend([
+                                0x7e02_0200 | source,
+                                0xe070_2000,
+                                0x8001_0100,
+                                0xbbfd_0000,
+                                0xbf81_0000,
+                            ]);
+                            bytes(&code)
+                        };
+                        assert_eq!(
+                            execute(&finish(&words, register), &[0]).unwrap(),
+                            vec![value]
+                        );
+                        words.push(0x850a_8281); // CSELECT s10, 1, 2 observes SCC.
+                        assert_eq!(
+                            execute(&finish(&words, 10), &[0]).unwrap(),
+                            vec![if flag { 1 } else { 2 }]
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn cmpk_register_bounds_length_and_uninitialized_read() {
+        for opcode in 3..=14 {
+            for register in 0..=127 {
+                let instruction = 0xb000_ffff | opcode << 23 | register << 16;
+                let code = bytes(&[instruction, 0xbf81_0000]);
+                assert_eq!(decode(&code).is_ok(), register <= 105);
+            }
+            let instruction = 0xb069_ffff | opcode << 23;
+            let code = bytes(&[instruction, 0xbf81_0000]);
+            // s105 is a read, so CMPK cannot initialize it.
+            assert!(execute(&code, &[0]).is_err());
+            for length in 1..4 {
+                assert!(decode(&code[..length]).is_err());
             }
         }
     }

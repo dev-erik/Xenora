@@ -574,6 +574,29 @@ fn compares_sopk_fixture_against_llvm() {
     eprintln!("{count} three-way signed-immediate fixture comparisons");
 }
 
+#[test]
+#[ignore = "requires LLVM with the gfx1030 AMDGPU target"]
+fn compares_cmpk_fixture_against_llvm() {
+    let fixture = include_bytes!("../../../fixtures/rdna2/scalar-compare-immediate.bin");
+    let mut forms = std::collections::BTreeSet::new();
+    let count = compare_against_llvm(fixture, &mut forms);
+    let identities: std::collections::BTreeSet<_> = decode(Architecture::Gfx1030, fixture)
+        .unwrap()
+        .into_iter()
+        .filter_map(|i| {
+            let name = xenora_isa::meta::identify(&fixture[i.offset..])
+                .unwrap()
+                .form
+                .name;
+            name.starts_with("S_CMPK_").then_some(name)
+        })
+        .collect();
+    assert_eq!(identities.len(), 12);
+    eprintln!(
+        "{count} three-way immediate-comparison fixture comparisons across 12 CMPK identities"
+    );
+}
+
 fn assemble_matrix() -> Vec<u8> {
     use std::fmt::Write as _;
     // Cover register banks and extrema, immediate classes in both scalar
@@ -855,6 +878,27 @@ fn literal_bits(text: &str) -> Option<u32> {
 fn normalize_llvm_assembly(assembly: &str, next_offset: usize) -> String {
     let (mnemonic, operands) = assembly.split_once(' ').unwrap_or((assembly, ""));
     match mnemonic {
+        mnemonic if mnemonic.starts_with("s_cmpk_") => {
+            let (reg, immediate) = operands.split_once(", ").unwrap();
+            let raw = immediate
+                .strip_prefix("0x")
+                .map(|s| u32::from_str_radix(s, 16).unwrap())
+                .unwrap_or_else(|| immediate.parse::<i32>().unwrap() as u32);
+            let bits = if mnemonic.ends_with("_i32") {
+                raw as i16 as i32 as u32
+            } else {
+                raw & 0xffff
+            };
+            let source = if (-16..=64).contains(&(bits as i32)) {
+                (bits as i32).to_string()
+            } else {
+                format!("0x{bits:x}")
+            };
+            format!(
+                "{} {reg}, {source}",
+                mnemonic.replacen("s_cmpk_", "s_cmp_", 1)
+            )
+        }
         "s_movk_i32" | "s_addk_i32" | "s_mulk_i32" => {
             let (dst, immediate) = operands.split_once(", ").unwrap();
             let raw = immediate

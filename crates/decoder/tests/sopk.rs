@@ -59,7 +59,7 @@ fn sopk_identity_operands_and_four_byte_length() {
 #[test]
 fn neighboring_opcodes_stay_unsupported() {
     for op in 1..=26u32 {
-        if matches!(op, 15 | 16 | 23) {
+        if matches!(op, 3..=16 | 23) {
             continue;
         }
         let word = 0xb000_0000 | (op << 23);
@@ -110,5 +110,57 @@ fn sopk_does_not_consume_a_literal_or_capture_waits() {
                 available
             }
         );
+    }
+}
+
+#[test]
+fn cmpk_uses_read_only_normal_register_and_signedness_specific_extension() {
+    use xenora_decoder::ScalarCompareOp;
+    let ops = [
+        ScalarCompareOp::CmpEqI32,
+        ScalarCompareOp::CmpLgI32,
+        ScalarCompareOp::CmpGtI32,
+        ScalarCompareOp::CmpGeI32,
+        ScalarCompareOp::CmpLtI32,
+        ScalarCompareOp::CmpLeI32,
+        ScalarCompareOp::CmpEqU32,
+        ScalarCompareOp::CmpLgU32,
+        ScalarCompareOp::CmpGtU32,
+        ScalarCompareOp::CmpGeU32,
+        ScalarCompareOp::CmpLtU32,
+        ScalarCompareOp::CmpLeU32,
+    ];
+    for (index, op) in ops.into_iter().enumerate() {
+        for reg in 0..=127u32 {
+            for imm in [0, 1, 0x7fff, 0x8000, 0xffff, 0xff] {
+                let word = 0xb0000000 | ((index as u32 + 3) << 23) | reg << 16 | imm;
+                let bytes = word.to_le_bytes();
+                let identified = identify(&bytes).unwrap().form;
+                assert!(SEMANTIC_FORMS.contains(&(identified.name, EncodingFamily::Sopk)));
+                assert_eq!(identified.bits, 0xb0000000u64 | ((index as u64 + 3) << 23));
+                assert_eq!(identified.mask, 0xff800000);
+                if reg > 105 {
+                    assert!(matches!(
+                        decode(Architecture::Gfx1030, &bytes).unwrap_err().kind,
+                        DecodeErrorKind::UnsupportedForm { .. }
+                    ));
+                    continue;
+                }
+                let d = decode(Architecture::Gfx1030, &bytes).unwrap();
+                assert_eq!(d[0].byte_len, 4);
+                assert_eq!(
+                    d[0].instruction,
+                    Instruction::ScalarCompare {
+                        op,
+                        src0: ScalarSource::Register(reg as u8),
+                        src1: ScalarSource::Immediate(if index < 6 {
+                            imm as i16 as i32 as u32
+                        } else {
+                            imm
+                        })
+                    }
+                );
+            }
+        }
     }
 }

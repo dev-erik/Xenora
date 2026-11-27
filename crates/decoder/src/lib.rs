@@ -42,13 +42,25 @@ const fn concat_forms<const N: usize>() -> [(&'static str, EncodingFamily); N] {
 }
 
 /// Decoded forms not yet described by the semantic registry.
-const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 40] = [
+const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 52] = [
     ("BUFFER_LOAD_DWORD", EncodingFamily::Mubuf),
     ("BUFFER_STORE_DWORD", EncodingFamily::Mubuf),
     ("EXP", EncodingFamily::Exp),
     ("IMAGE_SAMPLE_LZ", EncodingFamily::Mimg),
     ("IMAGE_STORE", EncodingFamily::Mimg),
     ("S_ADDK_I32", EncodingFamily::Sopk),
+    ("S_CMPK_EQ_I32", EncodingFamily::Sopk),
+    ("S_CMPK_LG_I32", EncodingFamily::Sopk),
+    ("S_CMPK_GT_I32", EncodingFamily::Sopk),
+    ("S_CMPK_GE_I32", EncodingFamily::Sopk),
+    ("S_CMPK_LT_I32", EncodingFamily::Sopk),
+    ("S_CMPK_LE_I32", EncodingFamily::Sopk),
+    ("S_CMPK_EQ_U32", EncodingFamily::Sopk),
+    ("S_CMPK_LG_U32", EncodingFamily::Sopk),
+    ("S_CMPK_GT_U32", EncodingFamily::Sopk),
+    ("S_CMPK_GE_U32", EncodingFamily::Sopk),
+    ("S_CMPK_LT_U32", EncodingFamily::Sopk),
+    ("S_CMPK_LE_U32", EncodingFamily::Sopk),
     ("S_MOVK_I32", EncodingFamily::Sopk),
     ("S_MULK_I32", EncodingFamily::Sopk),
     ("S_BRANCH", EncodingFamily::Sopp),
@@ -420,6 +432,35 @@ fn decode_gfx1030(bytes: &[u8], offset: usize) -> Result<(Instruction, u8), Deco
     // Pinned AMD metadata: SOPK ENCODING[31:28] and OP[27:23] form
     // mask 0xff800000. Match complete opcodes so other scalar families and
     // S_WAITCNT_VSCNT retain their own decoding and operand checks.
+    let cmpk_opcode = (first >> 23) & 31;
+    if first >> 28 == 0xb && (3..=14).contains(&cmpk_opcode) {
+        use ScalarCompareOp::*;
+        let op = [
+            CmpEqI32, CmpLgI32, CmpGtI32, CmpGeI32, CmpLtI32, CmpLeI32, CmpEqU32, CmpLgU32,
+            CmpGtU32, CmpGeU32, CmpLtU32, CmpLeU32,
+        ][(cmpk_opcode - 3) as usize];
+        // SDST is a read-only source for CMPK, not a destination.
+        let reg = ((first >> 16) & 127) as u8;
+        if reg > 105 {
+            return Err(unsupported(
+                op.mnemonic(),
+                "expected a normal SGPR comparison source",
+            ));
+        }
+        let immediate = if cmpk_opcode < 9 {
+            first as i16 as i32 as u32
+        } else {
+            first & 0xffff
+        };
+        return Ok((
+            Instruction::ScalarCompare {
+                op,
+                src0: ScalarSource::Register(reg),
+                src1: ScalarSource::Immediate(immediate),
+            },
+            4,
+        ));
+    }
     let sopk = first & 0xff80_0000;
     if matches!(sopk, 0xb000_0000 | 0xb780_0000 | 0xb800_0000) {
         let mnemonic = match sopk {

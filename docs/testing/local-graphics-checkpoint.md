@@ -6,6 +6,40 @@ claim of Xbox hardware equivalence. Supporting raw logs, mutation records and
 source manifests remain local and are not distributed with the repository.
 The array-range descriptor increment below was validated on 26 November 2026.
 
+## Stage 3.1 increment: scalar immediate comparisons
+
+27 November 2026. All twelve signed/unsigned SOPK comparisons now normalize to
+existing scalar comparison operations. They read a normal SGPR without modifying
+it and replace SCC. Signed immediates are sign-extended; unsigned immediates are
+zero-extended. Special and uninitialized source registers reject. See the
+[comparison contract](../shaders/scalar-alu.md#scalar-immediate-comparisons).
+
+Original literal relation masks cover 432 compute cases across all twelve forms,
+12 boundary pairs and unset/false/true incoming SCC. Native graphics executes
+576 draws across six boundary pairs, all twelve forms, constants/runtime inputs,
+both incoming SCC states and matching/nonmatching source-preservation probes.
+Both CPU references use independent decoding and comparison execution. Native
+runs passed with Metal API and shader validation on Apple M4 Max, macOS 27.2.1
+(26B131). These are synthetic checks, not AMD or Xbox hardware equivalence.
+
+The optional LLVM suite passed 17 tests, including 21 three-way instructions
+in the new compute fixture and an explicit inventory of all twelve CMPK identities.
+That is separate from the earlier 887 comparisons across 103 forms and ten
+signed-immediate fixture comparisons. The original regression failed at an
+unsupported opcode before implementation. Evidence is local under
+`artifacts/s31-cmpk/`; whole S3.1 remains open.
+
+All nine full gates passed (`validation-full.9Eshor`): workspace totals were
+1071 passed/0 failed/151 ignored; GPU script totals were 467 passed/0 failed/1
+ignored. These totals overlap and are not a count of unique semantic cases.
+The native audit checked 120 ARM64 executables/loadable dependencies. Three
+isolated mutations (signed zero-extension, unsigned sign-extension and strict
+instead of inclusive comparison) failed native result assertions. Exact edits,
+commands and restoration hashes are recorded in `mutations.json`; restored
+compute and graphics tests passed.
+Both independent reviewers accepted this bounded increment after verifying all
+20 source and 22 evidence hashes. Full S3.1 remains open.
+
 ## Stage 3.1 increment: signed scalar immediates
 
 27 November 2026. SOPK MOVK, ADDK and MULK accept signed 16-bit immediates

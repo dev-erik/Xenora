@@ -1315,3 +1315,147 @@ gpu = "fixture verified"
 recognized = true
 decoded = true
 llvm = "three-way passed"
+
+[[instruction]]
+form = "s_cmpk_eq_i32"
+encoding = "SOPK, read-only normal SGPR source; 16-bit immediate with instruction-selected extension"
+representation = "4 B"
+lowering = "resolved compute scalars; constant and runtime graphics comparison"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "s_cmpk_lg_i32"
+encoding = "SOPK, read-only normal SGPR source; 16-bit immediate with instruction-selected extension"
+representation = "4 B"
+lowering = "resolved compute scalars; constant and runtime graphics comparison"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "s_cmpk_gt_i32"
+encoding = "SOPK, read-only normal SGPR source; 16-bit immediate with instruction-selected extension"
+representation = "4 B"
+lowering = "resolved compute scalars; constant and runtime graphics comparison"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "s_cmpk_ge_i32"
+encoding = "SOPK, read-only normal SGPR source; 16-bit immediate with instruction-selected extension"
+representation = "4 B"
+lowering = "resolved compute scalars; constant and runtime graphics comparison"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "s_cmpk_lt_i32"
+encoding = "SOPK, read-only normal SGPR source; 16-bit immediate with instruction-selected extension"
+representation = "4 B"
+lowering = "resolved compute scalars; constant and runtime graphics comparison"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "s_cmpk_le_i32"
+encoding = "SOPK, read-only normal SGPR source; 16-bit immediate with instruction-selected extension"
+representation = "4 B"
+lowering = "resolved compute scalars; constant and runtime graphics comparison"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "s_cmpk_eq_u32"
+encoding = "SOPK, read-only normal SGPR source; 16-bit immediate with instruction-selected extension"
+representation = "4 B"
+lowering = "resolved compute scalars; constant and runtime graphics comparison"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "s_cmpk_lg_u32"
+encoding = "SOPK, read-only normal SGPR source; 16-bit immediate with instruction-selected extension"
+representation = "4 B"
+lowering = "resolved compute scalars; constant and runtime graphics comparison"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "s_cmpk_gt_u32"
+encoding = "SOPK, read-only normal SGPR source; 16-bit immediate with instruction-selected extension"
+representation = "4 B"
+lowering = "resolved compute scalars; constant and runtime graphics comparison"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "s_cmpk_ge_u32"
+encoding = "SOPK, read-only normal SGPR source; 16-bit immediate with instruction-selected extension"
+representation = "4 B"
+lowering = "resolved compute scalars; constant and runtime graphics comparison"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "s_cmpk_lt_u32"
+encoding = "SOPK, read-only normal SGPR source; 16-bit immediate with instruction-selected extension"
+representation = "4 B"
+lowering = "resolved compute scalars; constant and runtime graphics comparison"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "s_cmpk_le_u32"
+encoding = "SOPK, read-only normal SGPR source; 16-bit immediate with instruction-selected extension"
+representation = "4 B"
+lowering = "resolved compute scalars; constant and runtime graphics comparison"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
