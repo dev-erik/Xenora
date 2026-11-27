@@ -695,7 +695,8 @@ fn translated_scalar_packing_preserves_runtime_scc_and_literal_halves() {
 #[test]
 fn translated_scalar_immediates_preserve_flags_and_signed_results() {
     let gpu = NativeCompute::new().unwrap();
-    let fixtures: [(&[u8], &[(u32, u32, u32, Option<bool>)]); 4] = [
+    type ExpectedScalar = (u32, u32, u32, Option<bool>);
+    let fixtures: [(&[u8], &[ExpectedScalar]); 4] = [
         (
             include_bytes!("../../../../fixtures/rdna2/x9-scalar-movk-ps.bin"),
             &[(0, 0, 0xffff8000, None)],

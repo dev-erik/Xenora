@@ -1663,4 +1663,6 @@ Logs are under ignored `artifacts/s31-word-arithmetic/`. The broader
 reported four existing GPU-test lint findings: type complexity in
 `scalar_graphics.rs` and `vop3_mad_sad_graphics.rs`, a default-field reassignment
 in `typed_attachments.rs`, and a literal unwrap in `inline_float_sources.rs`.
-These are separate from the required default-feature lint check.
+The required default-feature lint check passed. A follow-up simplified those
+test declarations and initializers without changing expectations; the all-feature
+Clippy check then passed too. The affected native tests were rerun separately.

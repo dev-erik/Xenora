@@ -53,7 +53,8 @@ fn render(gpu: &NativeCompute, ps: &[u8], values: [u32; 8]) -> Vec<Vec<u8>> {
 
 // Fixed mathematical words: wrapped then saturated, independent of runtime evaluators.
 const OPS: [u32; 6] = [322, 323, 346, 347, 348, 349];
-const CASES: &[(u32, u32, u32, [u32; 6], [u32; 6])] = &[
+type ArithmeticCase = (u32, u32, u32, [u32; 6], [u32; 6]);
+const CASES: &[ArithmeticCase] = &[
     (
         0x00000000,
         0x00000000,

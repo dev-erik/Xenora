@@ -10,6 +10,8 @@ Guest execution uses original, purpose-built test programs. Commercial Xbox game
 remains unsupported.
 
 ### Changed
+- Simplified existing native GPU test types and initializers to allow all-feature
+  Clippy validation without suppressing lint rules or changing test expectations.
 - Implemented signed saturation for `V_SUB_NC_I32` in compute and graphics;
   wrapping mode and condition flags retain their behavior. Independent review of
   the added clamp mode remains pending.

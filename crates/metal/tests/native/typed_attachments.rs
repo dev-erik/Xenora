@@ -775,8 +775,10 @@ fragment uint4 ps() {return uint4(0x7fc12345u,0,0,1);}
 #[test]
 fn native_typed_uint_runtime_join_preserves_integer_bits() {
     let gpu = NativeCompute::new().unwrap();
-    let mut types = GraphicsPipelineTypes::default();
-    types.textures = [GraphicsSampleType::Uint; 2];
+    let mut types = GraphicsPipelineTypes {
+        textures: [GraphicsSampleType::Uint; 2],
+        ..GraphicsPipelineTypes::default()
+    };
     types.colors[0] = GraphicsExportType::Uint;
     let compiled = compile_graphics_pipeline_typed(
         Gfx1030,

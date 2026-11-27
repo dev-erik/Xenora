@@ -35,7 +35,7 @@ fn translated_inline_scalar_sources_preserve_exact_words_and_borrow() {
             } else {
                 result_right
             };
-            let changed = Some(!inline_left);
+            let outgoing = !inline_left;
             for separate_destination in [false, true] {
                 for constants in [false, true] {
                     let mut ps =
@@ -64,7 +64,6 @@ fn translated_inline_scalar_sources_preserve_exact_words_and_borrow() {
                         compile_graphics_pipeline(Architecture::Gfx1030, VS, &ps).unwrap();
                     for flag in [false, true] {
                         for matches in [true, false] {
-                            let outgoing = changed.unwrap_or(flag);
                             let draws = [TriangleDraw {
                                 vertices: &POS,
                                 colors: &COLORS,
