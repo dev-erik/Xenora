@@ -177,6 +177,9 @@ pub enum VectorTernary {
     AlignBits,
     OrThree,
     XorThree,
+    XorAdd,
+    LerpU8,
+    MaskedSadU8,
     BitSelect,
     AddThree,
     AndOr,
@@ -856,6 +859,9 @@ pub fn decode(code: &[u8]) -> Result<Vec<DecodedInstruction>, ReferenceError> {
                                 | 838
                                 | 839
                                 | 879
+                                | 837
+                                | 333
+                                | 369
                                 | 338
                                 | 339
                                 | 341
@@ -1571,6 +1577,9 @@ fn decode_vop3_integer(bytes: &[u8], offset: usize) -> Result<(Op, usize), Refer
             args[2],
         ),
         329 => Op::VectorTernary(VectorTernary::ExtractSigned, dst, args[0], args[1], args[2]),
+        837 => Op::VectorTernary(VectorTernary::XorAdd, dst, args[0], args[1], args[2]),
+        333 => Op::VectorTernary(VectorTernary::LerpU8, dst, args[0], args[1], args[2]),
+        369 => Op::VectorTernary(VectorTernary::MaskedSadU8, dst, args[0], args[1], args[2]),
         838 => Op::VectorTernary(VectorTernary::ShiftAdd, dst, args[0], args[1], args[2]),
         839 => Op::VectorTernary(VectorTernary::AddShift, dst, args[0], args[1], args[2]),
         879 => Op::VectorTernary(VectorTernary::ShiftOr, dst, args[0], args[1], args[2]),
@@ -2204,6 +2213,30 @@ fn execute_wave(
                         Op::VectorProduct(VectorProduct::HighSigned, ..) => {
                             ((i64::from(a as i32) * i64::from(b as i32)) >> 32) as u32
                         }
+                        // AMD RDNA2 pp170,178,181: independent byte components,
+                        // reference-byte (SRC1) masking, and unsigned wrap respectively.
+                        Op::VectorTernary(VectorTernary::XorAdd, ..) => (a ^ b).wrapping_add(c),
+                        Op::VectorTernary(VectorTernary::LerpU8, ..) => {
+                            let aa = a.to_le_bytes();
+                            let bb = b.to_le_bytes();
+                            let rounding = c.to_le_bytes();
+                            let bytes = std::array::from_fn(|i| {
+                                ((u16::from(aa[i]) + u16::from(bb[i]) + u16::from(rounding[i] & 1))
+                                    / 2) as u8
+                            });
+                            u32::from_le_bytes(bytes)
+                        }
+                        Op::VectorTernary(VectorTernary::MaskedSadU8, ..) => a
+                            .to_le_bytes()
+                            .into_iter()
+                            .zip(b.to_le_bytes())
+                            .fold(c, |sum, (sample, reference)| {
+                                if reference == 0 {
+                                    sum
+                                } else {
+                                    sum.wrapping_add(u32::from(sample.abs_diff(reference)))
+                                }
+                            }),
                         Op::VectorTernary(VectorTernary::BitSelect, ..) => (a & b) | (!a & c),
                         Op::VectorTernary(VectorTernary::AddThree, ..) => {
                             a.wrapping_add(b).wrapping_add(c)

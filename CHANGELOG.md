@@ -10,8 +10,8 @@ Guest execution uses original, purpose-built test programs. Commercial Xbox game
 remains unsupported.
 
 ### Changed
-- Recorded the requested wave/lane-before-control-flow implementation order and
-  explicit stage closure gates, including absent-lane and cross-stage prerequisites.
+- Updated Stage 3 execution priority to S3.1 arithmetic expansion while retaining
+  open wave/lane, control-flow and cross-stage closure requirements.
 - Refreshed the generated semantic-coverage report and included its consistency
   check in full graphics validation, alongside the checklist and visual maps.
 - Added the provisional S3 workstream counts and open-stage status to the generated
@@ -29,6 +29,9 @@ remains unsupported.
 - Extended the read-only RDNA2 planning CLI (`python3 -m qa rdna2`) with family/status filters, compact summaries, Codex-ready manifests under `artifacts/`, active-claim exclusion (family claims exclude those families; path-only claims block overlapping permitted files), coverage reconcile against `semantic_coverage` without inflating counts, and inventory diffs. Covered by `tests/qa/test_rdna2_plan.py`; planning only, no GPU production edits.
 
 ### Added
+- Added bounded VOP3 XOR-add, packed unsigned byte averaging and masked byte
+  absolute-difference accumulation, preserving integer source and output rules.
+  Validation and independent acceptance are pending.
 - Added a full Stage 3 roadmap separating decoded instruction counts, remaining
   architectural work and qualified effort bands.
 - Extended full-wave compute lane writes to captured runtime SGPR selectors,

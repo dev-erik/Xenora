@@ -2430,3 +2430,39 @@ gpu = "fixture verified"
 recognized = true
 decoded = true
 llvm = "three-way passed"
+
+[[instruction]]
+form = "v_xad_u32"
+encoding = "VOP3; checked three sources; zero modifiers"
+representation = "8 B or 12 B with shared literal"
+lowering = "MSL unsigned integer compute and graphics; documented bounded sources and masks"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_lerp_u8"
+encoding = "VOP3; checked three sources; zero modifiers"
+representation = "8 B or 12 B with shared literal"
+lowering = "MSL unsigned integer compute and graphics; documented bounded sources and masks"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_msad_u8"
+encoding = "VOP3; checked three sources; zero modifiers"
+representation = "8 B or 12 B with shared literal"
+lowering = "MSL unsigned integer compute and graphics; documented bounded sources and masks"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"

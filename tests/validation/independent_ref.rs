@@ -133,6 +133,9 @@ enum Insn {
     VBitSelect(u8, CmpSrc, CmpSrc, CmpSrc),
     VAddThree(u8, CmpSrc, CmpSrc, CmpSrc),
     VAndOr(u8, CmpSrc, CmpSrc, CmpSrc),
+    VXad(u8, CmpSrc, CmpSrc, CmpSrc),
+    VLerp(u8, CmpSrc, CmpSrc, CmpSrc),
+    VMsad(u8, CmpSrc, CmpSrc, CmpSrc),
     VLeastSigned(u8, CmpSrc, CmpSrc, CmpSrc),
     VLeastUnsigned(u8, CmpSrc, CmpSrc, CmpSrc),
     VGreatestSigned(u8, CmpSrc, CmpSrc, CmpSrc),
@@ -833,6 +836,9 @@ fn lane_step(
         | Insn::VXorThree(d, a, b, c)
         | Insn::VBitSelect(d, a, b, c)
         | Insn::VAddThree(d, a, b, c)
+        | Insn::VXad(d, a, b, c)
+        | Insn::VLerp(d, a, b, c)
+        | Insn::VMsad(d, a, b, c)
         | Insn::VAndOr(d, a, b, c) => Some((d, [a, b, c])),
         _ => None,
     };
@@ -1063,6 +1069,30 @@ fn lane_step(
                     }
                 }
                 out
+            }
+            // Independent arithmetic decomposition of AMD packed-byte definitions.
+            Insn::VXad(..) => ripple(a ^ b, c, false).0,
+            Insn::VLerp(..) => {
+                let mut packed = 0u64;
+                for component in 0..4 {
+                    let scale = 256u64.pow(component);
+                    let x = (u64::from(a) / scale) % 256;
+                    let y = (u64::from(b) / scale) % 256;
+                    let round = (u64::from(c) / scale) % 2;
+                    packed += ((x + y + round) / 2) * scale;
+                }
+                packed as u32
+            }
+            Insn::VMsad(..) => {
+                let mut total = i64::from(c);
+                for component in 0..4 {
+                    let scale = 256u32.pow(component);
+                    let reference = (b / scale) % 256;
+                    if reference != 0 {
+                        total += (i64::from((a / scale) % 256) - i64::from(reference)).abs();
+                    }
+                }
+                (total % 4294967296) as u32
             }
             Insn::VAndOr(..) => !((!a | !b) & !c),
             Insn::VCountAdd(..) => {
@@ -1509,6 +1539,9 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
                 | 838
                 | 839
                 | 879
+                | 837
+                | 333
+                | 369
                 | 338
                 | 339
                 | 341
@@ -1680,6 +1713,9 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
             344 => Insn::VMiddleSigned(dst, args[0], args[1], args[2]),
             345 => Insn::VMiddleUnsigned(dst, args[0], args[1], args[2]),
             329 => Insn::VSignedField(dst, args[0], args[1], args[2]),
+            837 => Insn::VXad(dst, args[0], args[1], args[2]),
+            333 => Insn::VLerp(dst, args[0], args[1], args[2]),
+            369 => Insn::VMsad(dst, args[0], args[1], args[2]),
             838 => Insn::VShiftThenSum(dst, args[0], args[1], args[2]),
             839 => Insn::VSumThenShift(dst, args[0], args[1], args[2]),
             879 => Insn::VShiftUnion(dst, args[0], args[1], args[2]),

@@ -189,3 +189,36 @@ fn rejects_either_out_of_domain_operand_even_if_the_product_is_normal() {
         );
     }
 }
+
+#[test]
+fn packed_integer_opcodes_have_independent_typed_decoding() {
+    use xenora_ref::{CompareSource, VectorTernary};
+    for (first, kind) in [
+        (0xd7450004, VectorTernary::XorAdd),
+        (0xd54d0004, VectorTernary::LerpU8),
+        (0xd5710004, VectorTernary::MaskedSadU8),
+    ] {
+        assert_eq!(
+            decode(&bytes(&[first, 257 | 258 << 9 | 259 << 18])).unwrap()[0].op,
+            Op::VectorTernary(
+                kind,
+                4,
+                CompareSource::Vector(1),
+                CompareSource::Vector(2),
+                CompareSource::Vector(3)
+            )
+        );
+        let parsed = decode(&bytes(&[first, 255 | 128 << 9 | 129 << 18, 0xdeadbeef])).unwrap();
+        assert_eq!(parsed[0].byte_len, 12);
+        assert_eq!(
+            parsed[0].op,
+            Op::VectorTernary(
+                kind,
+                4,
+                CompareSource::Immediate(0xdeadbeef),
+                CompareSource::Immediate(0),
+                CompareSource::Immediate(1)
+            )
+        );
+    }
+}

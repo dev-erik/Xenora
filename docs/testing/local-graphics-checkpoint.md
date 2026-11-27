@@ -6,6 +6,44 @@ claim of Xbox hardware equivalence. Supporting raw logs, mutation records and
 source manifests remain local and are not distributed with the repository.
 The array-range descriptor increment below was validated on 26 November 2026.
 
+## Stage 3.1 increment: XOR-add, byte average and masked differences
+
+27 November 2026. Added bounded zero-modifier `V_XAD_U32`, `V_LERP_U8` and
+`V_MSAD_U8` compute and graphics translation. The [operand contract](../shaders/vop3-integer.md)
+preserves the existing source, mask, readiness, alias and typed-output restrictions.
+Arithmetic decoding is now 161/480 forms; 319 remain undecoded. S3.1 remains open.
+
+Independent specification and code-quality reviews found no blocking issues.
+The four-package CPU regression (decoder, shader, reference and semantic review)
+passed 868 tests, with 58 ignored tests excluded from native evidence. The
+focused LLVM oracle passed 156 exact encoding comparisons; the fixture corpus
+passed 1,333 three-way comparisons across 185 forms. Fixture assembly and exact
+declared-form coverage checks passed.
+
+With Metal API and shader validation enabled on Apple M4 Max, the independent
+compute suite passed all 9 tests with zero ignored, including 473 native dispatches:
+472 arithmetic/mask/source cases and one assembled whole-program fixture. The
+new graphics tests passed 52 R32Uint renders; the restored four-test graphics
+suite also passed the existing MAD/SAD regression. Counts come from test loops
+and do not represent game coverage. A deliberate XAD XOR-for-add mutation failed
+an exact native pixel assertion; restoring the source restored passing results.
+An attempted additional untyped graphics test used unsupported inputs and was
+removed; production restrictions and existing tests were unchanged.
+
+Workspace all-target Clippy also passed. Logs and review notes are local under
+`artifacts/s31-packed-integer/`. These
+results are synthetic, spec-derived evidence, not AMD or Xbox hardware equivalence.
+
+Reproduce the focused native checks on Apple Silicon:
+
+```sh
+export CARGO_BUILD_JOBS=2 CARGO_BUILD_TARGET=aarch64-apple-darwin
+export MTL_DEBUG_LAYER=1 MTL_SHADER_VALIDATION=1
+export MTL_SHADER_VALIDATION_REPORT_TO_STDERR=1 MTL_SHADER_VALIDATION_ABORT_ON_FAULT=1
+cargo test --locked -p xenora-semantic-review --test packed_integer_independent -- --include-ignored --test-threads=1
+cargo test --locked -p xenora-metal --features gpu-tests --test native_compute xad_lerp_msad -- --test-threads=1
+```
+
 ## Stage 3.1 increment: multiply-add and absolute differences
 
 27 November 2026. Six MAD24/SAD forms now support wrapping and integer-clamp

@@ -83,6 +83,7 @@ either path. The [changelog](../CHANGELOG.md) records notable changes.
 - [Engineering progress](progress.md) — Verification commands, metric definitions, and open release gates.
 - [Integrated Stage 2 acceptance](testing/stage2-integrated-acceptance.md) — Seven resource contracts, cross-workstream evidence and final acceptance limits.
 - [Local graphics checkpoint](testing/local-graphics-checkpoint.md) — Bounded acceptance, reproducible gates, local results and evidence limitations.
+- [XOR-add and packed-byte arithmetic validation](testing/local-graphics-checkpoint.md#stage-31-increment-xor-add-byte-average-and-masked-differences) — Bounded S3.1 native compute/graphics evidence and reproduction commands.
 - [Selective upstream imports](testing/upstream-imports.md) — Source commits, licensing, adaptations and deferred changes.
 - [Test inventory comparison](testing/test-inventory.md) — Detect missing or newly ignored Cargo tests across commits.
 - [Persistent resource and translated rendering acceptance](testing/x9-acceptance.md) — Pinned upstream tests, native ARM64 results and unsupported cases.

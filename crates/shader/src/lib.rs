@@ -644,6 +644,27 @@ fn vector_bit_binary_expression(op: VectorBitBinaryOp, a: &str, b: &str, lane: &
 }
 fn vector_ternary_expression(op: VectorTernaryOp, a: &str, b: &str, c: &str) -> String {
     match op {
+        VectorTernaryOp::XadU32 => format!("(({a}) ^ ({b})) + ({c})"),
+        // AMD RDNA2 §12.12: SRC2 contributes only bits 0,8,16,24.
+        // Each byte sum is at most511, so averaging cannot carry across bytes.
+        VectorTernaryOp::LerpU8 => (0..4)
+            .map(|byte| {
+                let shift = byte * 8;
+                format!("(((((({a}) >> {shift}u) & 255u) + ((({b}) >> {shift}u) & 255u) + ((({c}) >> {shift}u) & 1u)) >> 1u) << {shift}u)")
+            })
+            .collect::<Vec<_>>()
+            .join(" | "),
+        // Mask by the reference byte (SRC1), not SRC0. Unsigned addition
+        // deliberately preserves wraparound of the complete accumulator.
+        VectorTernaryOp::MsadU8 => {
+            let mut terms = vec![format!("({c})")];
+            for shift in [0, 8, 16, 24] {
+                let x = format!("((({a}) >> {shift}u) & 255u)");
+                let y = format!("((({b}) >> {shift}u) & 255u)");
+                terms.push(format!("({y} == 0u ? 0u : (max({x}, {y}) - min({x}, {y})))"));
+            }
+            terms.join(" + ")
+        }
         VectorTernaryOp::BfiB32 => format!("(({a}) & ({b})) | (~({a}) & ({c}))"),
         VectorTernaryOp::Add3U32 => format!("(({a}) + ({b})) + ({c})"),
         VectorTernaryOp::AndOrB32 => format!("(({a}) & ({b})) | ({c})"),

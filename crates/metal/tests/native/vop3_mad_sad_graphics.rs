@@ -308,3 +308,94 @@ fn mad_sad_every_source_alias_scalar_literal_and_shared_literal() {
         }
     }
 }
+
+// Independently transcribed from AMD RDNA2 section12.12 opcode entries
+// 837 (XAD), 333 (LERP), and 369 (MSAD). Each answer is a fixed raw word;
+// neither the compiler nor a reference interpreter computes expected pixels.
+// XAD wraps after XOR+add. LERP uses only S2 bits 0/8/16/24. MSAD masks
+// zero bytes in S1 (not S0), then adds the remaining unsigned byte distances.
+const XAD_LERP_MSAD_CASES: &[(u32, [u32; 3], u32)] = &[
+    (837, [0, 0, 0], 0),
+    (837, [0xffffffff, 0, 1], 0),
+    (837, [0x80000000, 0, 0x80000000], 0),
+    (837, [0xaaaaaaaa, 0x55555555, 2], 1),
+    (837, [0x12345678, 0x12345678, 0x89abcdef], 0x89abcdef),
+    (837, [0xff00ff00, 0x00ff00ff, 0xfffffffe], 0xfffffffd),
+    // Four odd sums: truncation, then independently selected round-up bytes.
+    (333, [0, 0x01010101, 0], 0),
+    (333, [0, 0x01010101, 0x01000100], 0x01000100),
+    // A 9-bit intermediate must not overflow before division by two.
+    (333, [0xffffffff, 0xffffffff, 0xffffffff], 0xffffffff),
+    (333, [0x00ff00ff, 0x01000100, 0], 0x007f007f),
+    (333, [0x00ff00ff, 0x01000100, 0x01010101], 0x01800180),
+    // Dirty upper seven bits of every rounding byte have no effect.
+    (333, [0x01030507, 0x02040608, 0xfefefefe], 0x01030507),
+    (333, [0x01030507, 0x02040608, 0xffffffff], 0x02040608),
+    (333, [0xff00fe01, 0x0001fffe, 0x01010001], 0x8001fe80),
+    (369, [0xffffffff, 0, 0x12345678], 0x12345678),
+    (369, [0, 0xffffffff, 0], 0x000003fc),
+    // Included distances 255+1 carry through the accumulator and wrap to zero.
+    (369, [0, 0x00ff0001, 0xffffff00], 0),
+    (369, [0xff00ff00, 0x000100ff, 5], 0x00000105),
+    (369, [0x01020304, 0x01000300, 7], 7),
+    (369, [0, 0x80017fff, 0], 0x000001ff),
+    (369, [0xffffffff, 0x01010101, 0xffffffff], 0x000003f7),
+    (369, [0x000000ff, 0, 0], 0),
+];
+
+#[test]
+fn xad_lerp_msad_literal_wrap_byte_rounding_and_reference_mask_pixels() {
+    let gpu = NativeCompute::new().unwrap();
+    assert_eq!(XAD_LERP_MSAD_CASES.len(), 22);
+    for &(op, [a, b, c], expected) in XAD_LERP_MSAD_CASES {
+        assert_eq!(
+            render(
+                &gpu,
+                &pixel(op, 11, [264, 265, 266], None, false),
+                [a, b, c, 0, 0, 0, 0, 0],
+            ),
+            vec![expected.to_le_bytes().to_vec()],
+            "op={op} a={a:08x} b={b:08x} c={c:08x}",
+        );
+    }
+}
+
+#[test]
+fn xad_lerp_msad_source_snapshots_scalar_literal_and_shared_literal_pixels() {
+    let gpu = NativeCompute::new().unwrap();
+    // Distinct source values make destination aliasing observable in every slot.
+    for (op, inputs, expected) in [
+        (837, [0xff00ff00, 0x00ff00ff, 0xfffffffe], 0xfffffffdu32),
+        (333, [0xff00fe01, 0x0001fffe, 0x01010001], 0x8001fe80),
+        (369, [0xff00ff00, 0x000100ff, 5], 0x00000105),
+    ] {
+        for position in 0..3 {
+            for selector in [264 + position as u32, 24 + position as u32, 255] {
+                let mut source = [264, 265, 266];
+                source[position] = selector;
+                assert_eq!(
+                    render(
+                        &gpu,
+                        &pixel(
+                            op,
+                            8 + position as u32,
+                            source,
+                            (selector == 255).then_some(inputs[position]),
+                            false,
+                        ),
+                        [inputs[0], inputs[1], inputs[2], 0, 0, 0, 0, 0],
+                    ),
+                    vec![expected.to_le_bytes().to_vec()],
+                    "op={op} alias position={position} selector={selector}",
+                );
+            }
+        }
+        // With all operands equal to one: XAD=0+1; LERP low byte=(1+1+1)/2;
+        // MSAD has zero distance and retains the accumulator. One shared word.
+        assert_eq!(
+            render(&gpu, &pixel(op, 11, [255; 3], Some(1), false), [0; 8]),
+            vec![1u32.to_le_bytes().to_vec()],
+            "op={op} shared literal",
+        );
+    }
+}

@@ -110,7 +110,7 @@ fn exact_opcode_scope_and_each_modifier_bit() {
         }
     ));
     // Nearby full-width/ternary opcodes are not admitted by a family catch-all.
-    for op in [335, 336, 337, 340, 343, 350, 837, 840, 878, 880] {
+    for op in [335, 336, 337, 340, 343, 350, 834, 840, 878, 880] {
         assert!(decode_at(Gfx1030, &code(op, 5, [257, 258, 259], 0), 0).is_err());
     }
 }
@@ -232,5 +232,5 @@ fn names_display_and_existing_identity_count() {
         );
     }
     // Includes the bounded control, wait and Wave32 MBCNT forms.
-    assert_eq!(xenora_decoder::SEMANTIC_FORMS.len(), 203);
+    assert_eq!(xenora_decoder::SEMANTIC_FORMS.len(), 206);
 }

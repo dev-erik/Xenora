@@ -10,12 +10,12 @@ For the Xbox Series X|S target and non-shader requirements, see the [master comp
 
 | Status | Forms | Meaning |
 | --- | ---: | --- |
-| Converted subset; fixture accepted | 116 | Translation is recorded and the status registry records accepted native fixture evidence; only the documented operand subset is covered. |
+| Converted subset; fixture accepted | 119 | Translation is recorded and the status registry records accepted native fixture evidence; only the documented operand subset is covered. |
 | Converted subset; acceptance pending | 82 | Translation is recorded, but the registry does not record accepted native fixture evidence. This may reflect pending acceptance or documentation lag. |
 | Decoded; translation evidence unrecorded | 5 | The decoder lists the form, but no translation evidence row is recorded. This is an evidence gap, not proof that lowering is absent. |
-| Not converted | 1262 | No supported decoder identity exists. Opcode recognition from metadata alone does not implement execution. |
+| Not converted | 1259 | No supported decoder identity exists. Opcode recognition from metadata alone does not implement execution. |
 
-**Decoder coverage: 203/1465. Not yet decoded: 1262.**
+**Decoder coverage: 206/1465. Not yet decoded: 1259.**
 
 No row means “all operand modes complete.” Sources, literals, modifiers, register widths, execution masks, graphics versus compute applicability, control-flow interactions and numerical behavior still require their own contracts and tests. This list covers the pinned inventory, not every future AMD instruction or every Xbox graphics method.
 
@@ -29,14 +29,14 @@ The partition below includes SOPP control flow and memory families alongside ari
 
 | Workstream | Total forms | Decoded | Not decoded |
 | --- | ---: | ---: | ---: |
-| S3.1 Arithmetic | 480 | 158 | 322 |
+| S3.1 Arithmetic | 480 | 161 | 319 |
 | S3.2 Control flow | 24 | 8 | 16 |
 | S3.3 Masks / comparisons | 419 | 12 | 407 |
 | S3.4 Wave / lane | 11 | 11 | 0 |
 | S3.5 Memory / interfaces | 509 | 14 | 495 |
 | State / assignment pending | 22 | 0 | 22 |
 
-**158/480 arithmetic forms decoded is not 158 accepted or fully converted forms.** This distinction corrects the earlier shorthand used in progress updates.
+**161/480 arithmetic forms decoded is not 161 accepted or fully converted forms.** This distinction corrects the earlier shorthand used in progress updates.
 
 ## Families
 
@@ -59,7 +59,7 @@ The partition below includes SOPP control flow and memory families alongside ari
 | [VINTRP](#vintrp) | 3 | 0 | 0 | 2 | 1 |
 | [VOP1](#vop1) | 81 | 7 | 0 | 0 | 74 |
 | [VOP2](#vop2) | 47 | 7 | 13 | 0 | 27 |
-| [VOP3](#vop3) | 416 | 58 | 0 | 0 | 358 |
+| [VOP3](#vop3) | 416 | 61 | 0 | 0 | 355 |
 | [VOP3P](#vop3p) | 29 | 0 | 0 | 0 | 29 |
 | [VOP3SDST](#vop3sdst) | 10 | 0 | 0 | 0 | 10 |
 | [VOPC](#vopc) | 190 | 0 | 12 | 0 | 178 |
@@ -1223,7 +1223,7 @@ Update the implementation and its evidence in `docs/status.toml`, then regenerat
 | 330 | `V_BFI_B32` | Converted subset; fixture accepted | MSL uint mask selection (a & b) OR (~a & c); compute lane retention and graphics raw-word carrier | fixture verified | fixture verified |
 | 331 | `V_FMA_F32` | Not converted | — | — | — |
 | 332 | `V_FMA_F64` | Not converted | — | — | — |
-| 333 | `V_LERP_U8` | Not converted | — | — | — |
+| 333 | `V_LERP_U8` | Converted subset; fixture accepted | MSL unsigned integer compute and graphics; documented bounded sources and masks | fixture verified | fixture verified |
 | 334 | `V_ALIGNBIT_B32` | Converted subset; fixture accepted | MSL uint concatenated word alignment with zero-count handling; compute and graphics | fixture verified | fixture verified |
 | 335 | `V_ALIGNBYTE_B32` | Not converted | — | — | — |
 | 336 | `V_MULLIT_F32` | Not converted | — | — | — |
@@ -1253,7 +1253,7 @@ Update the implementation and its evidence in `docs/status.toml`, then regenerat
 | 364 | `V_MUL_HI_I32` | Converted subset; fixture accepted | MSL signed mulhi with uint result bitcast; compute lane retention and graphics raw-word carrier | fixture verified | fixture verified |
 | 367 | `V_DIV_FMAS_F32` | Not converted | — | — | — |
 | 368 | `V_DIV_FMAS_F64` | Not converted | — | — | — |
-| 369 | `V_MSAD_U8` | Not converted | — | — | — |
+| 369 | `V_MSAD_U8` | Converted subset; fixture accepted | MSL unsigned integer compute and graphics; documented bounded sources and masks | fixture verified | fixture verified |
 | 370 | `V_QSAD_PK_U16_U8` | Not converted | — | — | — |
 | 371 | `V_MQSAD_PK_U16_U8` | Not converted | — | — | — |
 | 372 | `V_TRIG_PREOP_F64` | Not converted | — | — | — |
@@ -1363,7 +1363,7 @@ Update the implementation and its evidence in `docs/status.toml`, then regenerat
 | 834 | `V_INTERP_P1LL_F16` | Not converted | — | — | — |
 | 835 | `V_INTERP_P1LV_F16` | Not converted | — | — | — |
 | 836 | `V_PERM_B32` | Not converted | — | — | — |
-| 837 | `V_XAD_U32` | Not converted | — | — | — |
+| 837 | `V_XAD_U32` | Converted subset; fixture accepted | MSL unsigned integer compute and graphics; documented bounded sources and masks | fixture verified | fixture verified |
 | 838 | `V_LSHL_ADD_U32` | Converted subset; fixture accepted | MSL masked shift then wrapping addition; compute and graphics | fixture verified | fixture verified |
 | 839 | `V_ADD_LSHL_U32` | Converted subset; fixture accepted | MSL wrapping addition then masked shift; compute and graphics | fixture verified | fixture verified |
 | 843 | `V_FMA_F16` | Not converted | — | — | — |

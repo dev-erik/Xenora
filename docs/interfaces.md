@@ -1887,3 +1887,23 @@ or comparison evaluates selection in that replay's guest-lane context. Existing
 source-size, node and context limits still apply. This does not admit arbitrary
 runtime scalar arithmetic, dynamic EXEC, runtime branch-region lane writes,
 graphics participation or runtime selectors in partial-wave launches.
+
+
+### Bounded XAD, LERP and MSAD integer operations
+
+The three-source VOP3 subset includes `V_XAD_U32` (837), `V_LERP_U8` (333)
+and `V_MSAD_U8` (369), without modifiers. XAD wraps XOR-then-add to32 bits.
+LERP averages each unsigned byte independently, using only SRC2 bits0/8/16/24
+as the corresponding round-up bits. MSAD excludes differences where the SRC1
+reference byte is zero, adds the remaining unsigned differences to the full
+SRC2 word and wraps to32 bits.
+
+The existing checked scalar/VGPR/inline/shared-literal source contract and
+two-scalar-identity limit apply. Compute preserves flags and inactive values
+and does not expand runtime branch-region admission. Graphics retains raw
+integer carriers and compatible typed outputs, with existing uniform,
+descriptor and metadata restrictions. These operations introduce no floating
+interpolation, saturation mode, new resource interface or stage-completion claim.
+The [VOP3 integer contract](shaders/vop3-integer.md#xor-add-packed-byte-average-and-masked-byte-differences)
+contains the exact byte formulas and operand exclusions. Validation remains
+separate from this interface description.

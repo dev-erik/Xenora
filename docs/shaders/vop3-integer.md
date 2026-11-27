@@ -167,3 +167,46 @@ The extension uses `fixtures/rdna2/vop3-bitfield.s` and the separate encoding
 record `artifacts/s31-bitfield-source-evidence.md`. Both independent reviewers accepted that extension with the evidence recorded
 in the local checkpoint. Both reviewers also accepted the four arithmetic forms above after separate
 validation recorded in that checkpoint. None of these increments completes S3.1 or establishes Xbox compatibility.
+
+
+## XOR-add, packed byte average and masked byte differences
+
+Three further bounded, unmodified VOP3 forms use three active 32-bit sources:
+
+| Instruction | OP | Result |
+| --- | ---: | --- |
+| `V_XAD_U32` | 837 | ((a XOR b) + c) modulo 2^32 |
+| `V_LERP_U8` | 333 | Four independent unsigned byte averages, rounded per byte by c |
+| `V_MSAD_U8` | 369 | c plus unsigned byte absolute differences, excluding bytes whose b component is zero, modulo 2^32 |
+
+For byte position j=0..3, LERP produces
+`(byte(a,j) + byte(b,j) + ((c >> (8*j)) & 1)) >> 1` in that byte.
+Only c bits0/8/16/24 affect rounding. Other c bits are ignored, and addition
+uses enough width to retain a byte sum of511 before shifting. No carry passes
+between output bytes. This is a packed integer average, not floating interpolation.
+
+MSAD tests the reference byte in SRC1, not SRC0, for exclusion. Its four
+unsigned differences accumulate into the full32-bit SRC2; carries cross byte
+boundaries and final overflow wraps. XAD has no carry input or flag output.
+All three preserve SCC, VCC and EXEC. No clamp, ABS, NEG, OMOD or OP_SEL mode
+is admitted by this increment.
+
+Sources admit normal SGPRs, the checked VCC/EXEC halves, integer inline values,
+the nine raw floating-named inline words, a shared literal word and VGPRs.
+Mask-half reads still require initialized values under the selected wave contract;
+this does not define Wave32 high halves after comparison or at launch.
+The existing two-distinct-scalar-identity rule applies before immediate
+collapse. Every literal position shares the same trailing word; encodings are
+8 or12 bytes. LDS-direct, DPP/SDWA and other special selectors remain excluded.
+
+Compute retains source snapshots, active-lane writes, initialized inactive
+values and empty-EXEC read suppression. These forms do not expand runtime VCC
+branch regions. Graphics retains the integer provenance, descriptor, uniform,
+join/loop and typed-output restrictions described above; it does not admit
+mask-register sources or convert raw integer words into floating values.
+
+Semantics follow [AMD RDNA2 ISA §12.12](https://docs.amd.com/v/u/en-US/rdna2-shader-instruction-set-architecture).
+The [arithmetic checkpoint](../testing/local-graphics-checkpoint.md#stage-31-increment-xor-add-byte-average-and-masked-differences)
+records independent review, CPU/LLVM checks, 473 native compute dispatches and
+52 new typed integer graphics renders on Apple M4 Max. This evidence covers the
+bounded contract above, not every operand mode or Xbox execution.

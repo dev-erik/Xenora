@@ -261,6 +261,12 @@ pub enum VectorTernaryOp {
     Med3I32,
     /// `v_med3_u32`.
     Med3U32,
+    /// XOR then wrapping 32-bit add.
+    XadU32,
+    /// Four unsigned byte averages with independent rounding bits.
+    LerpU8,
+    /// Byte SAD excluding components with zero SRC1 bytes.
+    MsadU8,
 }
 
 impl VectorTernaryOp {
@@ -284,6 +290,9 @@ impl VectorTernaryOp {
             Self::Max3U32 => "v_max3_u32",
             Self::Med3I32 => "v_med3_i32",
             Self::Med3U32 => "v_med3_u32",
+            Self::XadU32 => "v_xad_u32",
+            Self::LerpU8 => "v_lerp_u8",
+            Self::MsadU8 => "v_msad_u8",
         }
     }
 }
