@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! Handwritten answers from public AMD RDNA2 70648 p185.
-//! Nonzero modifiers, floating multiplicands and high-half multiplicand literals are deferred subset forms.
+//! Nonzero modifiers and high-half multiplicand literals are deferred subset forms.
 //! https://docs.amd.com/v/u/en-US/rdna2-shader-instruction-set-architecture
 //! Encoding checked against amdgpu_isa_rdna2.xml SHA256
 //! d671ecbc36543674ab59e9b2feffd56718fd2137e7ad913c314f2e2508b9f4f7.
@@ -126,7 +126,59 @@ fn cases() -> Vec<Case> {
             });
         }
     }
+    assert_eq!(out.len(), 258);
     out
+}
+// Table 20 and p185: columns are unsigned/signed HALF times one,
+// FP32 raw addend plus one, and unsigned/signed HALF squared plus FP32.
+// These fixed answers do not call either evaluator or a production table.
+const FLOAT_ANSWERS: &[(u32, u32, u32, u32, u32)] = &[
+    (0x00003800, 0x00003800, 0x3f000001, 0x4b400000, 0x4b400000),
+    (0x0000b800, 0xffffb800, 0xbf000001, 0x43400000, 0xd3400000),
+    (0x00003c00, 0x00003c00, 0x3f800001, 0x4d900000, 0x4d900000),
+    (0x0000bc00, 0xffffbc00, 0xbf800001, 0x49900000, 0xd1900000),
+    (0x00004000, 0x00004000, 0x40000001, 0x50000000, 0x50000000),
+    (0x0000c000, 0xffffc000, 0xc0000001, 0x50000000, 0xd0000000),
+    (0x00004400, 0x00004400, 0x40800001, 0x52900000, 0x52900000),
+    (0x0000c400, 0xffffc400, 0xc0800001, 0x56900000, 0xce900000),
+    (0x00003118, 0x00003118, 0x3e22f984, 0x478d2bc3, 0x478d2bc3),
+];
+fn float_cases() -> Vec<Case> {
+    let mut out = Vec::new();
+    for (index, &(u, s, add, mixed_u, mixed_s)) in FLOAT_ANSWERS.iter().enumerate() {
+        let selector = 240 + index as u32;
+        for op in [UNSIGNED, SIGNED] {
+            for position in 0..4 {
+                let mut src = [129, 129, 128];
+                let expected = if position == 3 {
+                    src = [selector; 3];
+                    if op == UNSIGNED { mixed_u } else { mixed_s }
+                } else {
+                    src[position] = selector;
+                    if position == 2 {
+                        add
+                    } else if op == UNSIGNED {
+                        u
+                    } else {
+                        s
+                    }
+                };
+                out.push(Case {
+                    code: program(&instruction(op, 4, src), 4),
+                    input: vec![0; 32],
+                    expected: vec![expected; 32],
+                });
+            }
+        }
+    }
+    assert_eq!(out.len(), 72);
+    out
+}
+#[test]
+fn named_float_sources_use_each_operand_width() {
+    for case in float_cases() {
+        check(&case, None);
+    }
 }
 fn check(case: &Case, gpu: Option<&xenora_metal::NativeCompute>) {
     assert_eq!(
@@ -210,7 +262,7 @@ fn native_mad16_compute() {
     assert_eq!(std::env::var("MTL_SHADER_VALIDATION").as_deref(), Ok("1"));
     let gpu = xenora_metal::NativeCompute::new().unwrap();
     check(&fixture_case(), Some(&gpu));
-    for case in cases() {
+    for case in cases().into_iter().chain(float_cases()) {
         check(&case, Some(&gpu));
     }
 }
@@ -219,14 +271,6 @@ fn native_mad16_compute() {
 fn multiplicand_constant_subset_and_full_width_addend() {
     for op in [UNSIGNED, SIGNED] {
         for pos in 0..2 {
-            for float in 240..=248 {
-                let mut src = [129, 129, 128];
-                src[pos] = float;
-                let code = program(&instruction(op, 4, src), 4);
-                assert!(xenora_ref::decode(&code).is_err());
-                assert!(independent_ref::execute(&code, &[0]).is_err());
-                assert!(compile(Gfx1030, &code).is_err());
-            }
             for literal in [0x10000, 0xffffffff] {
                 let mut src = [129, 129, 255];
                 src[pos] = 255;

@@ -24,9 +24,6 @@ fn sources_aliases_and_inactive_destinations() {
     for op in [883, 885] {
         for position in 0..3 {
             for source in [257, 128, 193, 240, 255, 8] {
-                if position < 2 && source == 240 {
-                    continue;
-                }
                 let mut src = [257; 3];
                 src[position] = source;
                 let code = program(op, 1, src, &[0xbe880381]);

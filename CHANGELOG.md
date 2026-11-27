@@ -10,6 +10,8 @@ Guest execution uses original, purpose-built test programs. Commercial Xbox game
 remains unsupported.
 
 ### Changed
+- Expanded MAD16 floating-named inline selectors to position-specific halfword
+  multiplicand bits and full-word accumulator bits, preserving integer semantics.
 - Updated Stage 3 execution priority to S3.1 arithmetic expansion while retaining
   open wave/lane, control-flow and cross-stage closure requirements.
 - Refreshed the generated semantic-coverage report and included its consistency
@@ -30,8 +32,8 @@ remains unsupported.
 
 ### Added
 - Added bounded signed/unsigned low-halfword multiply-add with full32-bit
-  wrapping accumulation and preserved flags. Multiplicand inline-float and
-  literal restrictions remain explicit. Independent native compute and typed
+  wrapping accumulation and preserved flags. Multiplicand literal and
+  modifier restrictions remain explicit. Independent native compute and typed
   graphics checks passed for this bounded subset.
 - Added bounded VOP3 XOR-add, packed unsigned byte averaging and masked byte
   absolute-difference accumulation, preserving integer source and output rules.

@@ -491,16 +491,6 @@ fn mad16_graphics_strict_multiplicand_source_contract_rejections() {
     types.colors[0] = GraphicsExportType::Uint;
     for op in [883, 885] {
         for position in 0..2 {
-            for selector in 240..=248 {
-                let mut source = [264, 265, 266];
-                source[position] = selector;
-                let code = pixel(op, 11, source, None, false);
-                assert!(
-                    compile_graphics_pipeline_typed(Architecture::Gfx1030, VS, &code, types)
-                        .is_err(),
-                    "op={op} position={position} float inline={selector}",
-                );
-            }
             for literal in [0x00010000, 0x80000000, 0xffffffff] {
                 let mut source = [264, 265, 266];
                 source[position] = 255;
@@ -518,4 +508,52 @@ fn mad16_graphics_strict_multiplicand_source_contract_rejections() {
             "op={op} shared literal is also a multiplicand",
         );
     }
+}
+
+// Table 20 and p185: columns are unsigned/signed HALF times one,
+// FP32 raw addend plus one, and unsigned/signed HALF squared plus FP32.
+// These fixed answers do not call either evaluator or a production table.
+const FLOAT_ANSWERS: &[(u32, u32, u32, u32, u32)] = &[
+    (0x00003800, 0x00003800, 0x3f000001, 0x4b400000, 0x4b400000),
+    (0x0000b800, 0xffffb800, 0xbf000001, 0x43400000, 0xd3400000),
+    (0x00003c00, 0x00003c00, 0x3f800001, 0x4d900000, 0x4d900000),
+    (0x0000bc00, 0xffffbc00, 0xbf800001, 0x49900000, 0xd1900000),
+    (0x00004000, 0x00004000, 0x40000001, 0x50000000, 0x50000000),
+    (0x0000c000, 0xffffc000, 0xc0000001, 0x50000000, 0xd0000000),
+    (0x00004400, 0x00004400, 0x40800001, 0x52900000, 0x52900000),
+    (0x0000c400, 0xffffc400, 0xc0800001, 0x56900000, 0xce900000),
+    (0x00003118, 0x00003118, 0x3e22f984, 0x478d2bc3, 0x478d2bc3),
+];
+#[test]
+fn mad16_named_float_sources_use_half_and_full_width_pixels() {
+    let gpu = NativeCompute::new().unwrap();
+    let mut count = 0;
+    for (index, &(u, s, add, mixed_u, mixed_s)) in FLOAT_ANSWERS.iter().enumerate() {
+        let selector = 240 + index as u32;
+        for op in [883, 885] {
+            for position in 0..4 {
+                let mut src = [129, 129, 128];
+                let expected = if position == 3 {
+                    src = [selector; 3];
+                    if op == 883 { mixed_u } else { mixed_s }
+                } else {
+                    src[position] = selector;
+                    if position == 2 {
+                        add
+                    } else if op == 883 {
+                        u
+                    } else {
+                        s
+                    }
+                };
+                assert_eq!(
+                    render(&gpu, &pixel(op, 11, src, None, false), [0; 8]),
+                    vec![expected.to_le_bytes().to_vec()],
+                    "op={op} selector={selector} position={position}",
+                );
+                count += 1;
+            }
+        }
+    }
+    assert_eq!(count, 72);
 }

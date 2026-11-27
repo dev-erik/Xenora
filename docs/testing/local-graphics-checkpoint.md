@@ -6,6 +6,49 @@ claim of Xbox hardware equivalence. Supporting raw logs, mutation records and
 source manifests remain local and are not distributed with the repository.
 The array-range descriptor increment below was validated on 26 November 2026.
 
+## Stage 3.1 increment: width-dependent MAD16 inline constants
+
+27 November 2026. Expanded the existing signed and unsigned MAD16 forms to
+admit floating-named inline selectors 240–248 in both multiplicands. They supply
+half-format raw bits to SRC0/SRC1 and single-format raw bits to SRC2. The result
+remains integer multiply-add; no floating arithmetic is introduced. See the
+[exact mapping](../shaders/vop3-integer.md#low-halfword-multiply-add).
+Modifiers and multiplicand literals above `0xffff` remain outside the subset.
+Decoded coverage stays 163/480 arithmetic forms: this closes an operand gap,
+not another opcode identity. All S3 stages remain open.
+
+Independent specification and code-quality reviews found no blockers. Reviewers
+recalculated every fixed expected word independently of the production mapping.
+The decoder suite passed all 7 tests, including 146 exact LLVM encoding rows.
+Compiler and graphics admission passed 9 tests. The four-package CPU regression
+passed 886 tests with zero failures and 60 ignored; ignored tests are not native
+evidence. Workspace all-target Clippy, formatting, generated status and visual
+map consistency, claims and dependency checks also passed.
+
+With Metal API and shader validation enabled on Apple M4 Max, the independent
+compute target passed all 11 tests with zero ignored, including 331 native
+dispatches (259 prior cases plus 72 new width cases). The graphics target passed
+four tests with zero ignored and 120 R32Uint renders (48 prior plus 72 new).
+New cases cover both signednesses, all nine selectors in each source position,
+and a shared selector whose multiplicands and accumulator require different
+widths. Literal and modifier rejection remain tested. These are synthetic
+spec-derived results, not AMD or Xbox hardware verification.
+
+A deliberate mutation that gave SRC1 single-format bits instead of half-format
+bits failed an exact native pixel assertion. The source was restored byte-for-byte,
+and all four graphics tests passed again with validation enabled.
+
+Logs are local under `artifacts/s31-mad16-inline/`; the independent worker's CPU
+logs are under `artifacts/mad16-inline-independent/`. Reproduce on Apple Silicon:
+
+```sh
+export CARGO_BUILD_JOBS=2 CARGO_BUILD_TARGET=aarch64-apple-darwin
+export MTL_DEBUG_LAYER=1 MTL_SHADER_VALIDATION=1
+export MTL_SHADER_VALIDATION_REPORT_TO_STDERR=1 MTL_SHADER_VALIDATION_ABORT_ON_FAULT=1
+cargo test --locked -p xenora-semantic-review --test mad16_independent -- --include-ignored --test-threads=1
+cargo test --locked -p xenora-metal --features gpu-tests --test native_compute mad16_ -- --test-threads=1
+```
+
 ## Stage 3.1 increment: mixed-width multiply-add
 
 27 November 2026. Added `V_MAD_U32_U16` and `V_MAD_I32_I16`: low16-bit

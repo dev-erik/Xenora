@@ -22,12 +22,18 @@ fn code(op: u32, dst: u8, raw: [u32; 3], literal: u32) -> Vec<u8> {
     .flat_map(u32::to_le_bytes)
     .collect()
 }
-fn source(raw: u32, literal: u32) -> Option<VectorSource> {
+fn source(raw: u32, literal: u32, position: usize) -> Option<VectorSource> {
     Some(match raw {
         0..=107 | 126..=127 => VectorSource::Scalar(raw as u8),
         128..=192 => VectorSource::Immediate(raw - 128),
         193..=208 => VectorSource::Immediate((192i32 - raw as i32) as u32),
-        240..=248 => VectorSource::Immediate(FLOAT[(raw - 240) as usize]),
+        240..=248 => VectorSource::Immediate(if position < 2 {
+            [
+                0x3800, 0xb800, 0x3c00, 0xbc00, 0x4000, 0xc000, 0x4400, 0xc400, 0x3118,
+            ][(raw - 240) as usize]
+        } else {
+            FLOAT[(raw - 240) as usize]
+        }),
         255 => VectorSource::Immediate(literal),
         256..=511 => VectorSource::Register((raw - 256) as u8),
         _ => return None,
@@ -61,10 +67,9 @@ fn every_active_selector_and_destination_boundary() {
                     fields[position] = raw;
                     let bytes = code(op, dst, fields, 0xffff);
                     let actual = decode_at(Gfx1030, &bytes, 0);
-                    if let Some(value) =
-                        source(raw, 0xffff).filter(|_| position == 2 || !(240..=248).contains(&raw))
-                    {
-                        let mut sources = fields.map(|field| source(field, 0xffff).unwrap());
+                    if let Some(value) = source(raw, 0xffff, position) {
+                        let mut sources =
+                            std::array::from_fn(|i| source(fields[i], 0xffff, i).unwrap());
                         sources[position] = value;
                         let actual = actual.unwrap();
                         assert_eq!(actual.instruction, expected(op, dst, sources));
@@ -130,20 +135,21 @@ fn distinct_scalar_identity_budget_precedes_immediate_collapse() {
                         }
                     }
                     let actual = decode_at(Gfx1030, &code(op, 255, raw, 1), 0);
-                    if keys.len() <= 2 && !raw[..2].iter().any(|s| (240..=248).contains(s)) {
+                    if keys.len() <= 2 {
                         let actual = actual.unwrap();
                         assert_eq!(
                             actual.instruction,
-                            expected(op, 255, raw.map(|v| source(v, 1).unwrap()))
+                            expected(
+                                op,
+                                255,
+                                std::array::from_fn(|i| source(raw[i], 1, i).unwrap())
+                            )
                         );
                         assert_eq!(actual.byte_len, if raw.contains(&255) { 12 } else { 8 });
                     } else {
                         match actual.unwrap_err().kind {
                             DecodeErrorKind::UnsupportedForm { detail, .. } => {
-                                assert!(
-                                    detail.contains("scalar-bus")
-                                        || detail.contains("floating inline")
-                                )
+                                assert!(detail.contains("scalar-bus"))
                             }
                             other => panic!("{other:?}"),
                         }
@@ -189,7 +195,11 @@ fn shared_literals_all_positions_truncation_and_stream_boundaries() {
                 assert_eq!((actual[1].offset, actual[1].byte_len), (8, len as u8));
                 assert_eq!(
                     actual[1].instruction,
-                    expected(op, 255, raw.map(|v| source(v, literal).unwrap()))
+                    expected(
+                        op,
+                        255,
+                        std::array::from_fn(|i| source(raw[i], literal, i).unwrap())
+                    )
                 );
                 assert_eq!(actual[2].offset, 8 + len);
                 assert_eq!(actual[2].instruction, Instruction::EndProgram);
@@ -256,14 +266,18 @@ fn llvm_exact_source_matrix() {
                 (193, "-1"),
                 (208, "-16"),
                 (240, "0.5"),
+                (241, "-0.5"),
+                (242, "1.0"),
+                (243, "-1.0"),
+                (244, "2.0"),
+                (245, "-2.0"),
+                (246, "4.0"),
+                (247, "-4.0"),
                 (248, "0.15915494"),
                 (255, "0x1234"),
                 (256, "v0"),
                 (511, "v255"),
             ] {
-                if position < 2 && matches!(selector, 240..=248) {
-                    continue;
-                }
                 let mut raw = [257, 258, 259];
                 raw[position] = selector;
                 let mut sources = ["v1", "v2", "v3"];
@@ -289,7 +303,7 @@ fn llvm_exact_source_matrix() {
             ));
         }
     }
-    assert_eq!(rows.len(), 96);
+    assert_eq!(rows.len(), 146);
     let llvm = std::env::var_os("LLVM_BIN")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| "/opt/homebrew/opt/llvm/bin".into())

@@ -1664,10 +1664,7 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
             0
         };
         // Deliberate subset restrictions; no claim these encodings are invalid AMD forms.
-        if matches!(opcode, 883 | 885)
-            && (raw[..2].iter().any(|x| (240..=248).contains(x))
-                || (raw[..2].contains(&255) && literal >= 65536))
-        {
+        if matches!(opcode, 883 | 885) && raw[..2].contains(&255) && literal >= 65536 {
             return Err(fail("unsupported MAD16 multiplicand constant"));
         }
         let mut args = [CmpSrc::Imm(0); 3];
@@ -1675,6 +1672,17 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
             args[i] = match raw[i] {
                 0..=105 => CmpSrc::Sgpr(raw[i] as u8),
                 106 => CmpSrc::Vcc,
+                // Table 20 HALF encodings, independently derived from sign,
+                // biased exponent and fraction (1/(2*pi) is explicitly 0x3118).
+                240..=248 if i < 2 && matches!(opcode, 883 | 885) => {
+                    let selector = raw[i];
+                    let half = if selector == 248 {
+                        0x3118
+                    } else {
+                        ((14 + (selector - 240) / 2) << 10) | ((selector & 1) << 15)
+                    };
+                    CmpSrc::Imm(half)
+                }
                 255 => CmpSrc::Imm(literal),
                 other => match vector_source(other).unwrap() {
                     Src::Reg(v) => CmpSrc::Vgpr(v),

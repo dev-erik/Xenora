@@ -228,11 +228,25 @@ SRC2 and the output remain full32-bit words. Overflow wraps without saturation,
 and SCC, VCC and EXEC are preserved. All modifiers are rejected, including
 OP_SEL, CLAMP, ABS, NEG and OMOD; high-half selection is not admitted.
 
-The checked three-source domain applies with two position-specific restrictions:
+The checked three-source domain uses position-specific inline payloads:
 
-- Floating-named inline selectors240–248 are rejected in SRC0 and SRC1 pending
-  position-aware halfword encoding support. SRC2 retains the existing32-bit
-  inline-word mapping.
+| Selector | SRC0/SRC1 half bits | SRC2 single bits |
+| --- | --- | --- |
+| 240 | `0x3800` | `0x3f000000` |
+| 241 | `0xb800` | `0xbf000000` |
+| 242 | `0x3c00` | `0x3f800000` |
+| 243 | `0xbc00` | `0xbf800000` |
+| 244 | `0x4000` | `0x40000000` |
+| 245 | `0xc000` | `0xc0000000` |
+| 246 | `0x4400` | `0x40800000` |
+| 247 | `0xc400` | `0xc0800000` |
+| 248 | `0x3118` | `0x3e22f983` |
+
+AMD Table20 defines the width-dependent inline constants, including the exact
+half and single encodings of1/(2*pi). These bits are consumed as integers;
+the signed MAD sign-extends the halfword, without any floating arithmetic.
+Inline constants do not consume scalar-bus identities. Literal restrictions remain:
+
 - If SRC0 or SRC1 selects the literal, its raw payload must be at most0xffff.
   This is a conservative implementation restriction, not a claim of ISA
   invalidity. A literal used only in SRC2 may contain any32-bit word. If SRC2
@@ -254,3 +268,7 @@ admit mask-register sources or integer values escaping into floating outputs.
 The [MAD16 checkpoint](../testing/local-graphics-checkpoint.md#stage-31-increment-mixed-width-multiply-add)
 records independent review, 259 native compute dispatches and 48 typed integer
 graphics renders on Apple M4 Max. These results cover only this bounded subset.
+
+The subsequent [inline-width checkpoint](../testing/local-graphics-checkpoint.md#stage-31-increment-width-dependent-mad16-inline-constants)
+adds72 native compute and72 typed graphics cases for the position-specific
+constants above. Modifier and broad literal support remain separate gaps.

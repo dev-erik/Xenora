@@ -1405,16 +1405,12 @@ fn decode_vop3_integer(bytes: &[u8], offset: usize) -> Result<(Op, usize), Refer
     if literal && bytes.len() < 12 {
         return Err(error(offset, "truncated VOP3 literal"));
     }
-    // Conservative admitted subset: half-width floating constants and high
-    // literal halves are deferred, not declared architecturally invalid.
-    if matches!(opcode, 883 | 885) {
-        if raw[..2].iter().any(|src| matches!(src, 240..=248)) {
-            return Err(error(offset, "unsupported MAD16 floating multiplicand"));
-        }
-        if raw[..2].contains(&255) && u32::from_le_bytes(bytes[8..12].try_into().unwrap()) > 0xffff
-        {
-            return Err(error(offset, "unsupported MAD16 high literal half"));
-        }
+    // High literal halves remain a deferred subset, not architecturally invalid.
+    if matches!(opcode, 883 | 885)
+        && raw[..2].contains(&255)
+        && u32::from_le_bytes(bytes[8..12].try_into().unwrap()) > 0xffff
+    {
+        return Err(error(offset, "unsupported MAD16 high literal half"));
     }
     let mut args = [CompareSource::Immediate(0); 3];
     for (i, &src) in active.iter().enumerate() {
@@ -1426,6 +1422,19 @@ fn decode_vop3_integer(bytes: &[u8], offset: usize) -> Result<(Op, usize), Refer
             "unsupported VOP3 source",
         )?
         .0;
+    }
+    // AMD RDNA2 Table 20: named floats use the source operand width.
+    // MAD16 multiplicands are HALF raw bits; the addend remains full32.
+    if matches!(opcode, 883 | 885) {
+        for i in 0..2 {
+            if (240..=248).contains(&raw[i]) {
+                args[i] = CompareSource::Immediate(
+                    [
+                        0x3800, 0xb800, 0x3c00, 0xbc00, 0x4000, 0xc000, 0x4400, 0xc400, 0x3118,
+                    ][(raw[i] - 240) as usize],
+                );
+            }
+        }
     }
     let dst = first as u8;
     let mad_sad = match opcode {

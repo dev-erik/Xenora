@@ -1484,30 +1484,29 @@ fn vector_integer_vop3(
     } else {
         None
     };
-    // Conservative mixed-width subset, not a hardware-invalidity claim.
-    // Half-format floating inline operands need position-aware expansion.
-    if matches!(
+    let mad16 = matches!(
         op,
         CheckedVectorOp::Ternary(VectorTernaryOp::MadU32U16 | VectorTernaryOp::MadI32I16)
-    ) {
-        if raw[..2].iter().any(|s| matches!(s, 240..=248)) {
-            return Err(unsupported(
-                mnemonic,
-                "16-bit multiplicand floating inline selectors are outside the supported subset",
-            ));
-        }
-        if raw[..2].contains(&255) && literal.is_some_and(|bits| bits > 0xffff) {
-            return Err(unsupported(
-                mnemonic,
-                "multiplicand shared literal must fit the supported unsigned 16-bit subset",
-            ));
-        }
+    );
+    // Conservative literal subset, not a hardware-invalidity claim.
+    if mad16 && raw[..2].contains(&255) && literal.is_some_and(|bits| bits > 0xffff) {
+        return Err(unsupported(
+            mnemonic,
+            "multiplicand shared literal must fit the supported unsigned 16-bit subset",
+        ));
     }
     // Nonliteral selectors use the existing bounded vector-source domain.
     // Every active literal position receives the same single trailing word.
     let mut sources = [VectorSource::Immediate(0); 3];
-    for (slot, &selector) in sources.iter_mut().zip(active) {
-        *slot = if let Some(value) = literal.filter(|_| selector == 255) {
+    for (position, (slot, &selector)) in sources.iter_mut().zip(active).enumerate() {
+        *slot = if mad16 && position < 2 && (240..=248).contains(&selector) {
+            // AMD RDNA2 Table 20: inline payload width follows the operand.
+            // These are half-format bits consumed as integers, not FP arithmetic.
+            const HALF_INLINE: [u32; 9] = [
+                0x3800, 0xb800, 0x3c00, 0xbc00, 0x4000, 0xc000, 0x4400, 0xc400, 0x3118,
+            ];
+            VectorSource::Immediate(HALF_INLINE[(selector - 240) as usize])
+        } else if let Some(value) = literal.filter(|_| selector == 255) {
             VectorSource::Immediate(value)
         } else {
             vector_src0(selector, bytes, mnemonic)?.0

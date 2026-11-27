@@ -156,10 +156,6 @@ fn every_operation_position_reads_isolated_uniform_and_accepts_source_classes() 
                 (255, 0),
             ] {
                 let pixel = finish(operation(op, 10, position, source), 10);
-                if matches!(op, 883 | 885) && position < 2 && (240..=248).contains(&source) {
-                    rejects(VS, &pixel, types(), "floating inline selectors");
-                    continue;
-                }
                 assert_eq!(
                     compile_graphics_pipeline_typed(Gfx1030, VS, &pixel, types())
                         .unwrap()

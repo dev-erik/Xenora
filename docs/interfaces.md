@@ -1916,8 +1916,9 @@ sign-extended low16-bit multiplicands and add a full32-bit accumulator. The
 32-bit result wraps; SCC, VCC and EXEC are unchanged. All modifiers, including
 OP_SEL and CLAMP, remain rejected.
 
-SRC0/SRC1 floating-named inline selectors240–248 are excluded pending
-position-aware halfword encoding support. A literal used in either multiplicand
+SRC0/SRC1 floating-named inline selectors240–248 expand to their16-bit half
+bit patterns; SRC2 expands the same selectors to32-bit single bit patterns.
+These are integer inputs, not numeric floating conversions. A literal used in either multiplicand
 must have a raw payload no greater than0xffff; a literal used only in SRC2 may
 be any32-bit word. This conservative operand restriction does not assert that
 other literal encodings are architecturally invalid. Multiple literal positions
@@ -1926,5 +1927,6 @@ share one word, and the existing two-scalar-identity limit still applies.
 Existing compute mask, initialization, alias and pending-register checks and
 graphics integer/uniform/descriptor restrictions remain in force. The
 [low-halfword contract](shaders/vop3-integer.md#low-halfword-multiply-add)
-details the source positions and exclusions. Validation is pending; the preceding
-checkpoint remains the latest evidence until this pair is separately validated.
+details the source positions and exclusions. The [MAD16 checkpoint](testing/local-graphics-checkpoint.md#stage-31-increment-mixed-width-multiply-add)
+records the initial subset validation; the [inline-width checkpoint](testing/local-graphics-checkpoint.md#stage-31-increment-width-dependent-mad16-inline-constants)
+records the expanded inline-source evidence.

@@ -10,8 +10,9 @@ records the bounded XAD/LERP/MSAD validation separately. The subsequent
 adds the signed and unsigned low-halfword multiply-add forms with explicit
 source and modifier restrictions.
 
-The counts include the bounded MAD_U32_U16/MAD_I32_I16 pair. Its validation
-is pending; the linked checkpoint remains evidence for the preceding increment.
+The counts include the validated bounded MAD_U32_U16/MAD_I32_I16 pair.
+Position-specific inline constants expand these existing forms without increasing
+the decoded count. Modifiers and broad multiplicand literal support remain open.
 
 ## Whole-stage map
 
