@@ -84,6 +84,8 @@ pub enum VectorBinaryOp {
     Alu(VectorAluOp),
     /// Unclamped signed subtraction; wrapping bits, no carry-in or carry-out.
     SubNcI32,
+    /// Unclamped signed addition; wrapping bits without condition-code writes.
+    AddNcI32,
     /// `v_and_b32`.
     AndB32,
     /// `v_or_b32`.
@@ -113,6 +115,7 @@ impl VectorBinaryOp {
             Self::Alu(VectorAluOp::AddNcU32) => "v_add_nc_u32_e64",
             Self::Alu(VectorAluOp::SubNcU32) => "v_sub_nc_u32_e64",
             Self::Alu(VectorAluOp::SubrevNcU32) => "v_subrev_nc_u32_e64",
+            Self::AddNcI32 => "v_add_nc_i32",
             Self::SubNcI32 => "v_sub_nc_i32",
             Self::AndB32 => "v_and_b32_e64",
             Self::OrB32 => "v_or_b32_e64",
@@ -137,6 +140,8 @@ pub enum VectorClampOp {
     SubU32,
     /// Saturating signed `v_sub_nc_i32`.
     SubI32,
+    /// Saturating signed `v_add_nc_i32`.
+    AddI32,
     /// Saturating `v_subrev_nc_u32`.
     SubrevU32,
 }
@@ -148,6 +153,7 @@ impl VectorClampOp {
             Self::MulU24 => "v_mul_u32_u24_e64",
             Self::AddU32 => "v_add_nc_u32_e64",
             Self::SubU32 => "v_sub_nc_u32_e64",
+            Self::AddI32 => "v_add_nc_i32",
             Self::SubI32 => "v_sub_nc_i32",
             Self::SubrevU32 => "v_subrev_nc_u32_e64",
         }
@@ -267,6 +273,8 @@ pub enum VectorTernaryOp {
     Med3I32,
     /// `v_med3_u32`.
     Med3U32,
+    /// Select bytes or sign masks from two 32-bit words.
+    PermB32,
     /// XOR then wrapping 32-bit add.
     XadU32,
     /// Four unsigned byte averages with independent rounding bits.
@@ -300,6 +308,7 @@ impl VectorTernaryOp {
             Self::Max3U32 => "v_max3_u32",
             Self::Med3I32 => "v_med3_i32",
             Self::Med3U32 => "v_med3_u32",
+            Self::PermB32 => "v_perm_b32",
             Self::XadU32 => "v_xad_u32",
             Self::LerpU8 => "v_lerp_u8",
             Self::MsadU8 => "v_msad_u8",

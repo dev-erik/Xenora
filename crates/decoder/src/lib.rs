@@ -46,7 +46,7 @@ const fn concat_forms<const N: usize>() -> [(&'static str, EncodingFamily); N] {
 }
 
 /// Decoded forms not yet described by the semantic registry.
-const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 133] = [
+const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 135] = [
     ("DS_PERMUTE_B32", EncodingFamily::Ds),
     ("DS_BPERMUTE_B32", EncodingFamily::Ds),
     ("DS_SWIZZLE_B32", EncodingFamily::Ds),
@@ -71,6 +71,8 @@ const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 133] = [
     ("V_MAX_U32", EncodingFamily::Vop3),
     ("V_XNOR_B32", EncodingFamily::Vop3),
     ("V_SUB_NC_U32", EncodingFamily::Vop3),
+    ("V_PERM_B32", EncodingFamily::Vop3),
+    ("V_ADD_NC_I32", EncodingFamily::Vop3),
     ("V_SUB_NC_I32", EncodingFamily::Vop3),
     ("V_SUBREV_NC_U32", EncodingFamily::Vop3),
     ("V_AND_B32", EncodingFamily::Vop3),
@@ -1346,6 +1348,7 @@ impl CheckedVectorOp {
             0xd5250000 => Self::BinaryAlias(VectorBinaryOp::Alu(VectorAluOp::AddNcU32)),
             0xd5260000 => Self::BinaryAlias(VectorBinaryOp::Alu(VectorAluOp::SubNcU32)),
             0xd5270000 => Self::BinaryAlias(VectorBinaryOp::Alu(VectorAluOp::SubrevNcU32)),
+            0xd77f0000 => Self::BinaryAlias(VectorBinaryOp::AddNcI32),
             0xd7760000 => Self::BinaryAlias(VectorBinaryOp::SubNcI32),
             0xd51b0000 => Self::BinaryAlias(VectorBinaryOp::AndB32),
             0xd51c0000 => Self::BinaryAlias(VectorBinaryOp::OrB32),
@@ -1383,6 +1386,7 @@ impl CheckedVectorOp {
             0xd5560000 => Self::Ternary(VectorTernaryOp::Max3U32),
             0xd5580000 => Self::Ternary(VectorTernaryOp::Med3I32),
             0xd5590000 => Self::Ternary(VectorTernaryOp::Med3U32),
+            0xd7440000 => Self::Ternary(VectorTernaryOp::PermB32),
             0xd7450000 => Self::Ternary(VectorTernaryOp::XadU32),
             0xd54d0000 => Self::Ternary(VectorTernaryOp::LerpU8),
             0xd5710000 => Self::Ternary(VectorTernaryOp::MsadU8),
@@ -1401,6 +1405,7 @@ impl CheckedVectorOp {
             Self::BinaryAlias(VectorBinaryOp::Alu(VectorAluOp::SubrevNcU32)) => {
                 VectorClampOp::SubrevU32
             }
+            Self::BinaryAlias(VectorBinaryOp::AddNcI32) => VectorClampOp::AddI32,
             Self::BinaryAlias(VectorBinaryOp::SubNcI32) => VectorClampOp::SubI32,
             _ => return None,
         })

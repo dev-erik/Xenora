@@ -575,6 +575,13 @@ fn clamped_expression(op: VectorClampOp, a: &str, b: &str) -> String {
         VectorClampOp::AddU32 => {
             format!("(({a}) > (0xffffffffu - ({b})) ? 0xffffffffu : (({a}) + ({b})))")
         }
+        VectorClampOp::AddI32 => {
+            // Signed addition overflows when equal operand signs change in the sum.
+            let sum = format!("(({a}) + ({b}))");
+            format!(
+                "(((~(({a}) ^ ({b})) & (({a}) ^ {sum}) & 0x80000000u) != 0u) ? ((({a}) & 0x80000000u) != 0u ? 0x80000000u : 0x7fffffffu) : {sum})"
+            )
+        }
         VectorClampOp::SubI32 => {
             // Subtraction overflows iff the operands differ in sign and the
             // wrapped result differs in sign from the minuend. All math is uint.
@@ -620,7 +627,8 @@ fn vector_unary_expression(op: VectorUnaryOp, source: &str) -> String {
 fn alias_binary(op: VectorBinaryOp) -> (Binary, bool) {
     match op {
         VectorBinaryOp::Alu(op) => (Binary::Vector(op.lowering()), op.swaps_sources()),
-        // RDNA2 p185: S0 - S1, no carry. Unsigned arithmetic preserves wrapping bits.
+        // RDNA2 pp185,187: signed add/subtract without carry. Unsigned math preserves wrapping bits.
+        VectorBinaryOp::AddNcI32 => (Binary::Vector(VectorBinary::Add), false),
         VectorBinaryOp::SubNcI32 => (Binary::Vector(VectorBinary::Sub), false),
         VectorBinaryOp::AndB32 => (Binary::And, false),
         VectorBinaryOp::OrB32 => (Binary::Or, false),
@@ -661,6 +669,14 @@ fn vector_ternary_expression(op: VectorTernaryOp, a: &str, b: &str, c: &str) -> 
             let signed_word = |v: &str| format!("(((({v}) & 65535u) ^ 32768u) - 32768u)");
             format!("({} * {}) + ({c})", signed_word(a), signed_word(b))
         }
+        VectorTernaryOp::PermB32 => (0..4).map(|i| {
+            let selector = format!("((({c}) >> {}u) & 255u)", i * 8);
+            let source = format!("({selector} < 4u ? ({b}) : ({a}))");
+            let byte = format!("(({source} >> (({selector} & 3u) * 8u)) & 255u)");
+            let sign_source = format!("({selector} < 10u ? ({b}) : ({a}))");
+            let sign = format!("(({sign_source} >> (15u + ({selector} & 1u) * 16u)) & 1u) * 255u");
+            format!("(({selector} < 8u ? {byte} : ({selector} < 12u ? ({sign}) : ({selector} == 12u ? 0u : 255u))) << {}u)", i * 8)
+        }).collect::<Vec<_>>().join(" | "),
         VectorTernaryOp::XadU32 => format!("(({a}) ^ ({b})) + ({c})"),
         // AMD RDNA2 §12.12: SRC2 contributes only bits 0,8,16,24.
         // Each byte sum is at most511, so averaging cannot carry across bytes.

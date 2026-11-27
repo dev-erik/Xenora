@@ -2502,3 +2502,27 @@ gpu = "fixture verified"
 recognized = true
 decoded = true
 llvm = "three-way passed"
+
+[[instruction]]
+form = "v_add_nc_i32"
+encoding = "VOP3; checked sources and canonical unused SRC2; optional signed clamp"
+representation = "8 B or 12 B with shared literal"
+lowering = "MSL wrapping or signed-saturating 32-bit addition; compute and graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_perm_b32"
+encoding = "VOP3; three checked sources; modifiers rejected"
+representation = "8 B or 12 B with shared literal"
+lowering = "MSL byte selection, sign expansion and constant selectors; compute and graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"

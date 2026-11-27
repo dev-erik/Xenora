@@ -34,6 +34,9 @@ remains unsupported.
 - Extended the read-only RDNA2 planning CLI (`python3 -m qa rdna2`) with family/status filters, compact summaries, Codex-ready manifests under `artifacts/`, active-claim exclusion (family claims exclude those families; path-only claims block overlapping permitted files), coverage reconcile against `semantic_coverage` without inflating counts, and inventory diffs. Covered by `tests/qa/test_rdna2_plan.py`; planning only, no GPU production edits.
 
 ### Added
+- Implemented bounded signed 32-bit addition with optional saturation and byte
+  permutation in compute and graphics. Added exhaustive selector, alias and mask
+  tests, plus an original combined assembly fixture; independent acceptance is pending.
 - Added bounded `V_SUB_NC_I32` translation with wrapping 32-bit subtraction,
   unchanged flags, and explicit rejection of unsupported modifier forms.
   Independent fixed-answer compute and graphics validation passed.

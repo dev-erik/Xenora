@@ -1,6 +1,6 @@
 # Stage 3 shader roadmap and remaining effort
 
-Reviewed 27 November 2026 against the generated [instruction checklist](shader-checklist.md)
+Reviewed 28 November 2026 against the generated [instruction checklist](shader-checklist.md)
 and [validated checkpoints](../testing/stage3-control-memory-opening.md).
 All six stages remain open. The inventory covers desktop gfx1030, not a proven
 Xbox shader ISA or launch ABI. Decoding is not full semantic acceptance. The latest
@@ -19,18 +19,22 @@ The subsequent signed-subtraction increment adds bounded `V_SUB_NC_I32`
 broader modifiers remain open. See the
 [signed-subtraction checkpoint](../testing/local-graphics-checkpoint.md#stage-31-increment-signed-subtraction-without-carry).
 
+The signed-addition and byte-permutation increment adds two bounded forms.
+Local native compute and graphics checks passed; independent acceptance remains
+pending. See the [word-arithmetic checkpoint](../testing/local-graphics-checkpoint.md#stage-31-increment-signed-addition-and-byte-permutation).
+
 ## Whole-stage map
 
 | Stage | Decoded / inventoried | Undecoded | Remaining work | Relative effort |
 | --- | ---: | ---: | --- | --- |
-| S3.1 Arithmetic | 164 / 480 | 316 | Wider/packed arithmetic, floating point, conversions, source and modifier modes | XL |
+| S3.1 Arithmetic | 166 / 480 | 314 | Wider/packed arithmetic, floating point, conversions, source and modifier modes | XL |
 | S3.2 Control flow | 8 / 24 | 16 | Compute loops, calls/returns, divergence, debug/trap/halt and termination protocols | L–XL |
 | S3.3 Masks and comparisons | 12 / 419 | 407 | Comparison predicates/types, dynamic EXEC, divergent lane state and reconvergence | XL |
 | S3.4 Wave and lane | 11 / 11 | 0 | Broader operands, dynamic masks, partial populations, graphics/helper lanes and disputed semantics | L–XL |
 | S3.5 Memory and interfaces | 14 / 509 | 495 | Address spaces, descriptors, LDS, atomics, images, ordering and stage interfaces | XL |
 | S3.6 Numerical correctness | Cross-cutting | Not a separate instruction bucket | Rounding, special values, denormals, precision and differential tests | L–XL |
 | State operations awaiting assignment | 0 / 22 | 22 | Classify ownership, define state/runtime contracts and implement | Uncertain |
-| Inventory total | 209 / 1465 | 1256 | Includes the state bucket; excludes a second count for S3.6 | Not additive |
+| Inventory total | 211 / 1465 | 1254 | Includes the state bucket; excludes a second count for S3.6 | Not additive |
 
 Effort bands are planning judgments, not measured completion percentages or
 calendar promises. **L** means several substantial implementation-and-validation
@@ -59,11 +63,11 @@ control-flow forms and unresolved wave-operation semantics explicitly.
 
 ## What drives the workload
 
-The 1,256 undecoded forms are not 1,257 unrelated implementations. Shared
+The 1,254 undecoded forms share implementation prerequisites. Shared
 semantics and representations can cover many variants, but their encoding and
 boundary tests still need evidence.
 
-- Arithmetic: 316 missing forms include 37 scalar, 71 VOP1, 23 VOP2, 152 VOP3,
+- Arithmetic: 314 missing forms include 37 scalar, 71 VOP1, 23 VOP2, 150 VOP3,
   29 packed VOP3P and 4 VOP3SDST forms. Paired registers, packed widths and mixed
   outputs are prerequisites for some families.
 - Masks/comparisons: 178 missing VOPC and 191 VOP3 forms dominate the count.

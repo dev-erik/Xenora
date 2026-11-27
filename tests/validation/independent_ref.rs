@@ -134,6 +134,7 @@ enum Insn {
     VAddThree(u8, CmpSrc, CmpSrc, CmpSrc),
     VAndOr(u8, CmpSrc, CmpSrc, CmpSrc),
     VMad16(bool, u8, CmpSrc, CmpSrc, CmpSrc),
+    VBytePermute(u8, CmpSrc, CmpSrc, CmpSrc),
     VXad(u8, CmpSrc, CmpSrc, CmpSrc),
     VLerp(u8, CmpSrc, CmpSrc, CmpSrc),
     VMsad(u8, CmpSrc, CmpSrc, CmpSrc),
@@ -838,6 +839,7 @@ fn lane_step(
         | Insn::VBitSelect(d, a, b, c)
         | Insn::VAddThree(d, a, b, c)
         | Insn::VMad16(_, d, a, b, c)
+        | Insn::VBytePermute(d, a, b, c)
         | Insn::VXad(d, a, b, c)
         | Insn::VLerp(d, a, b, c)
         | Insn::VMsad(d, a, b, c)
@@ -963,6 +965,16 @@ fn lane_step(
                         0
                     } else {
                         ripple(a, !b, true).0
+                    }
+                }
+                895 => {
+                    let result = ripple(a, b, false).0;
+                    let negative_a = a >= 0x80000000;
+                    let negative_b = b >= 0x80000000;
+                    if negative_a == negative_b && (result >= 0x80000000) != negative_a {
+                        if negative_a { 0x80000000 } else { 0x7fffffff }
+                    } else {
+                        result
                     }
                 }
                 886 => {
@@ -1093,6 +1105,27 @@ fn lane_step(
                     }
                 };
                 (half(a) * half(b) + i64::from(c)).rem_euclid(4294967296) as u32
+            }
+            Insn::VBytePermute(..) => {
+                let data = u64::from(a) * 4294967296 + u64::from(b);
+                let mut result = 0;
+                for i in 0..4 {
+                    let selector = (c / 256u32.pow(i)) % 256;
+                    let value = match selector {
+                        0..=7 => ((data / 256u64.pow(selector)) % 256) as u32,
+                        8..=11 => {
+                            if (data / 2u64.pow(15 + (selector - 8) * 16)) % 2 == 1 {
+                                255
+                            } else {
+                                0
+                            }
+                        }
+                        12 => 0,
+                        _ => 255,
+                    };
+                    result += value * 256u32.pow(i);
+                }
+                result
             }
             Insn::VXad(..) => ripple(a ^ b, c, false).0,
             Insn::VLerp(..) => {
@@ -1565,6 +1598,8 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
                 | 883
                 | 885
                 | 886
+                | 895
+                | 836
                 | 837
                 | 333
                 | 369
@@ -1612,7 +1647,7 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
             || (clamp
                 && !matches!(
                     opcode,
-                    886 | 265 | 267 | 293 | 294 | 295 | 322 | 323 | 346 | 347 | 348 | 349
+                    895 | 886 | 265 | 267 | 293 | 294 | 295 | 322 | 323 | 346 | 347 | 348 | 349
                 ))
         {
             return Err(fail("unsupported VOP3 modifiers"));
@@ -1622,7 +1657,8 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
             1
         } else if matches!(
             opcode,
-            886 | 361
+            895 | 886
+                | 361
                 | 362
                 | 364
                 | 867
@@ -1726,7 +1762,7 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
             275 => Insn::VAlias(19, dst, args[0], args[1]),
             276 => Insn::VAlias(20, dst, args[0], args[1]),
             286 => Insn::VAlias(30, dst, args[0], args[1]),
-            293 => Insn::VAlias(37, dst, args[0], args[1]),
+            293 | 895 => Insn::VAlias(37, dst, args[0], args[1]),
             294 | 886 => Insn::VAlias(38, dst, args[0], args[1]),
             295 => Insn::VAlias(39, dst, args[0], args[1]),
             282 => Insn::VAlias(26, dst, args[0], args[1]),
@@ -1756,6 +1792,7 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
             345 => Insn::VMiddleUnsigned(dst, args[0], args[1], args[2]),
             329 => Insn::VSignedField(dst, args[0], args[1], args[2]),
             883 | 885 => Insn::VMad16(opcode == 885, dst, args[0], args[1], args[2]),
+            836 => Insn::VBytePermute(dst, args[0], args[1], args[2]),
             837 => Insn::VXad(dst, args[0], args[1], args[2]),
             333 => Insn::VLerp(dst, args[0], args[1], args[2]),
             369 => Insn::VMsad(dst, args[0], args[1], args[2]),

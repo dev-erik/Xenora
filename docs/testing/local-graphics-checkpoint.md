@@ -1603,3 +1603,64 @@ outside this increment. Original synthetic fixtures do not demonstrate commercia
 Xbox game execution, console hardware equivalence or a process-wide memory ceiling.
 Payload budgets cover explicitly documented owned allocations rather than total
 driver or process memory.
+
+
+## Stage 3.1 increment: signed addition and byte permutation
+
+28 November 2026. Implemented `V_ADD_NC_I32` (opcode 895), including signed
+saturation, and `V_PERM_B32` (opcode 836), using the public
+[AMD RDNA2 ISA](https://docs.amd.com/v/u/en-US/rdna2-shader-instruction-set-architecture),
+pp187 and181. The shared lowering is used by compute and typed graphics.
+The byte-permutation contract selects bytes from the concatenation of SRC0 and
+SRC1, sign-expands selectors8–11, returns zero for12 and255 for13–255.
+Both forms retain condition flags and gate destination writes with EXEC.
+
+This is a bounded implementation: checked VOP3 sources, shared literals and the
+existing constant-bus rules apply. Signed addition admits CLAMP; other modifiers
+are rejected. Byte permutation rejects modifiers. Existing synthetic stage,
+register-initialization and execution-mask limits still apply. This does not
+establish Xbox hardware agreement or commercial shader compatibility.
+
+Local evidence:
+
+- Affected decoder, compiler and two reference suites: **915 passed, 0 failed,
+  66 ignored**. Ignored tests are excluded from this CPU result.
+- Signed addition: **199 native compute dispatches**, including an original
+  assembled fixture combining wrapping/saturated addition and byte permutation;
+  **218 exact integer graphics readbacks**.
+- Byte permutation: **3,072 native compute dispatches** covering all256 selector
+  values, four destination aliases and full/sparse/empty masks. Graphics adds
+  **144 readbacks** for mixed control bytes, each source position, literals,
+  aliases and independently selected sign bits.
+- Restored shared arithmetic graphics module: **12 tests passed**, no skips.
+- LLVM oracle: **34 tests passed**, including **1,357 three-way instruction
+  comparisons across190 forms** and ten exact encoding rows for these additions.
+- Two deliberate production mutations (dropping signed-add saturation and swapping
+  permutation source words) failed at native readback assertions. Source was
+  restored and the full shared graphics module passed again.
+
+The lead implemented and tested these changes. Required independent reviewers
+have **not** accepted them. The registry uses `acceptance pending`; local native
+results above must not be described as independently accepted. Subagent dispatch
+was not used because the required LOW reasoning configuration could not be
+verified. S3.1 remains open at **166/480 decoded forms**, with314 undecoded;
+operand modes and cross-stage/numerical acceptance are additional work.
+
+Reproduce from the repository root on native Apple Silicon:
+
+```sh
+export CARGO_BUILD_TARGET=aarch64-apple-darwin CARGO_BUILD_JOBS=2
+cargo test --locked -p xenora-decoder -p xenora-shader -p xenora-ref -p xenora-semantic-review
+export MTL_DEBUG_LAYER=1 MTL_SHADER_VALIDATION=1
+export MTL_SHADER_VALIDATION_REPORT_TO_STDERR=1 MTL_SHADER_VALIDATION_ABORT_ON_FAULT=1
+cargo test --locked -p xenora-semantic-review --test add_nc_i32 --test perm_b32 -- --include-ignored
+cargo test --locked -p xenora-metal --features gpu-tests --test native_compute vop3_mad_sad_graphics
+LLVM_BIN="$(brew --prefix llvm)/bin" cargo test --locked -p xenora-decoder --test gfx1030 -- --include-ignored --nocapture
+```
+
+Logs are under ignored `artifacts/s31-word-arithmetic/`. The broader
+`cargo clippy --workspace --all-targets --all-features -- -D warnings` check
+reported four existing GPU-test lint findings: type complexity in
+`scalar_graphics.rs` and `vop3_mad_sad_graphics.rs`, a default-field reassignment
+in `typed_attachments.rs`, and a literal unwrap in `inline_float_sources.rs`.
+These are separate from the required default-feature lint check.

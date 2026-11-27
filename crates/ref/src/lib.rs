@@ -179,6 +179,7 @@ pub enum VectorTernary {
     XorThree,
     MadU32U16,
     MadI32I16,
+    PermuteBytes,
     XorAdd,
     LerpU8,
     MaskedSadU8,
@@ -420,6 +421,7 @@ pub enum ClampOp {
     SubU32,
     SubrevU32,
     SubI32,
+    AddI32,
 }
 
 /// Canonical e64 aliases retain two independently decoded generic sources.
@@ -865,6 +867,8 @@ pub fn decode(code: &[u8]) -> Result<Vec<DecodedInstruction>, ReferenceError> {
                                 | 883
                                 | 885
                                 | 886
+                                | 895
+                                | 836
                                 | 837
                                 | 333
                                 | 369
@@ -1341,14 +1345,15 @@ fn decode_vop3_integer(bytes: &[u8], offset: usize) -> Result<(Op, usize), Refer
         || (clamp
             && !matches!(
                 opcode,
-                886 | 265 | 267 | 293 | 294 | 295 | 322 | 323 | 346 | 347 | 348 | 349
+                895 | 886 | 265 | 267 | 293 | 294 | 295 | 322 | 323 | 346 | 347 | 348 | 349
             ))
     {
         return Err(error(offset, "unsupported VOP3 modifiers"));
     }
     let binary = matches!(
         opcode,
-        886 | 361
+        895 | 886
+            | 361
             | 362
             | 364
             | 867
@@ -1461,6 +1466,7 @@ fn decode_vop3_integer(bytes: &[u8], offset: usize) -> Result<(Op, usize), Refer
             267 => ClampOp::MulU24,
             293 => ClampOp::AddU32,
             294 => ClampOp::SubU32,
+            895 => ClampOp::AddI32,
             886 => ClampOp::SubI32,
             295 => ClampOp::SubrevU32,
             _ => unreachable!(),
@@ -1532,7 +1538,7 @@ fn decode_vop3_integer(bytes: &[u8], offset: usize) -> Result<(Op, usize), Refer
             args[0],
             args[1],
         ),
-        293 => Op::VectorBinaryAlias(
+        293 | 895 => Op::VectorBinaryAlias(
             VectorAlias::Integer(VectorInteger::from_opcode(37).unwrap()),
             dst,
             args[0],
@@ -1607,6 +1613,7 @@ fn decode_vop3_integer(bytes: &[u8], offset: usize) -> Result<(Op, usize), Refer
         329 => Op::VectorTernary(VectorTernary::ExtractSigned, dst, args[0], args[1], args[2]),
         883 => Op::VectorTernary(VectorTernary::MadU32U16, dst, args[0], args[1], args[2]),
         885 => Op::VectorTernary(VectorTernary::MadI32I16, dst, args[0], args[1], args[2]),
+        836 => Op::VectorTernary(VectorTernary::PermuteBytes, dst, args[0], args[1], args[2]),
         837 => Op::VectorTernary(VectorTernary::XorAdd, dst, args[0], args[1], args[2]),
         333 => Op::VectorTernary(VectorTernary::LerpU8, dst, args[0], args[1], args[2]),
         369 => Op::VectorTernary(VectorTernary::MaskedSadU8, dst, args[0], args[1], args[2]),
@@ -2220,11 +2227,15 @@ fn execute_wave(
                                     i64::from(a & 0xffffff) * i64::from(b & 0xffffff)
                                 }
                                 ClampOp::AddU32 => i64::from(a) + i64::from(b),
+                                ClampOp::AddI32 => i64::from(a as i32) + i64::from(b as i32),
                                 ClampOp::SubI32 => i64::from(a as i32) - i64::from(b as i32),
                                 ClampOp::SubU32 => i64::from(a) - i64::from(b),
                                 ClampOp::SubrevU32 => i64::from(b) - i64::from(a),
                             };
-                            let (low, high) = if matches!(kind, ClampOp::MulI24 | ClampOp::SubI32) {
+                            let (low, high) = if matches!(
+                                kind,
+                                ClampOp::MulI24 | ClampOp::SubI32 | ClampOp::AddI32
+                            ) {
                                 (i64::from(i32::MIN), i64::from(i32::MAX))
                             } else {
                                 (0, i64::from(u32::MAX))
@@ -2253,6 +2264,23 @@ fn execute_wave(
                         Op::VectorTernary(VectorTernary::MadI32I16, ..) => {
                             (i32::from(a as i16) * i32::from(b as i16)).wrapping_add(c as i32)
                                 as u32
+                        }
+                        Op::VectorTernary(VectorTernary::PermuteBytes, ..) => {
+                            let mut bytes = [0u8; 8];
+                            bytes[..4].copy_from_slice(&b.to_le_bytes());
+                            bytes[4..].copy_from_slice(&a.to_le_bytes());
+                            u32::from_le_bytes(c.to_le_bytes().map(|selector| match selector {
+                                0..=7 => bytes[usize::from(selector)],
+                                8..=11 => {
+                                    if bytes[usize::from(selector - 8) * 2 + 1] & 128 != 0 {
+                                        255
+                                    } else {
+                                        0
+                                    }
+                                }
+                                12 => 0,
+                                _ => 255,
+                            }))
                         }
                         Op::VectorTernary(VectorTernary::XorAdd, ..) => (a ^ b).wrapping_add(c),
                         Op::VectorTernary(VectorTernary::LerpU8, ..) => {

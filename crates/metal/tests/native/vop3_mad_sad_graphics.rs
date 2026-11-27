@@ -604,3 +604,108 @@ fn sub_nc_i32_boundaries_sources_and_aliases() {
         }
     }
 }
+
+#[test]
+fn add_nc_i32_boundaries_sources_and_aliases() {
+    let gpu = NativeCompute::new().unwrap();
+    for clamp in [false, true] {
+        for (a, b, wrapped, saturated) in [
+            (0u32, 1u32, 1u32, 1u32),
+            (0x7fffffff, 1, 0x80000000, 0x7fffffff),
+            (0x80000000, 0xffffffff, 0x7fffffff, 0x80000000),
+            (0x80000000, 0x80000000, 0, 0x80000000),
+            (0x7fffffff, 0x80000000, 0xffffffff, 0xffffffff),
+            (0xffffffff, 0xffffffff, 0xfffffffe, 0xfffffffe),
+            (0x7fffffff, 0x7fffffff, 0xfffffffe, 0x7fffffff),
+        ] {
+            let want = if clamp { saturated } else { wrapped };
+            for dst in [8, 9, 11] {
+                for (src, lit) in [
+                    ([264, 265, 128], None),
+                    ([24, 265, 128], None),
+                    ([264, 25, 128], None),
+                    ([255, 265, 128], Some(a)),
+                    ([264, 255, 128], Some(b)),
+                ] {
+                    assert_eq!(
+                        render(
+                            &gpu,
+                            &pixel(895, dst, src, lit, clamp),
+                            [a, b, 0, 0, 0, 0, 0, 0]
+                        ),
+                        vec![want.to_le_bytes().to_vec()]
+                    );
+                }
+            }
+        }
+        for (src, lit, want) in [
+            (
+                [255, 255, 128],
+                Some(0x80000000),
+                if clamp { 0x80000000u32 } else { 0u32 },
+            ),
+            ([240, 129, 128], None, 0x3f000001),
+            ([129, 240, 128], None, 0x3f000001),
+            ([193, 129, 128], None, 0),
+        ] {
+            assert_eq!(
+                render(&gpu, &pixel(895, 11, src, lit, clamp), [0; 8]),
+                vec![want.to_le_bytes().to_vec()]
+            );
+        }
+    }
+}
+
+#[test]
+fn perm_b32_selectors_sources_and_aliases() {
+    let gpu = NativeCompute::new().unwrap();
+    // AMD RDNA2 p181, fixed words for byte ordering, sign expansion and constants.
+    for (control, want) in [
+        (0x03020100u32, 0x807f81ffu32),
+        (0x07060504, 0x00fe7e01),
+        (0x00010407, 0xff810100),
+        (0x0b0a0908, 0x0000ffff),
+        (0xff800d0c, 0xffffff00),
+    ] {
+        for dst in [8, 9, 10, 11] {
+            for (sources, literal) in [
+                ([264, 265, 266], None),
+                ([24, 265, 266], None),
+                ([264, 25, 266], None),
+                ([264, 265, 26], None),
+                ([255, 265, 266], Some(0x00fe7e01)),
+                ([264, 255, 266], Some(0x807f81ff)),
+                ([264, 265, 255], Some(control)),
+            ] {
+                assert_eq!(
+                    render(
+                        &gpu,
+                        &pixel(836, dst, sources, literal, false),
+                        [0x00fe7e01, 0x807f81ff, control, 0, 0, 0, 0, 0]
+                    ),
+                    vec![want.to_le_bytes().to_vec()]
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn perm_b32_each_sign_selector_is_independent() {
+    let gpu = NativeCompute::new().unwrap();
+    for (a, b, want) in [
+        (0u32, 0x00008000u32, 0x000000ffu32),
+        (0, 0x80000000, 0x0000ff00),
+        (0x00008000, 0, 0x00ff0000),
+        (0x80000000, 0, 0xff000000),
+    ] {
+        assert_eq!(
+            render(
+                &gpu,
+                &pixel(836, 11, [264, 265, 266], None, false),
+                [a, b, 0x0b0a0908, 0, 0, 0, 0, 0]
+            ),
+            vec![want.to_le_bytes().to_vec()]
+        );
+    }
+}

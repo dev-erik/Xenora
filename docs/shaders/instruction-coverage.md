@@ -219,6 +219,8 @@ The wider LLVM operand matrix exercises decoding only. ABI means application bin
 | `v_mad_u32_u16` | VOP3; checked sources with width-dependent inline bits; zero modifiers and bounded multiplicand literals | 8 B or 12 B with shared literal | yes | yes | three-way passed | MSL low-halfword multiplication and full-word wrapping accumulation; compute and graphics | implemented | fixture verified | fixture verified |
 | `v_mad_i32_i16` | VOP3; checked sources with width-dependent inline bits; zero modifiers and bounded multiplicand literals | 8 B or 12 B with shared literal | yes | yes | three-way passed | MSL low-halfword multiplication and full-word wrapping accumulation; compute and graphics | implemented | fixture verified | fixture verified |
 | `v_sub_nc_i32` | VOP3; two checked sources, canonical unused SRC2; optional signed clamp awaits independent review | 8 B or 12 B with shared literal | yes | yes | three-way passed | MSL wrapping or signed-saturating 32-bit subtraction; compute and graphics | implemented | fixture verified | fixture verified |
+| `v_add_nc_i32` | VOP3; checked sources and canonical unused SRC2; optional signed clamp | 8 B or 12 B with shared literal | yes | yes | local exact encoding checks passed | MSL wrapping or signed-saturating 32-bit addition; compute and graphics | implemented | local known-answer test passed | acceptance pending |
+| `v_perm_b32` | VOP3; three checked sources; modifiers rejected | 8 B or 12 B with shared literal | yes | yes | local exact encoding checks passed | MSL byte selection, sign expansion and constant selectors; compute and graphics | implemented | local known-answer test passed | acceptance pending |
 <!-- status:instructions:end -->
 
 ## Automated three-way comparison
