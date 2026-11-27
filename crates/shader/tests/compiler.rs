@@ -379,3 +379,74 @@ fn signed_decoding_keeps_compute_backedges_fail_closed_even_when_unreachable() {
         }
     }
 }
+
+#[test]
+fn scc1_selects_both_paths_without_changing_scc() {
+    for (compare, taken) in [(0xbf06_8080u32, true), (0xbf06_8180, false)] {
+        let code: Vec<_> = [compare, 0xbf85_0001, 0xbea0_0380]
+            .into_iter()
+            .flat_map(u32::to_le_bytes)
+            .chain(FIXTURE.iter().copied())
+            .collect();
+        let compiled = compile(Architecture::Gfx1030, &code).unwrap();
+        assert!(
+            compiled
+                .ir
+                .contains(&format!("branch.uniform 0x000c taken={taken}"))
+        );
+    }
+    let unknown: Vec<_> = 0xbf85_0000u32
+        .to_le_bytes()
+        .into_iter()
+        .chain(FIXTURE.iter().copied())
+        .collect();
+    assert!(matches!(
+        compile(Architecture::Gfx1030, &unknown),
+        Err(CompileError::Verify {
+            reason: "conditional branch reads uninitialized SCC",
+            ..
+        })
+    ));
+    let backward: Vec<_> = [0xbf06_8080u32, 0xbf85_fffe]
+        .into_iter()
+        .flat_map(u32::to_le_bytes)
+        .chain(FIXTURE.iter().copied())
+        .collect();
+    assert!(matches!(
+        compile(Architecture::Gfx1030, &backward),
+        Err(CompileError::Verify {
+            reason: "branch target must be a forward instruction boundary",
+            ..
+        })
+    ));
+}
+
+#[test]
+fn vmcnt_releases_only_pending_loads() {
+    let fixture = include_bytes!("../../../fixtures/rdna2/wait-vmcnt.bin");
+    compile(Architecture::Gfx1030, fixture).unwrap();
+    let mut words: Vec<_> = fixture
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|b| u32::from_le_bytes(*b))
+        .collect();
+    words.retain(|w| *w != 0xbbfd0000);
+    let code: Vec<_> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
+    assert!(matches!(
+        compile(Architecture::Gfx1030, &code),
+        Err(CompileError::Verify { .. })
+    ));
+    let code: Vec<_> = fixture
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .filter(|b| **b != 0xbc7d0000u32.to_le_bytes())
+        .flatten()
+        .copied()
+        .collect();
+    assert!(matches!(
+        compile(Architecture::Gfx1030, &code),
+        Err(CompileError::Verify { .. })
+    ));
+}

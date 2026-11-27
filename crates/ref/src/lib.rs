@@ -225,6 +225,8 @@ pub enum BranchCondition {
     Always,
     /// Take the branch when SCC is clear.
     SccZero,
+    /// Take the branch when SCC is set.
+    SccOne,
     /// Take the branch when the low half of VCC is clear.
     VccZero,
     /// Take the branch when the low half of EXEC is clear.
@@ -622,6 +624,8 @@ pub fn decode(code: &[u8]) -> Result<Vec<DecodedInstruction>, ReferenceError> {
                 (op, 8)
             }
             [0x70, 0x3f, 0x8c, 0xbf, ..] => (Op::WaitRead, 4),
+            // SOPK s_waitcnt_vmcnt null, 0: only this bounded operand form.
+            [0x00, 0x00, 0x7d, 0xbc, ..] => (Op::WaitRead, 4),
             [0x00, 0x00, 0xfd, 0xbb, ..] => (Op::WaitWrite, 4),
             [0x00, 0x00, 0x81, 0xbf, ..] => (Op::End, 4),
             [
@@ -785,7 +789,13 @@ pub fn decode(code: &[u8]) -> Result<Vec<DecodedInstruction>, ReferenceError> {
                     left_length.max(right_length),
                 )
             }
-            [lo, hi, opcode @ (0x82 | 0x84 | 0x86 | 0x88), 0xbf, ..] => {
+            [
+                lo,
+                hi,
+                opcode @ (0x82 | 0x84 | 0x85 | 0x86 | 0x88),
+                0xbf,
+                ..,
+            ] => {
                 let words = i16::from_le_bytes([*lo, *hi]);
                 let words = usize::try_from(words).map_err(|_| error(offset, "backward branch"))?;
                 (
@@ -793,6 +803,7 @@ pub fn decode(code: &[u8]) -> Result<Vec<DecodedInstruction>, ReferenceError> {
                         target: offset + 4 + words * 4,
                         condition: match opcode {
                             0x84 => BranchCondition::SccZero,
+                            0x85 => BranchCondition::SccOne,
                             0x86 => BranchCondition::VccZero,
                             0x88 => BranchCondition::ExecZero,
                             _ => BranchCondition::Always,
@@ -1995,6 +2006,9 @@ fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32
                     BranchCondition::Always => true,
                     BranchCondition::SccZero => {
                         !scc.ok_or_else(|| error(offset, "branch with uninitialized SCC"))?
+                    }
+                    BranchCondition::SccOne => {
+                        scc.ok_or_else(|| error(offset, "branch with uninitialized SCC"))?
                     }
                     BranchCondition::VccZero => scalars[VCC_LO] == Some(0),
                     BranchCondition::ExecZero => exec == 0,

@@ -18,6 +18,10 @@ cargo test --locked -p xenora-metal --features gpu-tests --test native_compute -
 timeout 60s cargo test --locked -p xenora-metal --features gpu-tests --test native_compute -- \
     --nocapture --test-threads=1
 
+# Original SCC1 compute and runtime graphics branch readback.
+cargo test --locked -p xenora-metal --features gpu-tests --test scc1_branch --no-run
+timeout 30s cargo test --locked -p xenora-metal --features gpu-tests --test scc1_branch -- --nocapture --test-threads=1
+
 cargo test --locked -p xenora-loader --features gpu-tests --test dbt_render --no-run
 timeout 30s cargo test --locked -p xenora-loader --features gpu-tests --test dbt_render -- \
     --nocapture --test-threads=1

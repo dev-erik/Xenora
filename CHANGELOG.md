@@ -23,6 +23,10 @@ remains unsupported.
 - Extended the read-only RDNA2 planning CLI (`python3 -m qa rdna2`) with family/status filters, compact summaries, Codex-ready manifests under `artifacts/`, active-claim exclusion (family claims exclude those families; path-only claims block overlapping permitted files), coverage reconcile against `semantic_coverage` without inflating counts, and inventory diffs. Covered by `tests/qa/test_rdna2_plan.py`; planning only, no GPU production edits.
 
 ### Added
+- Added bounded SCC1 control-flow support and compute-only `s_waitcnt_vmcnt null,0`
+  load waits, with independent original programs and native validation tests.
+- Corrected S3 stage assignment to include SOPP control, DS lane permutations and
+  memory/interface families; the earlier small buckets were not completion totals.
 - Added a public startup/graphics contract ledger with ten bounded requirements
   and observations, explicit synthetic-interface gaps and reference limitations.
 - Added public-source Xbox compatibility feasibility research, distinguishing

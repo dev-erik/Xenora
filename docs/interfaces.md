@@ -886,7 +886,8 @@ with trailing instructions is rejected.
 Graphics stages also accept the twelve decoded signed/unsigned 32-bit scalar
 comparisons with immediate, literal, uniform or initialized local operands. Following AMD §12.4, each replaces
 the scalar condition code (SCC); integer operand bits are not subject to FP32 finite
-checks. `S_CBRANCH_SCC0` selects its forward target when initialized SCC is false.
+checks. `S_CBRANCH_SCC0` selects its forward target when initialized SCC is false;
+`S_CBRANCH_SCC1` selects it when SCC is true. Both preserve SCC.
 Both stages start with unknown SCC, vector operations preserve it, and a skipped
 comparison cannot initialize it. Only s24..s31 are initialized scalar register
 inputs in this graphics contract. Even untaken conditional targets must satisfy
@@ -941,7 +942,10 @@ equivalence is established.
 The graphics compiler admits contiguous loops with strictly nested or disjoint
 intervals. Each header tests an initialized local counter using unsigned `!= 0`
 or signed `> 0` (including reversed `0 < counter`), followed immediately by an SCC0
-exit. An unconditional backward branch returns to that header. Exactly one direct
+exit. The complementary unsigned `== 0` or signed `<= 0` (including reversed
+`0 >= counter`) with an SCC1 exit is also admitted. Proven zero-trip headers
+preserve the appropriate exit SCC value. An unconditional backward branch returns
+to that header. Exactly one direct
 `counter = counter - 1` update must execute on every path that returns to the latch,
 with no other counter writes, interior entries or body exports. A body branch may
 exit to the innermost loop's existing continuation immediately after its latch.
@@ -1665,3 +1669,11 @@ Unbounded graphs, subresource-parallel hazards, automatic coherence and console
 execution are outside this contract. Acceptance evidence is recorded in the
 [local checkpoint](testing/local-graphics-checkpoint.md) and the
 [acceptance checklist](superpowers/plans/2026-11-27-resource-graph-acceptance.md).
+
+## Dedicated compute load wait
+
+`S_WAITCNT_VMCNT null,0` retains a distinct decoded identity and shares the existing
+synthetic compute pending-load completion transition with `S_WAITCNT vmcnt(0)`.
+It does not complete pending stores or modify SCC, and redundant waits are allowed.
+Only exact word `0xBC7D0000` is admitted; other registers/thresholds and graphics
+use are rejected. This is not a general hardware counter or memory-barrier model.

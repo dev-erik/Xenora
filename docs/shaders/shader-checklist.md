@@ -10,12 +10,12 @@ For the Xbox Series X|S target and non-shader requirements, see the [master comp
 
 | Status | Forms | Meaning |
 | --- | ---: | --- |
-| Converted subset; fixture accepted | 97 | Translation is recorded and the status registry records accepted native fixture evidence; only the documented operand subset is covered. |
+| Converted subset; fixture accepted | 99 | Translation is recorded and the status registry records accepted native fixture evidence; only the documented operand subset is covered. |
 | Converted subset; acceptance pending | 82 | Translation is recorded, but the registry does not record accepted native fixture evidence. This may reflect pending acceptance or documentation lag. |
 | Decoded; translation evidence unrecorded | 5 | The decoder lists the form, but no translation evidence row is recorded. This is an evidence gap, not proof that lowering is absent. |
-| Not converted | 1281 | No supported decoder identity exists. Opcode recognition from metadata alone does not implement execution. |
+| Not converted | 1279 | No supported decoder identity exists. Opcode recognition from metadata alone does not implement execution. |
 
-**Decoder coverage: 184/1465. Not yet decoded: 1281.**
+**Decoder coverage: 186/1465. Not yet decoded: 1279.**
 
 No row means “all operand modes complete.” Sources, literals, modifiers, register widths, execution masks, graphics versus compute applicability, control-flow interactions and numerical behavior still require their own contracts and tests. This list covers the pinned inventory, not every future AMD instruction or every Xbox graphics method.
 
@@ -23,17 +23,16 @@ The evidence columns reproduce `docs/status.toml` without turning local readback
 
 ## Stage 3 planning map
 
-The partition below publishes the working arithmetic planning rules. It is provisional, not a claim that a stage is complete or that forms outside arithmetic are optional. S3.6 numerical correctness applies across floating-point operations and is not counted as a disjoint opcode bucket. State and other-family assignments remain explicit gaps.
+The partition below includes SOPP control flow and memory families alongside arithmetic. It is provisional, not a claim that a stage is complete or that forms outside arithmetic are optional. S3.6 numerical correctness applies across floating-point operations and is not counted as a disjoint opcode bucket. State assignments remain explicit gaps; scalar comparisons retain their historical arithmetic assignment pending a separate ownership audit. Counts exclude operand-mode debt such as DPP/SDWA, wave sizes, masks and ordering. The earlier 7/8/12 totals for S3.2/S3.4/S3.5 excluded whole families and were not stage completion denominators.
 
 | Workstream | Total forms | Decoded | Not decoded |
 | --- | ---: | ---: | ---: |
-| Other shader work / assignment pending | 531 | 13 | 518 |
 | S3.1 Arithmetic | 480 | 158 | 322 |
-| S3.2 Control flow | 7 | 0 | 7 |
+| S3.2 Control flow | 24 | 6 | 18 |
 | S3.3 Masks / comparisons | 419 | 12 | 407 |
-| S3.4 Wave / lane | 8 | 0 | 8 |
-| S3.5 Memory / interfaces | 12 | 1 | 11 |
-| State / assignment pending | 8 | 0 | 8 |
+| S3.4 Wave / lane | 11 | 0 | 11 |
+| S3.5 Memory / interfaces | 509 | 10 | 499 |
+| State / assignment pending | 22 | 0 | 22 |
 
 **158/480 arithmetic forms decoded is not 158 accepted or fully converted forms.** This distinction corrects the earlier shorthand used in progress updates.
 
@@ -53,8 +52,8 @@ The partition below publishes the working arithmetic planning rules. It is provi
 | [SOP1](#sop1) | 65 | 4 | 11 | 0 | 50 |
 | [SOP2](#sop2) | 51 | 3 | 33 | 0 | 15 |
 | [SOPC](#sopc) | 18 | 3 | 11 | 0 | 4 |
-| [SOPK](#sopk) | 27 | 17 | 0 | 0 | 10 |
-| [SOPP](#sopp) | 36 | 4 | 2 | 0 | 30 |
+| [SOPK](#sopk) | 27 | 18 | 0 | 0 | 9 |
+| [SOPP](#sopp) | 36 | 5 | 2 | 0 | 29 |
 | [VINTRP](#vintrp) | 3 | 0 | 0 | 2 | 1 |
 | [VOP1](#vop1) | 81 | 6 | 0 | 0 | 75 |
 | [VOP2](#vop2) | 47 | 7 | 13 | 0 | 27 |
@@ -786,7 +785,7 @@ Update the implementation and its evidence in `docs/status.toml`, then regenerat
 | 21 | `S_SETREG_IMM32_B32` | Not converted | — | — | — |
 | 22 | `S_CALL_B64` | Not converted | — | — | — |
 | 23 | `S_WAITCNT_VSCNT` | Converted subset; fixture accepted | verified store wait | fixture verified | fixture verified |
-| 24 | `S_WAITCNT_VMCNT` | Not converted | — | — | — |
+| 24 | `S_WAITCNT_VMCNT` | Converted subset; fixture accepted | verified compute load wait; store completion remains separate | fixture verified | fixture verified |
 | 25 | `S_WAITCNT_EXPCNT` | Not converted | — | — | — |
 | 26 | `S_WAITCNT_LGKMCNT` | Not converted | — | — | — |
 | 27 | `S_SUBVECTOR_LOOP_BEGIN` | Not converted | — | — | — |
@@ -801,7 +800,7 @@ Update the implementation and its evidence in `docs/status.toml`, then regenerat
 | 2 | `S_BRANCH` | Converted subset; fixture accepted | resolved branch | fixture verified | fixture verified |
 | 3 | `S_WAKEUP` | Not converted | — | — | — |
 | 4 | `S_CBRANCH_SCC0` | Converted subset; fixture accepted | resolved conditional branch | fixture verified | fixture verified |
-| 5 | `S_CBRANCH_SCC1` | Not converted | — | — | — |
+| 5 | `S_CBRANCH_SCC1` | Converted subset; fixture accepted | resolved compute conditional branch; graphics SCC complement with preserved condition state | fixture verified | fixture verified |
 | 6 | `S_CBRANCH_VCCZ` | Converted subset; acceptance pending | resolved Wave32 VCC_LO zero check, or a wave-uniform join select after a vector compare | local known-answer test passed | local Apple M5 readback passed; acceptance pending |
 | 7 | `S_CBRANCH_VCCNZ` | Not converted | — | — | — |
 | 8 | `S_CBRANCH_EXECZ` | Converted subset; acceptance pending | resolved Wave32 EXEC_LO zero check | local known-answer test passed | local Apple M5 readback passed; acceptance pending |

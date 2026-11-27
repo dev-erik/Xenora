@@ -497,7 +497,7 @@ fn bitcompare_does_not_replace_or_interrupt_countdown_guard() {
             if replace {
                 "loop header requires unsigned counter"
             } else {
-                "loop header requires adjacent SCC0 exit"
+                "loop header requires adjacent complementary SCC exit"
             },
         );
     }

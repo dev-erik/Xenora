@@ -292,3 +292,46 @@ fn original_shared_min_streams_are_bounded_in_both_domains() {
         }
     }
 }
+
+#[test]
+fn scc1_zero_trip_unsigned_signed_and_runtime_caps_skip_body() {
+    // Exercise both operand orders and zero/negative constants, plus runtime
+    // MIN bounds proving no iterations without replacing the actual counter.
+    for (compare, initial, runtime) in [
+        (0xbf068020, 0u32, false),
+        (0xbf062080, 0, false),
+        (0xbf058020, 0, false),
+        (0xbf032080, 0, false),
+        (0xbf058020, u32::MAX, false),
+        (0xbf032080, 0x80000000, false),
+        (0xbf068020, 0, true),
+        (0xbf058020, 0, true),
+        (0xbf058020, u32::MAX, true),
+        (0xbf032080, 0x80000000, true),
+    ] {
+        let mut p = Program::new();
+        init(&mut p);
+        if runtime {
+            let unsigned = compare == 0xbf068020;
+            p.emit(&[if unsigned { 0x83a0ff18 } else { 0x8320ff18 }, initial]);
+        } else {
+            p.emit(&[0xbea003ff, initial]);
+        }
+        p.label("header");
+        p.emit(&[compare]);
+        p.branch(true, "exit");
+        *p.words.last_mut().unwrap() = 0xbf850000;
+        p.emit(&[0xbea2031f]); // Poison: read uninitialized s31 if body executes.
+        p.emit(&[0x80a08120]);
+        p.branch(false, "header");
+        p.label("exit");
+        // SCC must remain true after the taken exit.
+        p.branch(true, "bad");
+        p.branch(false, "exports");
+        p.label("bad");
+        p.emit(&[0xbea2031f]);
+        export(&mut p);
+        let compiled = compile(p).expect("proven SCC1 zero trip skips poison and retains SCC");
+        assert_eq!(compiled.required_uniform_mask, u8::from(runtime));
+    }
+}

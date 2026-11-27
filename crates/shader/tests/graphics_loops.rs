@@ -188,3 +188,31 @@ fn constant_zero_loop_still_requires_full_stream_decoding() {
         other => panic!("expected pixel full-stream decode failure: {other:?}"),
     }
 }
+
+#[test]
+fn scc1_countdown_requires_complementary_header_comparison() {
+    let mut words: Vec<_> = LOOP_VGPR_PS
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|b| u32::from_le_bytes(*b))
+        .collect();
+    let branch = words
+        .iter()
+        .position(|w| w & 0xffff_0000 == 0xbf84_0000)
+        .unwrap();
+    words[branch] ^= 0x0001_0000;
+    let encode = |words: &[u32]| {
+        words
+            .iter()
+            .flat_map(|w| w.to_le_bytes())
+            .collect::<Vec<_>>()
+    };
+    assert!(compile_graphics_pipeline(Gfx1030, CONSTANT_VS, &encode(&words)).is_err());
+    // unsigned != zero / SCC0 becomes unsigned == zero / SCC1.
+    assert_eq!(words[branch - 1] & 0xffff_0000, 0xbf07_0000);
+    words[branch - 1] ^= 0x0001_0000;
+    let compiled = compile_graphics_pipeline(Gfx1030, CONSTANT_VS, &encode(&words)).unwrap();
+    assert_eq!(compiled.pixel_uniform_mask, 1);
+    assert!(compiled.shader.msl.contains("while"));
+}

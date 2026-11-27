@@ -2202,3 +2202,27 @@ gpu = "fixture verified"
 recognized = true
 decoded = true
 llvm = "three-way passed"
+
+[[instruction]]
+form = "s_cbranch_scc1"
+encoding = "Signed SOPP dword target; known compute SCC or constant/runtime graphics SCC; bounded complementary countdown guards only"
+representation = "`BF850001`"
+lowering = "resolved compute conditional branch; graphics SCC complement with preserved condition state"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "s_waitcnt_vmcnt"
+encoding = "SOPK; exact null,0 only; synthetic compute pending-load contract; graphics unsupported"
+representation = "`BC7D0000`"
+lowering = "verified compute load wait; store completion remains separate"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"

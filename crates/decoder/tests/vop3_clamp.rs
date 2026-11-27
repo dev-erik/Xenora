@@ -231,6 +231,6 @@ fn names_display_and_existing_identity_count() {
             format!("{name} v255, vcc_lo, 0xffffffff clamp")
         );
     }
-    // 184 decoder identities include graphics-only forms; compute fixture coverage is164.
-    assert_eq!(xenora_decoder::SEMANTIC_FORMS.len(), 184);
+    // 186 decoder identities include graphics-only forms; compute fixture coverage is166.
+    assert_eq!(xenora_decoder::SEMANTIC_FORMS.len(), 186);
 }

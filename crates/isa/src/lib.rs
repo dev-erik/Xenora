@@ -12,11 +12,12 @@ mod rdna2_meta;
 mod semantics_gen;
 pub use rdna2::{
     BUFFER_LOAD_DWORD, BUFFER_STORE_DWORD, EXP, IMAGE_SAMPLE_LZ, IMAGE_STORE, S_BRANCH,
-    S_CBRANCH_EXECZ, S_CBRANCH_SCC0, S_CBRANCH_VCCZ, S_ENDPGM, S_MOV_B32, S_WAITCNT,
-    S_WAITCNT_VSCNT, V_ADD_F32, V_ADD_NC_U32, V_AND_B32, V_ASHRREV_I32, V_CMP_EQ_I32, V_CMP_EQ_U32,
-    V_CMP_GE_I32, V_CMP_GE_U32, V_CMP_GT_I32, V_CMP_GT_U32, V_CMP_LE_I32, V_CMP_LE_U32,
-    V_CMP_LT_I32, V_CMP_LT_U32, V_CMP_NE_I32, V_CMP_NE_U32, V_INTERP_P1_F32, V_INTERP_P2_F32,
-    V_LSHLREV_B32, V_LSHRREV_B32, V_MOV_B32, V_MUL_F32, V_OR_B32, V_XOR_B32,
+    S_CBRANCH_EXECZ, S_CBRANCH_SCC0, S_CBRANCH_SCC1, S_CBRANCH_VCCZ, S_ENDPGM, S_MOV_B32,
+    S_WAITCNT, S_WAITCNT_VMCNT, S_WAITCNT_VSCNT, V_ADD_F32, V_ADD_NC_U32, V_AND_B32, V_ASHRREV_I32,
+    V_CMP_EQ_I32, V_CMP_EQ_U32, V_CMP_GE_I32, V_CMP_GE_U32, V_CMP_GT_I32, V_CMP_GT_U32,
+    V_CMP_LE_I32, V_CMP_LE_U32, V_CMP_LT_I32, V_CMP_LT_U32, V_CMP_NE_I32, V_CMP_NE_U32,
+    V_INTERP_P1_F32, V_INTERP_P2_F32, V_LSHLREV_B32, V_LSHRREV_B32, V_MOV_B32, V_MUL_F32, V_OR_B32,
+    V_XOR_B32,
 };
 pub use semantics_gen::{ScalarAluOp, ScalarCompareOp, ScalarUnaryOp, VectorAluOp, VectorUnaryOp};
 
@@ -401,17 +402,34 @@ pub enum InterpolationPhase {
 #[allow(missing_docs)]
 pub enum Instruction {
     /// Indexed 32-bit buffer read into a VGPR.
-    BufferLoadDword { data: u8, index: u8, resource: u8 },
+    BufferLoadDword {
+        data: u8,
+        index: u8,
+        resource: u8,
+    },
     /// Indexed 32-bit buffer write from a VGPR.
-    BufferStoreDword { data: u8, index: u8, resource: u8 },
+    BufferStoreDword {
+        data: u8,
+        index: u8,
+        resource: u8,
+    },
     /// `s_waitcnt vmcnt(0)`.
     WaitLoad,
+    /// `s_waitcnt_vmcnt null, 0`.
+    WaitVmcnt,
     /// `s_waitcnt_vscnt null, 0`.
     WaitStore,
     /// VOP1 unmodified 32-bit vector move.
-    MoveB32 { dst: u8, src: VectorSource },
+    MoveB32 {
+        dst: u8,
+        src: VectorSource,
+    },
     /// VOP3 unsigned 32-bit addition with no carry or input/output modifiers.
-    AddNoCarryU32 { dst: u8, src0: u8, src1: u8 },
+    AddNoCarryU32 {
+        dst: u8,
+        src0: u8,
+        src1: u8,
+    },
     /// Unmodified full-width product; preserves SCC, VCC and EXEC.
     VectorProduct {
         op: VectorProductOp,
@@ -464,7 +482,10 @@ pub enum Instruction {
         src2: VectorSource,
     },
     /// SOP1 32-bit move to a normal SGPR or an EXEC/VCC half.
-    ScalarMoveB32 { dst: u8, src: ScalarSource },
+    ScalarMoveB32 {
+        dst: u8,
+        src: ScalarSource,
+    },
     /// SOP1 read/modify/write of one old-destination bit; preserves SCC.
     ScalarBitSetB32 {
         dst: u8,
@@ -478,9 +499,15 @@ pub enum Instruction {
         value: bool,
     },
     /// SOP1 writes a normal SGPR only when incoming SCC is true; preserves SCC.
-    ScalarConditionalMoveB32 { dst: u8, src: ScalarSource },
+    ScalarConditionalMoveB32 {
+        dst: u8,
+        src: ScalarSource,
+    },
     /// SOPK conditionally writes a sign-extended immediate; preserves SCC.
-    ScalarConditionalMoveImmediateI32 { dst: u8, immediate: i16 },
+    ScalarConditionalMoveImmediateI32 {
+        dst: u8,
+        immediate: i16,
+    },
     /// SOP1 32-bit unary integer operation writing a normal SGPR (s0-s105) and,
     /// for some operations, SCC.
     ScalarUnary {
@@ -528,13 +555,24 @@ pub enum Instruction {
         src1: u8,
     },
     /// SOPP jump to a stream byte offset when SCC is clear.
-    BranchSccZero { target: usize },
+    BranchSccZero {
+        target: usize,
+    },
+    BranchSccOne {
+        target: usize,
+    },
     /// SOPP jump when the Wave32 execution mask is empty.
-    BranchExecZero { target: usize },
+    BranchExecZero {
+        target: usize,
+    },
     /// SOPP jump when the Wave32 vector condition mask is empty.
-    BranchVccZero { target: usize },
+    BranchVccZero {
+        target: usize,
+    },
     /// SOPP unconditional jump to a stream byte offset.
-    Branch { target: usize },
+    Branch {
+        target: usize,
+    },
     /// VOP2 logical left shift with the count in src0.
     VectorLshlrevB32 {
         dst: u8,
@@ -572,9 +610,17 @@ pub enum Instruction {
         src1: u8,
     },
     /// VOP2 single-precision addition. Execution requires an explicit FP mode.
-    VectorAddF32 { dst: u8, src0: u8, src1: u8 },
+    VectorAddF32 {
+        dst: u8,
+        src0: u8,
+        src1: u8,
+    },
     /// VOP2 single-precision multiplication. Execution requires an explicit FP mode.
-    VectorMulF32 { dst: u8, src0: u8, src1: u8 },
+    VectorMulF32 {
+        dst: u8,
+        src0: u8,
+        src1: u8,
+    },
     /// Full, uncompressed four-component graphics export.
     Export {
         target: ExportTarget,
@@ -649,6 +695,7 @@ impl Instruction {
             Self::BufferLoadDword { .. } => "buffer_load_dword",
             Self::BufferStoreDword { .. } => "buffer_store_dword",
             Self::WaitLoad => "s_waitcnt",
+            Self::WaitVmcnt => "s_waitcnt_vmcnt",
             Self::WaitStore => "s_waitcnt_vscnt",
             Self::MoveB32 { .. } => "v_mov_b32_e32",
             Self::AddNoCarryU32 { .. } => "v_add_nc_u32_e64",
@@ -679,6 +726,7 @@ impl Instruction {
             Self::VectorAlu { op, .. } => op.assembly_name(),
             Self::VectorUnary { op, .. } => op.assembly_name(),
             Self::BranchSccZero { .. } => "s_cbranch_scc0",
+            Self::BranchSccOne { .. } => "s_cbranch_scc1",
             Self::BranchExecZero { .. } => "s_cbranch_execz",
             Self::BranchVccZero { .. } => "s_cbranch_vccz",
             Self::Branch { .. } => "s_branch",
@@ -727,7 +775,7 @@ impl fmt::Display for Instruction {
                 )
             }
             Self::WaitLoad => formatter.write_str(" vmcnt(0)"),
-            Self::WaitStore => formatter.write_str(" null, 0"),
+            Self::WaitStore | Self::WaitVmcnt => formatter.write_str(" null, 0"),
             Self::MoveB32 { dst, src } => write!(formatter, " v{dst}, {src}"),
             Self::AddNoCarryU32 { dst, src0, src1 }
             | Self::VectorAddF32 { dst, src0, src1 }
@@ -802,6 +850,7 @@ impl fmt::Display for Instruction {
             }
             Self::Branch { target }
             | Self::BranchSccZero { target }
+            | Self::BranchSccOne { target }
             | Self::BranchExecZero { target }
             | Self::BranchVccZero { target } => {
                 write!(formatter, " -> 0x{target:04x}")

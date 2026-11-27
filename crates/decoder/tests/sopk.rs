@@ -59,7 +59,7 @@ fn sopk_identity_operands_and_four_byte_length() {
 #[test]
 fn neighboring_opcodes_stay_unsupported() {
     for op in 1..=26u32 {
-        if matches!(op, 2..=16 | 23) {
+        if matches!(op, 2..=16 | 23 | 24) {
             continue;
         }
         let word = 0xb000_0000 | (op << 23);
@@ -162,5 +162,44 @@ fn cmpk_uses_read_only_normal_register_and_signedness_specific_extension() {
                 );
             }
         }
+    }
+}
+
+#[test]
+fn vmcnt_preserves_identity_and_accepts_only_null_zero() {
+    let bytes = 0xbc7d0000u32.to_le_bytes();
+    let decoded = decode(Architecture::Gfx1030, &bytes).unwrap();
+    assert_eq!(decoded[0].instruction, Instruction::WaitVmcnt);
+    assert_eq!(decoded[0].byte_len, 4);
+    assert_eq!(
+        decoded[0].instruction.to_string(),
+        "s_waitcnt_vmcnt null, 0"
+    );
+    assert!(SEMANTIC_FORMS.contains(&("S_WAITCNT_VMCNT", EncodingFamily::Sopk)));
+    for register in 0..128u32 {
+        if register == 125 {
+            continue;
+        }
+        let bytes = (0xbc000000 | register << 16).to_le_bytes();
+        assert!(matches!(
+            decode(Architecture::Gfx1030, &bytes).unwrap_err().kind,
+            DecodeErrorKind::UnsupportedForm {
+                mnemonic: "s_waitcnt_vmcnt",
+                ..
+            }
+        ));
+    }
+    for threshold in 1..=65535u32 {
+        let bytes = (0xbc7d0000 | threshold).to_le_bytes();
+        assert!(matches!(
+            decode(Architecture::Gfx1030, &bytes).unwrap_err().kind,
+            DecodeErrorKind::UnsupportedForm {
+                mnemonic: "s_waitcnt_vmcnt",
+                ..
+            }
+        ));
+    }
+    for length in 1..4 {
+        assert!(decode(Architecture::Gfx1030, &bytes[..length]).is_err());
     }
 }

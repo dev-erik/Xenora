@@ -24,6 +24,17 @@ ARITHMETIC_FAMILIES = set('SOP1 SOP2 SOPC SOPK VOP1 VOP2 VOP3 VOP3P VOP3SDST VOP
 
 def workstream(family, name):
     """Published planning partition, not a completion or compatibility contract."""
+    # Include non-arithmetic families; DS permutations are cross-lane operations.
+    if family == 'DS' and name in {'DS_SWIZZLE_B32', 'DS_PERMUTE_B32', 'DS_BPERMUTE_B32'}:
+        return 'S3.4 Wave / lane'
+    if family in {'DS', 'FLAT', 'GLOBAL', 'SCRATCH', 'SMEM', 'MUBUF', 'MTBUF', 'MIMG', 'EXP', 'VINTRP'}:
+        return 'S3.5 Memory / interfaces'
+    if family == 'SOPP':
+        if name == 'S_BRANCH' or name.startswith(('S_CBRANCH_', 'S_ENDPGM')) or name in {'S_TRAP', 'S_SETHALT', 'S_SENDMSGHALT'}:
+            return 'S3.2 Control flow'
+        if name.startswith('S_WAITCNT') or name in {'S_BARRIER', 'S_ICACHE_INV', 'S_INST_PREFETCH'}:
+            return 'S3.5 Memory / interfaces'
+        return 'State / assignment pending'
     if family not in ARITHMETIC_FAMILIES:
         return 'Other shader work / assignment pending'
     if ((name.startswith('V_') and 'CMP' in name)
@@ -105,10 +116,10 @@ def generate():
         '[local checkpoints](../testing/local-graphics-checkpoint.md); reconcile their evidence before changing status. '
         'Missing CPU/GPU records mean unrecorded, not a test failure.', '',
         '## Stage 3 planning map', '',
-        'The partition below publishes the working arithmetic planning rules. It is provisional, '
+        'The partition below includes SOPP control flow and memory families alongside arithmetic. It is provisional, '
         'not a claim that a stage is complete or that forms outside arithmetic are optional. '
         'S3.6 numerical correctness applies across floating-point operations and is not counted as a disjoint opcode bucket. '
-        'State and other-family assignments remain explicit gaps.', '',
+        'State assignments remain explicit gaps; scalar comparisons retain their historical arithmetic assignment pending a separate ownership audit. Counts exclude operand-mode debt such as DPP/SDWA, wave sizes, masks and ordering. The earlier 7/8/12 totals for S3.2/S3.4/S3.5 excluded whole families and were not stage completion denominators.', '',
         '| Workstream | Total forms | Decoded | Not decoded |', '| --- | ---: | ---: | ---: |',
     ]
     groups = {}

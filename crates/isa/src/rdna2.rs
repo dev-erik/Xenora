@@ -25,6 +25,11 @@ pub const S_WAITCNT_VSCNT: Opcode = Opcode {
     bits: 0xbb800000,
     bytes: 4,
 };
+pub const S_WAITCNT_VMCNT: Opcode = Opcode {
+    mask: 0xff800000,
+    bits: 0xbc000000,
+    bytes: 4,
+};
 pub const V_MOV_B32: Opcode = Opcode {
     mask: 0xfe01fe00,
     bits: 0x7e000200,
@@ -48,6 +53,11 @@ pub const S_MOV_B32: Opcode = Opcode {
 pub const S_CBRANCH_SCC0: Opcode = Opcode {
     mask: 0xffff0000,
     bits: 0xbf840000,
+    bytes: 4,
+};
+pub const S_CBRANCH_SCC1: Opcode = Opcode {
+    mask: 0xffff0000,
+    bits: 0xbf850000,
     bytes: 4,
 };
 pub const S_CBRANCH_EXECZ: Opcode = Opcode {

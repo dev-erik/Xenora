@@ -46,6 +46,7 @@ enum Op {
     ScalarBitSet(bool, ScalarValue, ScalarValue),
     ScalarBitCompare(bool, ScalarValue, ScalarValue),
     ScalarNonzeroFlag(Value),
+    BooleanNot(Value),
     ScalarResult(ScalarAluOp, ScalarValue, ScalarValue, Condition),
     ScalarFlag(ScalarAluOp, ScalarValue, ScalarValue, Condition, Value),
     Phi(ValueType),
@@ -849,7 +850,7 @@ fn lift(
                 })?;
             loop_bounds[loop_index] = Some(bound);
             if bound == 0 {
-                // The guard is proven false, but the counter remains its actual
+                // The loop exits immediately, but the counter remains its actual
                 // bit pattern (including runtime negative signed values).
                 zero_trip_header = true;
             } else {
@@ -1063,7 +1064,11 @@ fn lift(
                 let left = read_scalar(src0, &scalars, &mut ir.uniform_mask, offset)?;
                 let right = read_scalar(src1, &scalars, &mut ir.uniform_mask, offset)?;
                 scc = Some(if zero_trip_header {
-                    Condition::Constant(false)
+                    // CFG analysis proved the comparison and exit polarity agree.
+                    Condition::Constant(matches!(
+                        decoded[index + 1].instruction,
+                        Instruction::BranchSccOne { .. }
+                    ))
                 } else {
                     match (left, right) {
                         (ScalarValue::Constant(a), ScalarValue::Constant(b)) => {
@@ -1075,7 +1080,9 @@ fn lift(
                     }
                 });
             }
-            Instruction::Branch { target } | Instruction::BranchSccZero { target } => {
+            Instruction::Branch { target }
+            | Instruction::BranchSccZero { target }
+            | Instruction::BranchSccOne { target } => {
                 if target >= length {
                     return Err(error("expected a forward branch inside the graphics stage"));
                 }
@@ -1095,6 +1102,14 @@ fn lift(
                     Instruction::BranchSccZero { .. } => scc.ok_or_else(|| {
                         error("SCC is uninitialized on the selected graphics path")
                     })?,
+                    Instruction::BranchSccOne { .. } => match scc.ok_or_else(|| {
+                        error("SCC is uninitialized on the selected graphics path")
+                    })? {
+                        Condition::Constant(value) => Condition::Constant(!value),
+                        Condition::Runtime(value) => {
+                            Condition::Runtime(ir.push(Some(offset), Op::BooleanNot(value)))
+                        }
+                    },
                     _ => Condition::Constant(false),
                 };
                 match condition {
@@ -2357,6 +2372,7 @@ fn value_type(op: Op) -> &'static str {
         | Op::ScalarBitCompare(..)
         | Op::ScalarFlag(..)
         | Op::ScalarNonzeroFlag(..)
+        | Op::BooleanNot(..)
         | Op::Phi(ValueType::Bool) => "bool",
         Op::ScalarResult(..)
         | Op::ScalarUnaryResult(..)
@@ -2598,6 +2614,10 @@ fn emit_range(
                     format!("{}.u32 {expression}", operator.mnemonic()),
                     expression,
                 )
+            }
+            Op::BooleanNot(value) => {
+                let expression = format!("!{value}");
+                (format!("not.bool {value}"), expression)
             }
             Op::ScalarNonzeroFlag(result) => {
                 let expression = format!("{result} != 0u");

@@ -147,3 +147,34 @@ fn runtime_uniform_fixtures_decode_register_conditions_and_diamond_boundaries() 
         assert!(decoded.iter().any(|i| i.offset == join));
     }
 }
+
+#[test]
+fn scc1_uses_signed_dword_offsets_and_instruction_boundaries() {
+    let bytes = [0xbf85_0000u32, 0xbf85_fffe, 0xbf81_0000]
+        .into_iter()
+        .flat_map(u32::to_le_bytes)
+        .collect::<Vec<_>>();
+    let decoded = decode(Architecture::Gfx1030, &bytes).unwrap();
+    assert_eq!(
+        decoded[0].instruction,
+        Instruction::BranchSccOne { target: 4 }
+    );
+    assert_eq!(
+        decoded[1].instruction,
+        Instruction::BranchSccOne { target: 0 }
+    );
+    assert_eq!(decoded[1].branch_target(), Some(0));
+    assert_eq!(decoded[0].byte_len, 4);
+    assert_eq!(decoded[0].instruction.mnemonic(), "s_cbranch_scc1");
+    for words in [
+        vec![0xbf85_fffeu32], // Target before stream.
+        vec![0xbf85_0001, 0x7e04_02ff, 0x1234_5678, 0xbf81_0000], // Literal.
+        vec![0xbf85_0001, 0xbf81_0000], // Past stream.
+    ] {
+        let bytes = words
+            .into_iter()
+            .flat_map(u32::to_le_bytes)
+            .collect::<Vec<_>>();
+        assert!(decode(Architecture::Gfx1030, &bytes).is_err());
+    }
+}

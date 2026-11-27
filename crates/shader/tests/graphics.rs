@@ -1525,3 +1525,54 @@ fn unary_loop_carried_local_accepts_but_counter_rewrite_rejects() {
     ps[40..44].copy_from_slice(&0xbea00720u32.to_le_bytes());
     assert!(compile_graphics_pipeline(Gfx1030, CONSTANT_VS, &ps).is_err());
 }
+
+#[test]
+fn scc1_graphics_constant_selection_unknown_and_runtime_complement() {
+    // A poisoned read is skipped exactly when SCC1 is taken.
+    for (compare, accepted) in [(0xbf06_8080, true), (0xbf06_8180, false)] {
+        let pixel: Vec<_> = graphics_words(&[compare, 0xbf85_0001, 0xbf00_8068])
+            .into_iter()
+            .chain(CONSTANT_PS.iter().copied())
+            .collect();
+        assert_eq!(
+            compile_graphics_pipeline(Gfx1030, CONSTANT_VS, &pixel).is_ok(),
+            accepted
+        );
+    }
+    let unknown: Vec<_> = graphics_words(&[0xbf85_0000])
+        .into_iter()
+        .chain(CONSTANT_PS.iter().copied())
+        .collect();
+    let error = compile_graphics_pipeline(Gfx1030, CONSTANT_VS, &unknown).unwrap_err();
+    assert_stage_error(
+        &error,
+        "pixel",
+        0,
+        "SCC is uninitialized on the selected graphics path",
+    );
+    let pixel = graphics_words(&[
+        0xbf06_8018, // Compare runtime s24 with zero.
+        0x7e12_0280,
+        0xbf85_0002,
+        0x7e10_02f2,
+        0xbf82_0001,
+        0x7e10_0280,
+        0xf800_180f,
+        0x0809_0908,
+        0xbf81_0000,
+    ]);
+    let compiled = compile_graphics_pipeline(Gfx1030, CONSTANT_VS, &pixel).unwrap();
+    assert_eq!(compiled.pixel_uniform_mask, 1);
+    assert!(compiled.shader.ir.contains("not.bool"));
+    assert!(compiled.shader.msl.contains("if ("));
+}
+
+#[test]
+fn vmcnt_has_no_graphics_admission() {
+    let pixel: Vec<_> = graphics_words(&[0xbc7d0000])
+        .into_iter()
+        .chain(CONSTANT_PS.iter().copied())
+        .collect();
+    let error = compile_graphics_pipeline(Gfx1030, CONSTANT_VS, &pixel).unwrap_err();
+    assert_stage_error(&error, "pixel", 0, "instruction is unsupported");
+}

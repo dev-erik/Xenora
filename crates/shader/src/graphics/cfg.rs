@@ -91,7 +91,7 @@ pub(super) fn analyze(decoded: &[DecodedInstruction]) -> Result<Vec<CountedLoop>
                 "counted loop requires a preheader and nonempty body",
             ));
         }
-        let (counter, signed_positive) = match decoded[header].instruction {
+        let (counter, signed_positive, exit_on_one) = match decoded[header].instruction {
             Instruction::ScalarCompare {
                 op: ScalarCompareOp::CmpLgU32,
                 src0: ScalarSource::Register(r),
@@ -101,7 +101,7 @@ pub(super) fn analyze(decoded: &[DecodedInstruction]) -> Result<Vec<CountedLoop>
                 op: ScalarCompareOp::CmpLgU32,
                 src1: ScalarSource::Register(r),
                 src0: ScalarSource::Immediate(0),
-            } if (32..106).contains(&r) => (r, false),
+            } if (32..106).contains(&r) => (r, false, false),
             Instruction::ScalarCompare {
                 op: ScalarCompareOp::CmpGtI32,
                 src0: ScalarSource::Register(r),
@@ -111,7 +111,27 @@ pub(super) fn analyze(decoded: &[DecodedInstruction]) -> Result<Vec<CountedLoop>
                 op: ScalarCompareOp::CmpLtI32,
                 src0: ScalarSource::Immediate(0),
                 src1: ScalarSource::Register(r),
-            } if (32..106).contains(&r) => (r, true),
+            } if (32..106).contains(&r) => (r, true, false),
+            Instruction::ScalarCompare {
+                op: ScalarCompareOp::CmpEqU32,
+                src0: ScalarSource::Register(r),
+                src1: ScalarSource::Immediate(0),
+            }
+            | Instruction::ScalarCompare {
+                op: ScalarCompareOp::CmpEqU32,
+                src1: ScalarSource::Register(r),
+                src0: ScalarSource::Immediate(0),
+            } if (32..106).contains(&r) => (r, false, true),
+            Instruction::ScalarCompare {
+                op: ScalarCompareOp::CmpLeI32,
+                src0: ScalarSource::Register(r),
+                src1: ScalarSource::Immediate(0),
+            }
+            | Instruction::ScalarCompare {
+                op: ScalarCompareOp::CmpGeI32,
+                src0: ScalarSource::Immediate(0),
+                src1: ScalarSource::Register(r),
+            } if (32..106).contains(&r) => (r, true, true),
             _ => {
                 return Err(reject(
                     decoded[header].offset,
@@ -120,11 +140,12 @@ pub(super) fn analyze(decoded: &[DecodedInstruction]) -> Result<Vec<CountedLoop>
             }
         };
         let exit = match decoded[header + 1].instruction {
-            Instruction::BranchSccZero { target } => target_index(target)?,
+            Instruction::BranchSccZero { target } if !exit_on_one => target_index(target)?,
+            Instruction::BranchSccOne { target } if exit_on_one => target_index(target)?,
             _ => {
                 return Err(reject(
                     decoded[header + 1].offset,
-                    "loop header requires adjacent SCC0 exit",
+                    "loop header requires adjacent complementary SCC exit",
                 ));
             }
         };

@@ -829,6 +829,7 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
         let reason = match instruction.instruction {
             Instruction::Branch { target }
             | Instruction::BranchSccZero { target }
+            | Instruction::BranchSccOne { target }
             | Instruction::BranchExecZero { target }
             | Instruction::BranchVccZero { target }
                 if target <= offset
@@ -1012,7 +1013,7 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
                 store_pending = true;
                 (None, Op::Store(read(data)?))
             }
-            Instruction::WaitLoad => {
+            Instruction::WaitLoad | Instruction::WaitVmcnt => {
                 if let Some((register, value)) = pending_load.take() {
                     registers[register] = Some(value);
                 }
@@ -1280,11 +1281,15 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
                 (None, Op::RuntimeBranch { mask, target })
             }
             Instruction::BranchSccZero { target }
+            | Instruction::BranchSccOne { target }
             | Instruction::BranchExecZero { target }
             | Instruction::BranchVccZero { target } => {
                 let taken = match instruction.instruction {
                     Instruction::BranchSccZero { .. } => {
                         !scc.ok_or_else(|| error("conditional branch reads uninitialized SCC"))?
+                    }
+                    Instruction::BranchSccOne { .. } => {
+                        scc.ok_or_else(|| error("conditional branch reads uninitialized SCC"))?
                     }
                     Instruction::BranchVccZero { .. } => {
                         scalars[106]

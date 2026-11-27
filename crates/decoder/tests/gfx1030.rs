@@ -116,6 +116,7 @@ fn rejects_other_opcodes_and_noncanonical_operands() {
         (&[0xbf06_87fe], "s_cmp_eq_u32"),
         (&[0xbf06_ffff, 0], "s_cmp_eq_u32"),
         (&[0xbf84_fffe], "s_cbranch_scc0"),
+        (&[0xbf85_fffe], "s_cbranch_scc1"),
         (&[0x3803_fefa, 0xff00_e401], "v_or_b32_e32"),
         (&[0x3803_fef9, 0x0606_0601], "v_or_b32_e32"),
         (&[0x2dff_fefa, 0xff00_e401], "v_lshrrev_b32_e32"),
@@ -322,7 +323,7 @@ fn reference_op(instruction: Instruction) -> Op {
             index,
             resource,
         },
-        Instruction::WaitLoad => Op::WaitRead,
+        Instruction::WaitLoad | Instruction::WaitVmcnt => Op::WaitRead,
         Instruction::WaitStore => Op::WaitWrite,
         Instruction::MoveB32 {
             dst,
@@ -433,6 +434,10 @@ fn reference_op(instruction: Instruction) -> Op {
                 ),
             }
         }
+        Instruction::BranchSccOne { target } => Op::Branch {
+            target,
+            condition: BranchCondition::SccOne,
+        },
         Instruction::BranchSccZero { target } => Op::Branch {
             target,
             condition: BranchCondition::SccZero,
@@ -758,10 +763,12 @@ fn compares_fixture_instructions_against_llvm() {
         include_bytes!("../../../fixtures/rdna2/vector-compare.bin"),
         high_registers,
         &matrix,
+        include_bytes!("../../../fixtures/rdna2/scc1-branch.bin"),
+        include_bytes!("../../../fixtures/rdna2/wait-vmcnt.bin"),
     ] {
         count += compare_against_llvm(fixture, &mut forms);
     }
-    assert_eq!(forms.len(), 164, "forms compared: {forms:?}");
+    assert_eq!(forms.len(), 166, "forms compared: {forms:?}");
     eprintln!(
         "{count} three-way instruction comparisons across {} forms",
         forms.len()
@@ -841,6 +848,7 @@ fn assemble_matrix() -> Vec<u8> {
         s_cmp_eq_u32 -16, 0xdeadbeef
         s_cmp_eq_u32 0xdeadbeef, -16
         s_cbranch_scc0 0
+        s_cbranch_scc1 0
         s_mov_b32 exec_lo, 0
         s_mov_b32 exec_hi, -1
         s_mov_b32 vcc_lo, 0
@@ -1173,8 +1181,10 @@ fn normalize_llvm_assembly(assembly: &str, next_offset: usize) -> String {
                 _ => format!("s_mul_i32 {dst}, {dst}, {source}"),
             }
         }
-        "s_waitcnt_vscnt" if operands == "null, 0x0" => format!("{mnemonic} null, 0"),
-        "s_branch" | "s_cbranch_scc0" | "s_cbranch_execz" | "s_cbranch_vccz" => {
+        "s_waitcnt_vscnt" | "s_waitcnt_vmcnt" if operands == "null, 0x0" => {
+            format!("{mnemonic} null, 0")
+        }
+        "s_branch" | "s_cbranch_scc1" | "s_cbranch_scc0" | "s_cbranch_execz" | "s_cbranch_vccz" => {
             let displacement: usize = operands.parse().unwrap();
             let target = next_offset + displacement * 4;
             format!("{mnemonic} -> 0x{target:04x}")

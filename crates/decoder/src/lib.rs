@@ -10,11 +10,12 @@ pub use xenora_isa::{
 };
 use xenora_isa::{
     BUFFER_LOAD_DWORD, BUFFER_STORE_DWORD, EXP, IMAGE_SAMPLE_LZ, IMAGE_STORE, S_BRANCH,
-    S_CBRANCH_EXECZ, S_CBRANCH_SCC0, S_CBRANCH_VCCZ, S_ENDPGM, S_MOV_B32, S_WAITCNT,
-    S_WAITCNT_VSCNT, V_ADD_F32, V_AND_B32, V_ASHRREV_I32, V_CMP_EQ_I32, V_CMP_EQ_U32, V_CMP_GE_I32,
-    V_CMP_GE_U32, V_CMP_GT_I32, V_CMP_GT_U32, V_CMP_LE_I32, V_CMP_LE_U32, V_CMP_LT_I32,
-    V_CMP_LT_U32, V_CMP_NE_I32, V_CMP_NE_U32, V_INTERP_P1_F32, V_INTERP_P2_F32, V_LSHLREV_B32,
-    V_LSHRREV_B32, V_MOV_B32, V_MUL_F32, V_OR_B32, V_XOR_B32, VCC_LO,
+    S_CBRANCH_EXECZ, S_CBRANCH_SCC0, S_CBRANCH_SCC1, S_CBRANCH_VCCZ, S_ENDPGM, S_MOV_B32,
+    S_WAITCNT, S_WAITCNT_VMCNT, S_WAITCNT_VSCNT, V_ADD_F32, V_AND_B32, V_ASHRREV_I32, V_CMP_EQ_I32,
+    V_CMP_EQ_U32, V_CMP_GE_I32, V_CMP_GE_U32, V_CMP_GT_I32, V_CMP_GT_U32, V_CMP_LE_I32,
+    V_CMP_LE_U32, V_CMP_LT_I32, V_CMP_LT_U32, V_CMP_NE_I32, V_CMP_NE_U32, V_INTERP_P1_F32,
+    V_INTERP_P2_F32, V_LSHLREV_B32, V_LSHRREV_B32, V_MOV_B32, V_MUL_F32, V_OR_B32, V_XOR_B32,
+    VCC_LO,
 };
 
 use xenora_isa::meta::EncodingFamily;
@@ -44,7 +45,7 @@ const fn concat_forms<const N: usize>() -> [(&'static str, EncodingFamily); N] {
 }
 
 /// Decoded forms not yet described by the semantic registry.
-const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 108] = [
+const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 110] = [
     ("V_MAD_I32_I24", EncodingFamily::Vop3),
     ("V_MAD_U32_U24", EncodingFamily::Vop3),
     ("V_SAD_U8", EncodingFamily::Vop3),
@@ -102,11 +103,13 @@ const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 108] = [
     ("S_BRANCH", EncodingFamily::Sopp),
     ("S_CBRANCH_EXECZ", EncodingFamily::Sopp),
     ("S_CBRANCH_SCC0", EncodingFamily::Sopp),
+    ("S_CBRANCH_SCC1", EncodingFamily::Sopp),
     ("S_CBRANCH_VCCZ", EncodingFamily::Sopp),
     ("S_ENDPGM", EncodingFamily::Sopp),
     ("S_MOV_B32", EncodingFamily::Sop1),
     ("S_WAITCNT", EncodingFamily::Sopp),
     ("S_WAITCNT_VSCNT", EncodingFamily::Sopk),
+    ("S_WAITCNT_VMCNT", EncodingFamily::Sopk),
     ("V_MIN3_I32", EncodingFamily::Vop3),
     ("V_MIN3_U32", EncodingFamily::Vop3),
     ("V_MAX3_I32", EncodingFamily::Vop3),
@@ -173,6 +176,7 @@ impl DecodedInstruction {
         match self.instruction {
             Instruction::Branch { target }
             | Instruction::BranchSccZero { target }
+            | Instruction::BranchSccOne { target }
             | Instruction::BranchExecZero { target }
             | Instruction::BranchVccZero { target } => Some(target),
             _ => None,
@@ -654,6 +658,13 @@ fn decode_gfx1030(bytes: &[u8], offset: usize) -> Result<(Instruction, u8), Deco
     if let Some(op) = ScalarAluOp::from_word(first) {
         return scalar_alu(op, first, bytes);
     }
+    if S_CBRANCH_SCC1.matches(first) {
+        let target = branch_target(first, offset, "s_cbranch_scc1")?;
+        return Ok((
+            Instruction::BranchSccOne { target },
+            S_CBRANCH_SCC1.byte_len(),
+        ));
+    }
     if S_CBRANCH_SCC0.matches(first) {
         let target = branch_target(first, offset, "s_cbranch_scc0")?;
         return Ok((
@@ -752,6 +763,15 @@ fn decode_gfx1030(bytes: &[u8], offset: usize) -> Result<(Instruction, u8), Deco
             0xbf8c_3f70,
             Instruction::WaitLoad,
             "expected vmcnt(0) alone",
+        );
+    }
+    if S_WAITCNT_VMCNT.matches(first) {
+        return scalar_form(
+            first,
+            S_WAITCNT_VMCNT.byte_len(),
+            0xbc7d_0000,
+            Instruction::WaitVmcnt,
+            "expected null, 0",
         );
     }
     if S_WAITCNT_VSCNT.matches(first) {

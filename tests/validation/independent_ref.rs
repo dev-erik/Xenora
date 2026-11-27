@@ -105,6 +105,7 @@ enum Insn {
     /// SOPC opcode 0-11: `s_cmp_{eq,lg,gt,ge,lt,le}_i32` then `_u32`.
     SCmp(u32, Src, Src),
     BranchScc0(usize),
+    BranchScc1(usize),
     BranchMaskZero {
         target: usize,
         register: usize,
@@ -366,6 +367,15 @@ fn run_wave(program: &[(usize, Insn)], wave: &[u32]) -> Result<Vec<u32>, String>
                         Ok(None)
                     } else {
                         index_of(program, target, offset).map(Some)
+                    }
+                }),
+            Insn::BranchScc1(target) => scc
+                .ok_or_else(|| format!("{offset:#x}: uninitialized SCC"))
+                .and_then(|condition| {
+                    if condition {
+                        index_of(program, target, offset).map(Some)
+                    } else {
+                        Ok(None)
                     }
                 }),
             Insn::BranchMaskZero { target, register } => {
@@ -1445,8 +1455,10 @@ fn decode(code: &[u8]) -> Result<Vec<(usize, Insn)>, String> {
         offset += len;
     }
     for &(at, insn) in &program {
-        if let Insn::Branch(target) | Insn::BranchScc0(target) | Insn::BranchMaskZero { target, .. } =
-            insn
+        if let Insn::Branch(target)
+        | Insn::BranchScc0(target)
+        | Insn::BranchScc1(target)
+        | Insn::BranchMaskZero { target, .. } = insn
             && !program.iter().any(|(boundary, _)| *boundary == target)
         {
             return Err(format!(
@@ -1874,6 +1886,9 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
     if first & 0xffff_0000 == 0xbf84_0000 {
         return Ok((Insn::BranchScc0(branch_target(first, offset)?), 4));
     }
+    if first & 0xffff_0000 == 0xbf85_0000 {
+        return Ok((Insn::BranchScc1(branch_target(first, offset)?), 4));
+    }
     let tested_register = match first >> 16 {
         0xbf86 => Some(106),
         0xbf88 => Some(126),
@@ -1914,6 +1929,10 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
             Insn::VMulF(dst, a, b)
         };
         return Ok((instruction, 4));
+    }
+    // Exact SOPK null,0 form; other registers and thresholds remain unsupported.
+    if first == 0xbc7d_0000 {
+        return Ok((Insn::WaitRead, 4));
     }
     if first & 0xffff_0000 == 0xbf8c_0000 {
         if first != 0xbf8c_3f70 {
