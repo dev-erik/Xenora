@@ -36,3 +36,17 @@ Next control-flow work must retain target-boundary and termination guarantees.
 Next memory work must specify descriptors, address spaces and visibility before
 admitting additional forms. Cross-lane reads require a separate contract for
 inactive and absent source lanes; masked bit count alone does not provide it.
+
+## Continuation: nonzero mask branches and narrow buffer loads
+
+- [x] Add Wave32 compute EXECNZ/VCCNZ with unchanged forward/runtime-region bounds.
+- [x] Validate independent references, LLVM encodings, native merge polarity,
+  partial waves and malformed/skipped regions; reject both graphics stages.
+- [ ] Add byte/halfword signed and unsigned loads with the existing four-byte
+  input stride, single pending load, full EXEC and zero-offset restrictions.
+- [ ] Validate sign boundaries, high-bit contamination, waits, source readiness,
+  descriptor/index rejection and lane-derived comparison recomputation.
+- [ ] Review each increment independently, update evidence/maps and commit.
+
+Full closure of S3.2/S3.4/S3.5 still requires the architectural work listed in the
+[scope document](../../shaders/control-wave-memory.md#remaining-closure-work).

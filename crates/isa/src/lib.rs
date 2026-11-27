@@ -12,12 +12,12 @@ mod rdna2_meta;
 mod semantics_gen;
 pub use rdna2::{
     BUFFER_LOAD_DWORD, BUFFER_STORE_DWORD, EXP, IMAGE_SAMPLE_LZ, IMAGE_STORE, S_BRANCH,
-    S_CBRANCH_EXECZ, S_CBRANCH_SCC0, S_CBRANCH_SCC1, S_CBRANCH_VCCZ, S_ENDPGM, S_MOV_B32,
-    S_WAITCNT, S_WAITCNT_VMCNT, S_WAITCNT_VSCNT, V_ADD_F32, V_ADD_NC_U32, V_AND_B32, V_ASHRREV_I32,
-    V_CMP_EQ_I32, V_CMP_EQ_U32, V_CMP_GE_I32, V_CMP_GE_U32, V_CMP_GT_I32, V_CMP_GT_U32,
-    V_CMP_LE_I32, V_CMP_LE_U32, V_CMP_LT_I32, V_CMP_LT_U32, V_CMP_NE_I32, V_CMP_NE_U32,
-    V_INTERP_P1_F32, V_INTERP_P2_F32, V_LSHLREV_B32, V_LSHRREV_B32, V_MOV_B32, V_MUL_F32, V_OR_B32,
-    V_XOR_B32,
+    S_CBRANCH_EXECNZ, S_CBRANCH_EXECZ, S_CBRANCH_SCC0, S_CBRANCH_SCC1, S_CBRANCH_VCCNZ,
+    S_CBRANCH_VCCZ, S_ENDPGM, S_MOV_B32, S_WAITCNT, S_WAITCNT_VMCNT, S_WAITCNT_VSCNT, V_ADD_F32,
+    V_ADD_NC_U32, V_AND_B32, V_ASHRREV_I32, V_CMP_EQ_I32, V_CMP_EQ_U32, V_CMP_GE_I32, V_CMP_GE_U32,
+    V_CMP_GT_I32, V_CMP_GT_U32, V_CMP_LE_I32, V_CMP_LE_U32, V_CMP_LT_I32, V_CMP_LT_U32,
+    V_CMP_NE_I32, V_CMP_NE_U32, V_INTERP_P1_F32, V_INTERP_P2_F32, V_LSHLREV_B32, V_LSHRREV_B32,
+    V_MOV_B32, V_MUL_F32, V_OR_B32, V_XOR_B32,
 };
 pub use semantics_gen::{ScalarAluOp, ScalarCompareOp, ScalarUnaryOp, VectorAluOp, VectorUnaryOp};
 
@@ -571,8 +571,16 @@ pub enum Instruction {
     BranchExecZero {
         target: usize,
     },
+    /// SOPP jump when the Wave32 execution mask is nonzero.
+    BranchExecNonZero {
+        target: usize,
+    },
     /// SOPP jump when the Wave32 vector condition mask is empty.
     BranchVccZero {
+        target: usize,
+    },
+    /// SOPP jump when the Wave32 vector condition mask is nonzero.
+    BranchVccNonZero {
         target: usize,
     },
     /// SOPP unconditional jump to a stream byte offset.
@@ -734,7 +742,9 @@ impl Instruction {
             Self::BranchSccZero { .. } => "s_cbranch_scc0",
             Self::BranchSccOne { .. } => "s_cbranch_scc1",
             Self::BranchExecZero { .. } => "s_cbranch_execz",
+            Self::BranchExecNonZero { .. } => "s_cbranch_execnz",
             Self::BranchVccZero { .. } => "s_cbranch_vccz",
+            Self::BranchVccNonZero { .. } => "s_cbranch_vccnz",
             Self::Branch { .. } => "s_branch",
             Self::VectorLshlrevB32 { .. } => "v_lshlrev_b32_e32",
             Self::VectorLshrrevB32 { .. } => "v_lshrrev_b32_e32",
@@ -857,7 +867,9 @@ impl fmt::Display for Instruction {
             Self::Branch { target }
             | Self::BranchSccZero { target }
             | Self::BranchSccOne { target }
+            | Self::BranchExecNonZero { target }
             | Self::BranchExecZero { target }
+            | Self::BranchVccNonZero { target }
             | Self::BranchVccZero { target } => {
                 write!(formatter, " -> 0x{target:04x}")
             }

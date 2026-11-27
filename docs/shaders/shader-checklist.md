@@ -10,12 +10,12 @@ For the Xbox Series X|S target and non-shader requirements, see the [master comp
 
 | Status | Forms | Meaning |
 | --- | ---: | --- |
-| Converted subset; fixture accepted | 101 | Translation is recorded and the status registry records accepted native fixture evidence; only the documented operand subset is covered. |
+| Converted subset; fixture accepted | 103 | Translation is recorded and the status registry records accepted native fixture evidence; only the documented operand subset is covered. |
 | Converted subset; acceptance pending | 82 | Translation is recorded, but the registry does not record accepted native fixture evidence. This may reflect pending acceptance or documentation lag. |
 | Decoded; translation evidence unrecorded | 5 | The decoder lists the form, but no translation evidence row is recorded. This is an evidence gap, not proof that lowering is absent. |
-| Not converted | 1277 | No supported decoder identity exists. Opcode recognition from metadata alone does not implement execution. |
+| Not converted | 1275 | No supported decoder identity exists. Opcode recognition from metadata alone does not implement execution. |
 
-**Decoder coverage: 188/1465. Not yet decoded: 1277.**
+**Decoder coverage: 190/1465. Not yet decoded: 1275.**
 
 No row means “all operand modes complete.” Sources, literals, modifiers, register widths, execution masks, graphics versus compute applicability, control-flow interactions and numerical behavior still require their own contracts and tests. This list covers the pinned inventory, not every future AMD instruction or every Xbox graphics method.
 
@@ -30,7 +30,7 @@ The partition below includes SOPP control flow and memory families alongside ari
 | Workstream | Total forms | Decoded | Not decoded |
 | --- | ---: | ---: | ---: |
 | S3.1 Arithmetic | 480 | 158 | 322 |
-| S3.2 Control flow | 24 | 6 | 18 |
+| S3.2 Control flow | 24 | 8 | 16 |
 | S3.3 Masks / comparisons | 419 | 12 | 407 |
 | S3.4 Wave / lane | 11 | 2 | 9 |
 | S3.5 Memory / interfaces | 509 | 10 | 499 |
@@ -55,7 +55,7 @@ The partition below includes SOPP control flow and memory families alongside ari
 | [SOP2](#sop2) | 51 | 3 | 33 | 0 | 15 |
 | [SOPC](#sopc) | 18 | 3 | 11 | 0 | 4 |
 | [SOPK](#sopk) | 27 | 18 | 0 | 0 | 9 |
-| [SOPP](#sopp) | 36 | 5 | 2 | 0 | 29 |
+| [SOPP](#sopp) | 36 | 7 | 2 | 0 | 27 |
 | [VINTRP](#vintrp) | 3 | 0 | 0 | 2 | 1 |
 | [VOP1](#vop1) | 81 | 6 | 0 | 0 | 75 |
 | [VOP2](#vop2) | 47 | 7 | 13 | 0 | 27 |
@@ -804,9 +804,9 @@ Update the implementation and its evidence in `docs/status.toml`, then regenerat
 | 4 | `S_CBRANCH_SCC0` | Converted subset; fixture accepted | resolved conditional branch | fixture verified | fixture verified |
 | 5 | `S_CBRANCH_SCC1` | Converted subset; fixture accepted | resolved compute conditional branch; graphics SCC complement with preserved condition state | fixture verified | fixture verified |
 | 6 | `S_CBRANCH_VCCZ` | Converted subset; acceptance pending | resolved Wave32 VCC_LO zero check, or a wave-uniform join select after a vector compare | local known-answer test passed | local Apple M5 readback passed; acceptance pending |
-| 7 | `S_CBRANCH_VCCNZ` | Not converted | — | — | — |
+| 7 | `S_CBRANCH_VCCNZ` | Converted subset; fixture accepted | resolved or bounded runtime nonzero VCC_LO branch with polarity-aware joins; existing runtime-region whitelist retained | fixture verified | fixture verified |
 | 8 | `S_CBRANCH_EXECZ` | Converted subset; acceptance pending | resolved Wave32 EXEC_LO zero check | local known-answer test passed | local Apple M5 readback passed; acceptance pending |
-| 9 | `S_CBRANCH_EXECNZ` | Not converted | — | — | — |
+| 9 | `S_CBRANCH_EXECNZ` | Converted subset; fixture accepted | resolved nonzero EXEC_LO branch; existing runtime-region whitelist retained | fixture verified | fixture verified |
 | 10 | `S_BARRIER` | Not converted | — | — | — |
 | 11 | `S_SETKILL` | Not converted | — | — | — |
 | 12 | `S_WAITCNT` | Converted subset; fixture accepted | verified load wait | fixture verified | fixture verified |

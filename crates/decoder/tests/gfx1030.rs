@@ -442,6 +442,14 @@ fn reference_op(instruction: Instruction) -> Op {
             target,
             condition: BranchCondition::SccZero,
         },
+        Instruction::BranchExecNonZero { target } => Op::Branch {
+            target,
+            condition: BranchCondition::ExecNonZero,
+        },
+        Instruction::BranchVccNonZero { target } => Op::Branch {
+            target,
+            condition: BranchCondition::VccNonZero,
+        },
         Instruction::BranchExecZero { target } => Op::Branch {
             target,
             condition: BranchCondition::ExecZero,
@@ -772,10 +780,11 @@ fn compares_fixture_instructions_against_llvm() {
         include_bytes!("../../../fixtures/rdna2/scc1-branch.bin"),
         include_bytes!("../../../fixtures/rdna2/wait-vmcnt.bin"),
         include_bytes!("../../../fixtures/rdna2/mbcnt.bin"),
+        include_bytes!("../../../fixtures/rdna2/mask-nonzero-branch.bin"),
     ] {
         count += compare_against_llvm(fixture, &mut forms);
     }
-    assert_eq!(forms.len(), 168, "forms compared: {forms:?}");
+    assert_eq!(forms.len(), 170, "forms compared: {forms:?}");
     eprintln!(
         "{count} three-way instruction comparisons across {} forms",
         forms.len()
@@ -861,7 +870,9 @@ fn assemble_matrix() -> Vec<u8> {
         s_mov_b32 vcc_lo, 0
         s_mov_b32 vcc_hi, -1
         s_cbranch_execz 0
+        s_cbranch_execnz 0
         s_cbranch_vccz 0
+        s_cbranch_vccnz 0
         s_branch 2
         v_mov_b32_e32 v128, 0x12345678
         v_mov_b32_e32 v255, lit(0x1)
@@ -1191,9 +1202,10 @@ fn normalize_llvm_assembly(assembly: &str, next_offset: usize) -> String {
         "s_waitcnt_vscnt" | "s_waitcnt_vmcnt" if operands == "null, 0x0" => {
             format!("{mnemonic} null, 0")
         }
-        "s_branch" | "s_cbranch_scc1" | "s_cbranch_scc0" | "s_cbranch_execz" | "s_cbranch_vccz" => {
-            let displacement: usize = operands.parse().unwrap();
-            let target = next_offset + displacement * 4;
+        "s_branch" | "s_cbranch_scc1" | "s_cbranch_scc0" | "s_cbranch_execz" | "s_cbranch_vccz"
+        | "s_cbranch_execnz" | "s_cbranch_vccnz" => {
+            let displacement: isize = operands.parse().unwrap();
+            let target = next_offset.checked_add_signed(displacement * 4).unwrap();
             format!("{mnemonic} -> 0x{target:04x}")
         }
         "v_mul_lo_u32"
@@ -1480,7 +1492,15 @@ fn decode_at_resolves_branch_targets_from_the_stream_offset() {
 
 #[test]
 fn signed_sopp_targets_cover_backedges_self_and_extreme_displacements() {
-    for opcode in [0xbf82_0000u32, 0xbf84_0000, 0xbf86_0000, 0xbf88_0000] {
+    for opcode in [
+        0xbf82_0000u32,
+        0xbf84_0000,
+        0xbf85_0000,
+        0xbf86_0000,
+        0xbf87_0000,
+        0xbf88_0000,
+        0xbf89_0000,
+    ] {
         let bytes: Vec<_> = [0x7e10_02f2, opcode | 0xfffe, 0xbf81_0000]
             .iter()
             .flat_map(|word| word.to_le_bytes())

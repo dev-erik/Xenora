@@ -198,6 +198,8 @@ The wider LLVM operand matrix exercises decoding only. ABI means application bin
 | `s_waitcnt_vmcnt` | SOPK; exact null,0 only; synthetic compute pending-load contract; graphics unsupported | `BC7D0000` | yes | yes | three-way passed | verified compute load wait; store completion remains separate | implemented | fixture verified | fixture verified |
 | `v_mbcnt_lo_u32_b32` | VOP3; checked sources with shared literal; modifiers excluded; Wave32 compute only, graphics rejected | 8 B or 12 B with shared literal | yes | yes | three-way passed | count SRC0 bits below the logical Wave32 lane and add SRC1 with uint wrapping; lane-aware comparison recomputation | implemented | fixture verified | fixture verified |
 | `v_mbcnt_hi_u32_b32` | VOP3; checked sources with shared literal; modifiers excluded; Wave32 compute only, graphics rejected | 8 B or 12 B with shared literal | yes | yes | three-way passed | copy SRC1 under Wave32; checked sources and EXEC destination retention; lane-aware comparison recomputation | implemented | fixture verified | fixture verified |
+| `s_cbranch_execnz` | Signed SOPP dword target; forward-only Wave32 compute; graphics rejected | 4 B | yes | yes | three-way passed | resolved nonzero EXEC_LO branch; existing runtime-region whitelist retained | implemented | fixture verified | fixture verified |
+| `s_cbranch_vccnz` | Signed SOPP dword target; forward-only Wave32 compute; graphics rejected | 4 B | yes | yes | three-way passed | resolved or bounded runtime nonzero VCC_LO branch with polarity-aware joins; existing runtime-region whitelist retained | implemented | fixture verified | fixture verified |
 <!-- status:instructions:end -->
 
 ## Automated three-way comparison

@@ -88,3 +88,31 @@ LLVM_BIN=/opt/homebrew/opt/llvm/bin CARGO_BUILD_JOBS=2 cargo test --locked --tar
 S3.4 now has 2/11 forms decoded under this bounded compute contract. S3.2 remains
 6/24 and S3.5 10/509. No stage is complete; decoder counts exclude remaining
 operand-mode, graphics, Wave64 and synchronization obligations.
+
+## Nonzero mask branch continuation
+
+`S_CBRANCH_EXECNZ` and `S_CBRANCH_VCCNZ` are implemented under the bounded
+Wave32 compute contract. Known masks resolve statically; lane-derived VCC uses
+polarity-aware runtime branches and register joins. The previous VCCZ behavior
+and region whitelist are retained. Both graphics stages reject the new forms,
+including skipped instructions. General loops and divergence remain unsupported.
+
+- Native independent suite: 13 passed, zero ignored, including 224 original Metal
+  programs with API/shader validation. Four tests are existing reference self-tests.
+- Both independently implemented references agree with separately derived expected
+  outputs, including partial EXEC sentinel retention and post-join comparisons.
+- Decoder/compiler/reference regressions: 375 passed, 15 optional LLVM tests ignored.
+  Separately, the LLVM fixture oracle passed 1,230 comparisons across 170 forms.
+- Two independent static reviewers found no blocking defect in the bounded contract.
+- Native readback caught an intentionally inverted runtime VCCNZ predicate;
+  source was restored and all 13 tests passed again. Workspace Clippy, formatting,
+  original fixture reassembly and generated-document checks passed.
+- Logs: `artifacts/s32-mask-nonzero/native.log`, `restored-native.log`, `cpu.log`,
+  `llvm.log`, `targets.log`, `mutation.json`, `clippy.log`.
+
+```sh
+MTL_DEBUG_LAYER=1 MTL_SHADER_VALIDATION=1 CARGO_BUILD_JOBS=2 cargo test --locked --target aarch64-apple-darwin -p xenora-semantic-review --test branch_mask_nonzero -- --include-ignored --nocapture --test-threads=1
+```
+
+S3.2 now has 8/24 decoded forms, S3.4 has 2/11 and S3.5 has 10/509. These remain
+open workstreams; the totals do not include operand-mode and architecture debt.

@@ -34,7 +34,7 @@
 //! lane and the lowest-index error is reported, so programs without compares
 //! fail exactly as independent per-lane runs did. Signed compares flip the sign
 //! bit of both operands and then compare unsigned. VCC_LO is uninitialized,
-//! known or lane-derived; a lane-derived VCC_LO feeds `s_cbranch_vccz` only
+//! known or lane-derived; a lane-derived VCC_LO feeds `s_cbranch_vccz`/`s_cbranch_vccnz` only
 //! after a static check of the skipped region.
 
 const MAX_CODE_BYTES: usize = 1024;
@@ -106,9 +106,10 @@ enum Insn {
     SCmp(u32, Src, Src),
     BranchScc0(usize),
     BranchScc1(usize),
-    BranchMaskZero {
+    BranchMask {
         target: usize,
         register: usize,
+        nonzero: bool,
     },
     Branch(usize),
     VMov(u8, Src),
@@ -378,12 +379,16 @@ fn run_wave(program: &[(usize, Insn)], wave: &[u32]) -> Result<Vec<u32>, String>
                         Ok(None)
                     }
                 }),
-            Insn::BranchMaskZero { target, register } => {
+            Insn::BranchMask {
+                target,
+                register,
+                nonzero,
+            } => {
                 if register == 106 && vcc_lane_derived {
                     let live = lanes.iter().find(|lane| lane.error.is_none()).unwrap();
                     check_runtime_region(program, pc, target, live, &sgpr, execution_mask, offset)
                         .and_then(|()| {
-                            if sgpr[106] == Some(0) {
+                            if (sgpr[106] != Some(0)) == nonzero {
                                 index_of(program, target, offset).map(Some)
                             } else {
                                 Ok(None)
@@ -393,7 +398,7 @@ fn run_wave(program: &[(usize, Insn)], wave: &[u32]) -> Result<Vec<u32>, String>
                     sgpr[register]
                         .ok_or_else(|| format!("{offset:#x}: uninitialized mask"))
                         .and_then(|mask| {
-                            if mask == 0 {
+                            if (mask != 0) == nonzero {
                                 index_of(program, target, offset).map(Some)
                             } else {
                                 Ok(None)
@@ -724,7 +729,7 @@ fn compare(
     Ok(mask)
 }
 
-/// Static acceptance of the region skipped by a runtime `s_cbranch_vccz`
+/// Static acceptance of the region skipped by a runtime VCC zero/nonzero branch
 /// (contract 6), independent of lane data, EXEC and the branch outcome.
 fn check_runtime_region(
     program: &[(usize, Insn)],
@@ -1458,7 +1463,7 @@ fn decode(code: &[u8]) -> Result<Vec<(usize, Insn)>, String> {
         if let Insn::Branch(target)
         | Insn::BranchScc0(target)
         | Insn::BranchScc1(target)
-        | Insn::BranchMaskZero { target, .. } = insn
+        | Insn::BranchMask { target, .. } = insn
             && !program.iter().any(|(boundary, _)| *boundary == target)
         {
             return Err(format!(
@@ -1890,15 +1895,16 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
         return Ok((Insn::BranchScc1(branch_target(first, offset)?), 4));
     }
     let tested_register = match first >> 16 {
-        0xbf86 => Some(106),
-        0xbf88 => Some(126),
+        0xbf86 | 0xbf87 => Some(106),
+        0xbf88 | 0xbf89 => Some(126),
         _ => None,
     };
     if let Some(register) = tested_register {
         return Ok((
-            Insn::BranchMaskZero {
+            Insn::BranchMask {
                 target: branch_target(first, offset)?,
                 register,
+                nonzero: first & 0x00010000 != 0,
             },
             4,
         ));

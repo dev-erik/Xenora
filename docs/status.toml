@@ -2250,3 +2250,27 @@ gpu = "fixture verified"
 recognized = true
 decoded = true
 llvm = "three-way passed"
+
+[[instruction]]
+form = "s_cbranch_execnz"
+encoding = "Signed SOPP dword target; forward-only Wave32 compute; graphics rejected"
+representation = "4 B"
+lowering = "resolved nonzero EXEC_LO branch; existing runtime-region whitelist retained"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "s_cbranch_vccnz"
+encoding = "Signed SOPP dword target; forward-only Wave32 compute; graphics rejected"
+representation = "4 B"
+lowering = "resolved or bounded runtime nonzero VCC_LO branch with polarity-aware joins; existing runtime-region whitelist retained"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"

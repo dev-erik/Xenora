@@ -65,9 +65,19 @@ pub const S_CBRANCH_EXECZ: Opcode = Opcode {
     bits: 0xbf880000,
     bytes: 4,
 };
+pub const S_CBRANCH_EXECNZ: Opcode = Opcode {
+    mask: 0xffff0000,
+    bits: 0xbf890000,
+    bytes: 4,
+};
 pub const S_CBRANCH_VCCZ: Opcode = Opcode {
     mask: 0xffff0000,
     bits: 0xbf860000,
+    bytes: 4,
+};
+pub const S_CBRANCH_VCCNZ: Opcode = Opcode {
+    mask: 0xffff0000,
+    bits: 0xbf870000,
     bytes: 4,
 };
 pub const S_BRANCH: Opcode = Opcode {

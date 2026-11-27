@@ -14,8 +14,11 @@ logical lane, numbered by the one-dimensional grid index modulo 32. Partial
 masks limit vector arithmetic and moves to selected lanes. These instructions
 must write an initialized destination so inactive lanes can retain their values.
 Empty EXEC suppresses vector arithmetic and moves. Reachable vector memory
-operations require full EXEC. Forward branches on EXEC or the vector condition
+operations require full EXEC. Forward zero/nonzero branches on EXEC or the vector condition
 code (VCC) test only their low halves. VCC must be initialized before use.
+EXECNZ/VCCNZ are compute-only; graphics rejects even skipped occurrences.
+Lane-derived VCCNZ uses the same bounded integer-vector region restrictions
+as VCCZ, with complementary branch and register-join polarity.
 
 The Wave32 compute contract also supports `V_MBCNT_LO_U32_B32` and
 `V_MBCNT_HI_U32_B32` with the existing checked VOP3 source modes. LO counts

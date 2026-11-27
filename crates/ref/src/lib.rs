@@ -231,8 +231,12 @@ pub enum BranchCondition {
     SccOne,
     /// Take the branch when the low half of VCC is clear.
     VccZero,
+    /// Take the branch when any bit of the low half of VCC is set.
+    VccNonZero,
     /// Take the branch when the low half of EXEC is clear.
     ExecZero,
+    /// Take the branch when any bit of the low half of EXEC is set.
+    ExecNonZero,
 }
 
 /// SOP2 operations decoded by the reference interpreter.
@@ -796,7 +800,7 @@ pub fn decode(code: &[u8]) -> Result<Vec<DecodedInstruction>, ReferenceError> {
             [
                 lo,
                 hi,
-                opcode @ (0x82 | 0x84 | 0x85 | 0x86 | 0x88),
+                opcode @ (0x82 | 0x84 | 0x85 | 0x86 | 0x87 | 0x88 | 0x89),
                 0xbf,
                 ..,
             ] => {
@@ -809,7 +813,9 @@ pub fn decode(code: &[u8]) -> Result<Vec<DecodedInstruction>, ReferenceError> {
                             0x84 => BranchCondition::SccZero,
                             0x85 => BranchCondition::SccOne,
                             0x86 => BranchCondition::VccZero,
+                            0x87 => BranchCondition::VccNonZero,
                             0x88 => BranchCondition::ExecZero,
+                            0x89 => BranchCondition::ExecNonZero,
                             _ => BranchCondition::Always,
                         },
                     },
@@ -2003,10 +2009,18 @@ fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32
                 target: destination,
                 condition,
             } => {
-                if condition == BranchCondition::VccZero && scalars[VCC_LO].is_none() {
+                if matches!(
+                    condition,
+                    BranchCondition::VccZero | BranchCondition::VccNonZero
+                ) && scalars[VCC_LO].is_none()
+                {
                     return Err(error(offset, "branch with uninitialized VCC_LO"));
                 }
-                if condition == BranchCondition::VccZero && lane_derived_vcc {
+                if matches!(
+                    condition,
+                    BranchCondition::VccZero | BranchCondition::VccNonZero
+                ) && lane_derived_vcc
+                {
                     check_runtime_region(
                         &program[position + 1..],
                         destination,
@@ -2026,7 +2040,9 @@ fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32
                         scc.ok_or_else(|| error(offset, "branch with uninitialized SCC"))?
                     }
                     BranchCondition::VccZero => scalars[VCC_LO] == Some(0),
+                    BranchCondition::VccNonZero => scalars[VCC_LO] != Some(0),
                     BranchCondition::ExecZero => exec == 0,
+                    BranchCondition::ExecNonZero => exec != 0,
                 };
                 if take_branch {
                     target = destination;

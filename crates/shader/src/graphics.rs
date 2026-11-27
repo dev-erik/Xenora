@@ -723,6 +723,15 @@ fn lift(
     for decoded in decoded {
         if matches!(
             decoded.instruction,
+            Instruction::BranchExecNonZero { .. } | Instruction::BranchVccNonZero { .. }
+        ) {
+            return Err(CompileError::Verify {
+                offset: decoded.offset,
+                reason: "EXECNZ/VCCNZ require the Wave32 compute branch contract",
+            });
+        }
+        if matches!(
+            decoded.instruction,
             Instruction::VectorBitBinary {
                 op: VectorBitBinaryOp::MbcntLoU32B32 | VectorBitBinaryOp::MbcntHiU32B32,
                 ..

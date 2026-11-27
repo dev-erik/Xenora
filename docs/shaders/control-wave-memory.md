@@ -6,7 +6,7 @@ The earlier 7/8/12 totals excluded non-arithmetic families. The [generated check
 
 ## S3.2 control flow
 
-First increment: SCC1 complements the existing SCC0 condition. Indirect calls/returns, general loops, traps and full divergent control flow remain beyond this increment. Branch-target validation, undefined SCC and countdown proofs must remain intact.
+Implemented increments: SCC1 complements SCC0; Wave32 compute EXECNZ/VCCNZ complement the existing zero-mask branches. Indirect calls/returns, general loops, traps and full divergent control flow remain beyond this increment. Branch-target validation, undefined SCC and countdown proofs must remain intact.
 
 ## S3.4 wave and lane
 
@@ -68,7 +68,7 @@ These are dependency groups, not equal-sized tasks or a complete operand matrix.
 
 | Stage | Next bounded work | Architectural work still required |
 | --- | --- | --- |
-| S3.2 | Complementary EXECNZ/VCCNZ branches; additional proven loop shapes | Compute loops and live-out joins; code addresses and calls/returns; exceptions; dynamic EXEC and reconvergence |
+| S3.2 | Additional proven loop shapes | Compute loops and live-out joins; code addresses and calls/returns; exceptions; dynamic EXEC and reconvergence |
 | S3.4 | Explicit contracts for the remaining nine lane forms | Inactive/absent source lanes; cross-lane data movement; graphics/helper lanes; Wave64; DPP/SDWA mode coverage |
 | S3.5 | More buffer transfer forms with explicit addressing and destination spans | Multiple outstanding transfers; descriptors and address spaces; scalar/private/LDS memory; atomics and rendezvous; image/stage-interface matrices |
 
@@ -79,7 +79,7 @@ dependency states are modeled. The full-stage acceptance criteria remain open.
 
 ### Next bounded control and memory contracts
 
-Planned control increment: `S_CBRANCH_EXECNZ` and `S_CBRANCH_VCCNZ` test the
+Implemented control increment: `S_CBRANCH_EXECNZ` and `S_CBRANCH_VCCNZ` test the
 nonzero low mask under Wave32. Preserve full-stream target validation and
 forward-only compute admission. Lane-derived VCC may skip only the existing
 validated integer-vector region; joined values must select pre-branch state

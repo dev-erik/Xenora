@@ -93,6 +93,28 @@ impl fmt::Display for Value {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum MaskCondition {
+    Zero,
+    NonZero,
+}
+
+impl MaskCondition {
+    fn suffix(self) -> &'static str {
+        match self {
+            Self::Zero => "vccz",
+            Self::NonZero => "vccnz",
+        }
+    }
+
+    fn fallthrough_test(self) -> &'static str {
+        match self {
+            Self::Zero => "!=",
+            Self::NonZero => "==",
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 enum Op {
     Load,
@@ -121,14 +143,15 @@ enum Op {
         src1: Value,
         exec: u32,
     },
-    /// `s_cbranch_vccz` on a lane-derived VCC_LO (IR annotation only).
+    /// Conditional branch on a lane-derived VCC_LO (IR annotation only).
     RuntimeBranch {
+        condition: MaskCondition,
         mask: Value,
         target: usize,
     },
-    /// Join after a runtime `s_cbranch_vccz`: the fall-through value when the
-    /// mask is nonzero (branch not taken), else the value from before the branch.
-    JoinVccz {
+    /// Select fall-through or pre-branch state according to the branch polarity.
+    JoinVcc {
+        condition: MaskCondition,
         mask: Value,
         fallthrough: Value,
         taken: Value,
@@ -151,10 +174,11 @@ impl Op {
             Self::Store(value) => vec![value],
             Self::LaneMask { src0, src1, .. } => vec![src0, src1],
             Self::RuntimeBranch { mask, .. } => vec![mask],
-            Self::JoinVccz {
+            Self::JoinVcc {
                 mask,
                 fallthrough,
                 taken,
+                ..
             } => vec![mask, fallthrough, taken],
         }
     }
@@ -201,13 +225,15 @@ impl Op {
                 name(active),
                 name(inactive)
             ),
-            Self::JoinVccz {
+            Self::JoinVcc {
+                condition,
                 mask,
                 fallthrough,
                 taken,
             } => format!(
-                "{} != 0u ? {} : {}",
+                "{} {} 0u ? {} : {}",
                 name(mask),
+                condition.fallthrough_test(),
                 name(fallthrough),
                 name(taken)
             ),
@@ -699,8 +725,13 @@ pub fn compile(architecture: Architecture, bytes: &[u8]) -> Result<CompiledShade
                 );
                 continue;
             }
-            Op::RuntimeBranch { mask, target } => {
-                let _ = writeln!(ir, "{offset:04x}: branch.vccz {mask} -> 0x{target:04x}");
+            Op::RuntimeBranch {
+                condition,
+                mask,
+                target,
+            } => {
+                let suffix = condition.suffix();
+                let _ = writeln!(ir, "{offset:04x}: branch.{suffix} {mask} -> 0x{target:04x}");
                 continue;
             }
             Op::MergeLanes {
@@ -714,12 +745,16 @@ pub fn compile(architecture: Architecture, bytes: &[u8]) -> Result<CompiledShade
                     operation.expression(&thread, "", "(index & 31u)")
                 ),
             ),
-            Op::JoinVccz {
+            Op::JoinVcc {
+                condition,
                 mask,
                 fallthrough,
                 taken,
             } => (
-                format!("{dest} = join.vccz {mask}, {fallthrough}, {taken}"),
+                format!(
+                    "{dest} = join.{} {mask}, {fallthrough}, {taken}",
+                    condition.suffix()
+                ),
                 format!("uint {dest} = {};", operation.expression(&thread, "", "")),
             ),
             Op::LaneMask {
@@ -830,8 +865,8 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
     let mut skip_before = 0;
     // Set while VCC_LO holds a lane-derived compare mask (scalars[VCC_LO] is then None).
     let mut lane_vcc: Option<Value> = None;
-    // An open runtime `s_cbranch_vccz` region: its end, mask and the VGPRs at the branch.
-    let mut region: Option<(usize, Value, [Option<Value>; 256])> = None;
+    // Open runtime VCC region: end, mask, polarity and pre-branch VGPRs.
+    let mut region: Option<(usize, Value, MaskCondition, [Option<Value>; 256])> = None;
 
     // Every decoded instruction must satisfy the fixture layout and binding
     // contract, even when a known branch skips it.
@@ -841,7 +876,9 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
             Instruction::Branch { target }
             | Instruction::BranchSccZero { target }
             | Instruction::BranchSccOne { target }
+            | Instruction::BranchExecNonZero { target }
             | Instruction::BranchExecZero { target }
+            | Instruction::BranchVccNonZero { target }
             | Instruction::BranchVccZero { target }
                 if target <= offset
                     || decoded
@@ -877,7 +914,7 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
     for instruction in decoded {
         let offset = instruction.offset;
         let error = |reason| CompileError::Verify { offset, reason };
-        if let Some((end, mask, before)) = region
+        if let Some((end, mask, condition, before)) = region
             && offset >= end
         {
             region = None;
@@ -888,7 +925,8 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
                     let next = Value(operations.len());
                     operations.push((
                         end,
-                        Op::JoinVccz {
+                        Op::JoinVcc {
+                            condition,
                             mask,
                             fallthrough,
                             taken,
@@ -919,7 +957,7 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
             }
         }
         // docs/shaders/vector-compare.md section 6: checked whatever EXEC is.
-        if let Some((_, _, before)) = &region {
+        if let Some((_, _, condition, before)) = &region {
             match instruction.instruction {
                 Instruction::VectorLshlrevB32 { src0, .. }
                 | Instruction::VectorLshrrevB32 { src0, .. }
@@ -929,7 +967,11 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
                 | Instruction::VectorXorB32 { src0, .. }
                     if !matches!(src0, VectorSource::Register(_)) =>
                 {
-                    return Err(error("runtime s_cbranch_vccz integer SRC0 must be a VGPR"));
+                    return Err(error(if *condition == MaskCondition::Zero {
+                        "runtime s_cbranch_vccz integer SRC0 must be a VGPR"
+                    } else {
+                        "runtime s_cbranch_vccnz integer SRC0 must be a VGPR"
+                    }));
                 }
                 _ => {}
             }
@@ -943,15 +985,19 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
                 | Instruction::VectorOrB32 { dst, .. }
                 | Instruction::VectorXorB32 { dst, .. } => dst,
                 _ => {
-                    return Err(error(
-                        "code skipped by a runtime s_cbranch_vccz may contain only v_mov_b32, v_add_nc_u32_e64 and the hand-written integer VOP2 forms",
-                    ));
+                    return Err(error(if *condition == MaskCondition::Zero {
+                        "code skipped by a runtime s_cbranch_vccz may contain only v_mov_b32, v_add_nc_u32_e64 and the hand-written integer VOP2 forms"
+                    } else {
+                        "code skipped by a runtime s_cbranch_vccnz may contain only v_mov_b32, v_add_nc_u32_e64 and the hand-written integer VOP2 forms"
+                    }));
                 }
             };
             if before[usize::from(dst)].is_none() {
-                return Err(error(
-                    "a VGPR written under a runtime s_cbranch_vccz must be initialized before the branch",
-                ));
+                return Err(error(if *condition == MaskCondition::Zero {
+                    "a VGPR written under a runtime s_cbranch_vccz must be initialized before the branch"
+                } else {
+                    "a VGPR written under a runtime s_cbranch_vccnz must be initialized before the branch"
+                }));
             }
         }
         let read = |register: u8| {
@@ -1282,18 +1328,37 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
                 lane_vcc = Some(mask);
                 continue;
             }
-            Instruction::BranchVccZero { target } if let Some(mask) = lane_vcc => {
+            Instruction::BranchVccZero { target } | Instruction::BranchVccNonZero { target }
+                if let Some(mask) = lane_vcc =>
+            {
+                let condition =
+                    if matches!(instruction.instruction, Instruction::BranchVccZero { .. }) {
+                        MaskCondition::Zero
+                    } else {
+                        MaskCondition::NonZero
+                    };
                 if pending_load.is_some() {
-                    return Err(error(
-                        "a runtime s_cbranch_vccz requires no outstanding vector load",
-                    ));
+                    return Err(error(if condition == MaskCondition::Zero {
+                        "a runtime s_cbranch_vccz requires no outstanding vector load"
+                    } else {
+                        "a runtime s_cbranch_vccnz requires no outstanding vector load"
+                    }));
                 }
-                region = Some((target, mask, registers));
-                (None, Op::RuntimeBranch { mask, target })
+                region = Some((target, mask, condition, registers));
+                (
+                    None,
+                    Op::RuntimeBranch {
+                        condition,
+                        mask,
+                        target,
+                    },
+                )
             }
             Instruction::BranchSccZero { target }
             | Instruction::BranchSccOne { target }
+            | Instruction::BranchExecNonZero { target }
             | Instruction::BranchExecZero { target }
+            | Instruction::BranchVccNonZero { target }
             | Instruction::BranchVccZero { target } => {
                 let taken = match instruction.instruction {
                     Instruction::BranchSccZero { .. } => {
@@ -1307,6 +1372,12 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
                             .ok_or_else(|| error("conditional branch reads uninitialized VCC_LO"))?
                             == 0
                     }
+                    Instruction::BranchVccNonZero { .. } => {
+                        scalars[VCC_LO]
+                            .ok_or_else(|| error("conditional branch reads uninitialized VCC_LO"))?
+                            != 0
+                    }
+                    Instruction::BranchExecNonZero { .. } => exec != 0,
                     _ => exec == 0,
                 };
                 if taken {

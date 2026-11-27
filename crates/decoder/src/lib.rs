@@ -10,12 +10,12 @@ pub use xenora_isa::{
 };
 use xenora_isa::{
     BUFFER_LOAD_DWORD, BUFFER_STORE_DWORD, EXP, IMAGE_SAMPLE_LZ, IMAGE_STORE, S_BRANCH,
-    S_CBRANCH_EXECZ, S_CBRANCH_SCC0, S_CBRANCH_SCC1, S_CBRANCH_VCCZ, S_ENDPGM, S_MOV_B32,
-    S_WAITCNT, S_WAITCNT_VMCNT, S_WAITCNT_VSCNT, V_ADD_F32, V_AND_B32, V_ASHRREV_I32, V_CMP_EQ_I32,
-    V_CMP_EQ_U32, V_CMP_GE_I32, V_CMP_GE_U32, V_CMP_GT_I32, V_CMP_GT_U32, V_CMP_LE_I32,
-    V_CMP_LE_U32, V_CMP_LT_I32, V_CMP_LT_U32, V_CMP_NE_I32, V_CMP_NE_U32, V_INTERP_P1_F32,
-    V_INTERP_P2_F32, V_LSHLREV_B32, V_LSHRREV_B32, V_MOV_B32, V_MUL_F32, V_OR_B32, V_XOR_B32,
-    VCC_LO,
+    S_CBRANCH_EXECNZ, S_CBRANCH_EXECZ, S_CBRANCH_SCC0, S_CBRANCH_SCC1, S_CBRANCH_VCCNZ,
+    S_CBRANCH_VCCZ, S_ENDPGM, S_MOV_B32, S_WAITCNT, S_WAITCNT_VMCNT, S_WAITCNT_VSCNT, V_ADD_F32,
+    V_AND_B32, V_ASHRREV_I32, V_CMP_EQ_I32, V_CMP_EQ_U32, V_CMP_GE_I32, V_CMP_GE_U32, V_CMP_GT_I32,
+    V_CMP_GT_U32, V_CMP_LE_I32, V_CMP_LE_U32, V_CMP_LT_I32, V_CMP_LT_U32, V_CMP_NE_I32,
+    V_CMP_NE_U32, V_INTERP_P1_F32, V_INTERP_P2_F32, V_LSHLREV_B32, V_LSHRREV_B32, V_MOV_B32,
+    V_MUL_F32, V_OR_B32, V_XOR_B32, VCC_LO,
 };
 
 use xenora_isa::meta::EncodingFamily;
@@ -45,7 +45,7 @@ const fn concat_forms<const N: usize>() -> [(&'static str, EncodingFamily); N] {
 }
 
 /// Decoded forms not yet described by the semantic registry.
-const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 112] = [
+const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 114] = [
     ("V_MBCNT_LO_U32_B32", EncodingFamily::Vop3),
     ("V_MBCNT_HI_U32_B32", EncodingFamily::Vop3),
     ("V_MAD_I32_I24", EncodingFamily::Vop3),
@@ -103,6 +103,8 @@ const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 112] = [
     ("S_MOVK_I32", EncodingFamily::Sopk),
     ("S_MULK_I32", EncodingFamily::Sopk),
     ("S_BRANCH", EncodingFamily::Sopp),
+    ("S_CBRANCH_EXECNZ", EncodingFamily::Sopp),
+    ("S_CBRANCH_VCCNZ", EncodingFamily::Sopp),
     ("S_CBRANCH_EXECZ", EncodingFamily::Sopp),
     ("S_CBRANCH_SCC0", EncodingFamily::Sopp),
     ("S_CBRANCH_SCC1", EncodingFamily::Sopp),
@@ -179,7 +181,9 @@ impl DecodedInstruction {
             Instruction::Branch { target }
             | Instruction::BranchSccZero { target }
             | Instruction::BranchSccOne { target }
+            | Instruction::BranchExecNonZero { target }
             | Instruction::BranchExecZero { target }
+            | Instruction::BranchVccNonZero { target }
             | Instruction::BranchVccZero { target } => Some(target),
             _ => None,
         }
@@ -672,6 +676,20 @@ fn decode_gfx1030(bytes: &[u8], offset: usize) -> Result<(Instruction, u8), Deco
         return Ok((
             Instruction::BranchSccZero { target },
             S_CBRANCH_SCC0.byte_len(),
+        ));
+    }
+    if S_CBRANCH_EXECNZ.matches(first) {
+        let target = branch_target(first, offset, "s_cbranch_execnz")?;
+        return Ok((
+            Instruction::BranchExecNonZero { target },
+            S_CBRANCH_EXECNZ.byte_len(),
+        ));
+    }
+    if S_CBRANCH_VCCNZ.matches(first) {
+        let target = branch_target(first, offset, "s_cbranch_vccnz")?;
+        return Ok((
+            Instruction::BranchVccNonZero { target },
+            S_CBRANCH_VCCNZ.byte_len(),
         ));
     }
     if S_CBRANCH_EXECZ.matches(first) {
