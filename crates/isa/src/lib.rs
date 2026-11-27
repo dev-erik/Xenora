@@ -72,6 +72,50 @@ impl fmt::Display for VectorSource {
     }
 }
 
+/// Value-only integer binary operation with two full VOP3 source operands.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum VectorBinaryOp {
+    /// Existing registry arithmetic semantics.
+    Alu(VectorAluOp),
+    /// `v_and_b32`.
+    AndB32,
+    /// `v_or_b32`.
+    OrB32,
+    /// `v_xor_b32`.
+    XorB32,
+    /// `v_lshlrev_b32`.
+    LshlrevB32,
+    /// `v_lshrrev_b32`.
+    LshrrevB32,
+    /// `v_ashrrev_i32`.
+    AshrrevI32,
+}
+impl VectorBinaryOp {
+    /// Canonical e64 assembly mnemonic.
+    pub const fn assembly_name(self) -> &'static str {
+        match self {
+            Self::Alu(VectorAluOp::MulI32I24) => "v_mul_i32_i24_e64",
+            Self::Alu(VectorAluOp::MulHiI32I24) => "v_mul_hi_i32_i24_e64",
+            Self::Alu(VectorAluOp::MulU32U24) => "v_mul_u32_u24_e64",
+            Self::Alu(VectorAluOp::MulHiU32U24) => "v_mul_hi_u32_u24_e64",
+            Self::Alu(VectorAluOp::MinI32) => "v_min_i32_e64",
+            Self::Alu(VectorAluOp::MaxI32) => "v_max_i32_e64",
+            Self::Alu(VectorAluOp::MinU32) => "v_min_u32_e64",
+            Self::Alu(VectorAluOp::MaxU32) => "v_max_u32_e64",
+            Self::Alu(VectorAluOp::XnorB32) => "v_xnor_b32_e64",
+            Self::Alu(VectorAluOp::AddNcU32) => "v_add_nc_u32_e64",
+            Self::Alu(VectorAluOp::SubNcU32) => "v_sub_nc_u32_e64",
+            Self::Alu(VectorAluOp::SubrevNcU32) => "v_subrev_nc_u32_e64",
+            Self::AndB32 => "v_and_b32_e64",
+            Self::OrB32 => "v_or_b32_e64",
+            Self::XorB32 => "v_xor_b32_e64",
+            Self::LshlrevB32 => "v_lshlrev_b32_e64",
+            Self::LshrrevB32 => "v_lshrrev_b32_e64",
+            Self::AshrrevI32 => "v_ashrrev_i32_e64",
+        }
+    }
+}
+
 /// Full-width, value-only 32-bit vector product.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum VectorProductOp {
@@ -318,6 +362,19 @@ pub enum Instruction {
         src0: VectorSource,
         src1: VectorSource,
     },
+    /// Canonical e64 integer binary alias; preserves SCC, VCC and EXEC.
+    VectorBinaryE64 {
+        op: VectorBinaryOp,
+        dst: u8,
+        src0: VectorSource,
+        src1: VectorSource,
+    },
+    /// Canonical e64 integer unary alias; preserves SCC, VCC and EXEC.
+    VectorUnaryE64 {
+        op: VectorUnaryOp,
+        dst: u8,
+        src: VectorSource,
+    },
     /// Unmodified mask/count operation; preserves SCC, VCC and EXEC.
     VectorBitBinary {
         op: VectorBitBinaryOp,
@@ -523,6 +580,14 @@ impl Instruction {
             Self::MoveB32 { .. } => "v_mov_b32_e32",
             Self::AddNoCarryU32 { .. } => "v_add_nc_u32_e64",
             Self::VectorProduct { op, .. } => op.mnemonic(),
+            Self::VectorBinaryE64 { op, .. } => op.assembly_name(),
+            Self::VectorUnaryE64 { op, .. } => match op {
+                VectorUnaryOp::NotB32 => "v_not_b32_e64",
+                VectorUnaryOp::BfrevB32 => "v_bfrev_b32_e64",
+                VectorUnaryOp::FfbhU32 => "v_ffbh_u32_e64",
+                VectorUnaryOp::FfblB32 => "v_ffbl_b32_e64",
+                VectorUnaryOp::FfbhI32 => "v_ffbh_i32_e64",
+            },
             Self::VectorBitBinary { op, .. } => op.mnemonic(),
             Self::VectorTernary { op, .. } => op.mnemonic(),
             Self::ScalarMoveB32 { .. } => "s_mov_b32",
@@ -624,6 +689,9 @@ impl fmt::Display for Instruction {
             Self::VectorProduct {
                 dst, src0, src1, ..
             }
+            | Self::VectorBinaryE64 {
+                dst, src0, src1, ..
+            }
             | Self::VectorBitBinary {
                 dst, src0, src1, ..
             } => write!(formatter, " v{dst}, {src0}, {src1}"),
@@ -634,7 +702,9 @@ impl fmt::Display for Instruction {
                 src2,
                 ..
             } => write!(formatter, " v{dst}, {src0}, {src1}, {src2}"),
-            Self::VectorUnary { dst, src, .. } => write!(formatter, " v{dst}, {src}"),
+            Self::VectorUnary { dst, src, .. } | Self::VectorUnaryE64 { dst, src, .. } => {
+                write!(formatter, " v{dst}, {src}")
+            }
             Self::VectorAlu {
                 dst, src0, src1, ..
             } => {

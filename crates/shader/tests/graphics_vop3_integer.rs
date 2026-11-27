@@ -5,15 +5,17 @@ use xenora_shader::{
     compile_graphics_pipeline_typed,
 };
 const VS: &[u8] = include_bytes!("../../../fixtures/rdna2/x9-constant-vs.bin");
-const OPS: [u32; 22] = [
+const OPS: [u32; 45] = [
     361, 362, 364, 330, 877, 881, 867, 868, 328, 334, 882, 376, 329, 838, 839, 879, 338, 339, 341,
-    342, 344, 345,
+    342, 344, 345, 265, 266, 267, 268, 273, 274, 275, 276, 286, 293, 294, 295, 282, 278, 280, 283,
+    284, 285, 439, 440, 441, 442, 443,
 ];
 fn arity(op: u32) -> usize {
-    if matches!(op, 361 | 362 | 364 | 867 | 868) {
-        2
-    } else {
-        3
+    match op {
+        439..=443 => 1,
+        265 | 266 | 267 | 268 | 273 | 274 | 275 | 276 | 286 | 293 | 294 | 295 | 282 | 278 | 280
+        | 283 | 284 | 285 | 361 | 362 | 364 | 867 | 868 => 2,
+        _ => 3,
     }
 }
 fn bytes(words: &[u32]) -> Vec<u8> {
@@ -23,7 +25,8 @@ fn vop(op: u32, dst: u32, a: u32, b: u32) -> u32 {
     op << 25 | dst << 17 | b << 9 | a
 }
 fn operation(op: u32, dst: u32, position: usize, source: u32) -> Vec<u32> {
-    let mut raw = [129, 129, if arity(op) == 2 { 128 } else { 129 }];
+    let mut raw = [128; 3];
+    raw[..arity(op)].fill(129);
     raw[position] = source;
     let mut words = vec![
         0xd4000000 | op << 16 | dst,

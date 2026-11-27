@@ -79,7 +79,7 @@ fn literal_payloads_truncation_and_stream_offsets() {
 }
 
 #[test]
-fn extension_modifiers_and_e64_aliases_remain_rejected() {
+fn extension_and_e64_modifiers_remain_rejected() {
     for op in OPS {
         for selector in [233, 234, 249, 250, 254] {
             let first = op << 25 | 5 << 17 | 2 << 9 | selector;
@@ -90,11 +90,15 @@ fn extension_modifiers_and_e64_aliases_remain_rejected() {
                 }
             }
         }
-        // VOP3 aliases have OP = 256 + the VOP2 OP. No e64 form is added.
+        // These six pinned e64 aliases admit canonical unmodified fields.
         let first = 0xd4000000 | (256 + op) << 16 | 5;
         let second = 128 << 18 | 258 << 9 | 257;
         for first_modifier in [0, 1 << 8, 1 << 15] {
             for second_modifier in [0, 1 << 27, 1 << 29] {
+                if first_modifier == 0 && second_modifier == 0 {
+                    assert!(decode_at(Gfx1030, &bytes(&[first, second]), 0).is_ok());
+                    continue;
+                }
                 assert!(
                     decode_at(
                         Gfx1030,

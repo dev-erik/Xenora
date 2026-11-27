@@ -23,6 +23,10 @@ remains unsupported.
 - Extended the read-only RDNA2 planning CLI (`python3 -m qa rdna2`) with family/status filters, compact summaries, Codex-ready manifests under `artifacts/`, active-claim exclusion (family claims exclude those families; path-only claims block overlapping permitted files), coverage reconcile against `semantic_coverage` without inflating counts, and inventory diffs. Covered by `tests/qa/test_rdna2_plan.py`; planning only, no GPU production edits.
 
 ### Added
+- Added canonical e64 encodings for existing integer binary/unary operations
+  and expanded ADD_NC e64 sources, retaining its existing VGPR runtime-region
+  behavior. Both independent reviewers accepted the bounded implementation.
+
 - Added three-input signed and unsigned integer minimum, maximum and median
   lowering, preserving source words and flag state. Both independent reviewers
   accepted the bounded implementation.

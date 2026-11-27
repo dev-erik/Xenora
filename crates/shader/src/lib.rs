@@ -14,8 +14,9 @@ pub use graphics::{
 
 pub use xenora_decoder::Architecture;
 use xenora_decoder::{
-    DecodeError, DecodedInstruction, Instruction, ScalarSource, VectorBinary, VectorBitBinaryOp,
-    VectorCompareOp, VectorProductOp, VectorSource, VectorTernaryOp, VectorUnaryOp,
+    DecodeError, DecodedInstruction, Instruction, ScalarSource, VectorBinary, VectorBinaryOp,
+    VectorBitBinaryOp, VectorCompareOp, VectorProductOp, VectorSource, VectorTernaryOp,
+    VectorUnaryOp,
 };
 
 /// SGPR index of `vcc_lo`.
@@ -319,6 +320,19 @@ fn vector_unary_expression(op: VectorUnaryOp, source: &str) -> String {
             let differing = format!("(({source}) ^ (0u - (({source}) >> 31u)))");
             format!("({differing} == 0u) ? 0xffffffffu : clz({differing})")
         }
+    }
+}
+
+// Return the existing arithmetic primitive and whether assembly sources reverse.
+fn alias_binary(op: VectorBinaryOp) -> (Binary, bool) {
+    match op {
+        VectorBinaryOp::Alu(op) => (Binary::Vector(op.lowering()), op.swaps_sources()),
+        VectorBinaryOp::AndB32 => (Binary::And, false),
+        VectorBinaryOp::OrB32 => (Binary::Or, false),
+        VectorBinaryOp::XorB32 => (Binary::Xor, false),
+        VectorBinaryOp::LshlrevB32 => (Binary::ShiftLeft, true),
+        VectorBinaryOp::LshrrevB32 => (Binary::ShiftRight, true),
+        VectorBinaryOp::AshrrevI32 => (Binary::ArithmeticShiftRight, true),
     }
 }
 
@@ -853,6 +867,8 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
                 | Instruction::VectorMulF32 { .. }
                 | Instruction::VectorAlu { .. }
                 | Instruction::VectorUnary { .. }
+                | Instruction::VectorUnaryE64 { .. }
+                | Instruction::VectorBinaryE64 { .. }
                 | Instruction::VectorProduct { .. }
                 | Instruction::VectorBitBinary { .. }
                 | Instruction::VectorTernary { .. } => continue,
@@ -1216,6 +1232,44 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
                 }
                 (Some(dst), Op::Product(op, values[0], values[1]))
             }
+            Instruction::VectorBinaryE64 {
+                op,
+                dst,
+                src0,
+                src1,
+            } => {
+                let mut values = [Value(0); 2];
+                for (slot, src) in values.iter_mut().zip([src0, src1]) {
+                    *slot = match src {
+                        VectorSource::Register(register) => read(register)?,
+                        VectorSource::Scalar(register) if usize::from(register) == VCC_LO => {
+                            match (lane_vcc, scalars[VCC_LO]) {
+                                (Some(mask), _) => mask,
+                                (None, Some(bits)) => {
+                                    constant(&mut operations, &mut facts, offset, bits)
+                                }
+                                (None, None) => {
+                                    return Err(error("VOP3 integer reads uninitialized VCC_LO"));
+                                }
+                            }
+                        }
+                        VectorSource::Scalar(register) => {
+                            let bits = read_scalar(ScalarSource::Register(register))?;
+                            constant(&mut operations, &mut facts, offset, bits)
+                        }
+                        VectorSource::Immediate(bits) => {
+                            constant(&mut operations, &mut facts, offset, bits)
+                        }
+                    };
+                }
+                let (operator, reverse) = alias_binary(op);
+                let [left, right] = if reverse {
+                    [values[1], values[0]]
+                } else {
+                    values
+                };
+                (Some(dst), Op::Binary(operator, left, right))
+            }
             Instruction::VectorBitBinary {
                 op,
                 dst,
@@ -1281,7 +1335,8 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
                 }
                 (Some(dst), Op::Ternary(op, values[0], values[1], values[2]))
             }
-            Instruction::VectorUnary { op, dst, src } => {
+            Instruction::VectorUnary { op, dst, src }
+            | Instruction::VectorUnaryE64 { op, dst, src } => {
                 let source = match src {
                     VectorSource::Register(register) => read(register)?,
                     VectorSource::Scalar(register) if usize::from(register) == VCC_LO => {

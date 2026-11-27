@@ -77,8 +77,8 @@ llvm = "three-way passed"
 
 [[instruction]]
 form = "v_add_nc_u32_e64"
-encoding = "VOP3, VGPR destination and two VGPR inputs, modifier fields clear, third source field encoded as inline zero"
-representation = "8 B"
+encoding = "VOP3; checked binary sources; canonical unused SRC2; original VGPR runtime-region behavior retained"
+representation = "8 B or 12 B with shared literal"
 lowering = "MSL unsigned add"
 reference = "implemented"
 cpu = "fixture verified"
@@ -1855,6 +1855,270 @@ form = "v_med3_u32"
 encoding = "VOP3; three checked sources; two scalar identities; modifiers excluded"
 representation = "8 B or 12 B with shared literal"
 lowering = "MSL signed/unsigned integer ordering; compute and graphics"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_mul_i32_i24_e64"
+encoding = "VOP3; checked active sources and canonical unused inline-zero fields; modifiers excluded"
+representation = "8 B or 12 B with shared literal"
+lowering = "existing integer primitive; compute and graphics"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_mul_hi_i32_i24_e64"
+encoding = "VOP3; checked active sources and canonical unused inline-zero fields; modifiers excluded"
+representation = "8 B or 12 B with shared literal"
+lowering = "existing integer primitive; compute and graphics"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_mul_u32_u24_e64"
+encoding = "VOP3; checked active sources and canonical unused inline-zero fields; modifiers excluded"
+representation = "8 B or 12 B with shared literal"
+lowering = "existing integer primitive; compute and graphics"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_mul_hi_u32_u24_e64"
+encoding = "VOP3; checked active sources and canonical unused inline-zero fields; modifiers excluded"
+representation = "8 B or 12 B with shared literal"
+lowering = "existing integer primitive; compute and graphics"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_min_i32_e64"
+encoding = "VOP3; checked active sources and canonical unused inline-zero fields; modifiers excluded"
+representation = "8 B or 12 B with shared literal"
+lowering = "existing integer primitive; compute and graphics"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_max_i32_e64"
+encoding = "VOP3; checked active sources and canonical unused inline-zero fields; modifiers excluded"
+representation = "8 B or 12 B with shared literal"
+lowering = "existing integer primitive; compute and graphics"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_min_u32_e64"
+encoding = "VOP3; checked active sources and canonical unused inline-zero fields; modifiers excluded"
+representation = "8 B or 12 B with shared literal"
+lowering = "existing integer primitive; compute and graphics"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_max_u32_e64"
+encoding = "VOP3; checked active sources and canonical unused inline-zero fields; modifiers excluded"
+representation = "8 B or 12 B with shared literal"
+lowering = "existing integer primitive; compute and graphics"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_xnor_b32_e64"
+encoding = "VOP3; checked active sources and canonical unused inline-zero fields; modifiers excluded"
+representation = "8 B or 12 B with shared literal"
+lowering = "existing integer primitive; compute and graphics"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_sub_nc_u32_e64"
+encoding = "VOP3; checked active sources and canonical unused inline-zero fields; modifiers excluded"
+representation = "8 B or 12 B with shared literal"
+lowering = "existing integer primitive; compute and graphics"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_subrev_nc_u32_e64"
+encoding = "VOP3; checked active sources and canonical unused inline-zero fields; modifiers excluded"
+representation = "8 B or 12 B with shared literal"
+lowering = "existing integer primitive; compute and graphics"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_lshlrev_b32_e64"
+encoding = "VOP3; checked active sources and canonical unused inline-zero fields; modifiers excluded"
+representation = "8 B or 12 B with shared literal"
+lowering = "existing integer primitive; compute and graphics"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_lshrrev_b32_e64"
+encoding = "VOP3; checked active sources and canonical unused inline-zero fields; modifiers excluded"
+representation = "8 B or 12 B with shared literal"
+lowering = "existing integer primitive; compute and graphics"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_ashrrev_i32_e64"
+encoding = "VOP3; checked active sources and canonical unused inline-zero fields; modifiers excluded"
+representation = "8 B or 12 B with shared literal"
+lowering = "existing integer primitive; compute and graphics"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_and_b32_e64"
+encoding = "VOP3; checked active sources and canonical unused inline-zero fields; modifiers excluded"
+representation = "8 B or 12 B with shared literal"
+lowering = "existing integer primitive; compute and graphics"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_or_b32_e64"
+encoding = "VOP3; checked active sources and canonical unused inline-zero fields; modifiers excluded"
+representation = "8 B or 12 B with shared literal"
+lowering = "existing integer primitive; compute and graphics"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_xor_b32_e64"
+encoding = "VOP3; checked active sources and canonical unused inline-zero fields; modifiers excluded"
+representation = "8 B or 12 B with shared literal"
+lowering = "existing integer primitive; compute and graphics"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_not_b32_e64"
+encoding = "VOP3; checked active sources and canonical unused inline-zero fields; modifiers excluded"
+representation = "8 B or 12 B with shared literal"
+lowering = "existing integer primitive; compute and graphics"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_bfrev_b32_e64"
+encoding = "VOP3; checked active sources and canonical unused inline-zero fields; modifiers excluded"
+representation = "8 B or 12 B with shared literal"
+lowering = "existing integer primitive; compute and graphics"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_ffbh_u32_e64"
+encoding = "VOP3; checked active sources and canonical unused inline-zero fields; modifiers excluded"
+representation = "8 B or 12 B with shared literal"
+lowering = "existing integer primitive; compute and graphics"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_ffbl_b32_e64"
+encoding = "VOP3; checked active sources and canonical unused inline-zero fields; modifiers excluded"
+representation = "8 B or 12 B with shared literal"
+lowering = "existing integer primitive; compute and graphics"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_ffbh_i32_e64"
+encoding = "VOP3; checked active sources and canonical unused inline-zero fields; modifiers excluded"
+representation = "8 B or 12 B with shared literal"
+lowering = "existing integer primitive; compute and graphics"
 reference = "implemented"
 cpu = "fixture verified"
 gpu = "fixture verified"

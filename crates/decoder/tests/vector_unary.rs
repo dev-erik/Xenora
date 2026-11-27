@@ -64,7 +64,7 @@ fn vector_unary_literals_keep_following_offsets_and_reject_truncation() {
         assert_eq!(decoded.len(), 2);
         assert_eq!(decoded[1].offset, 8);
     }
-    // VOP3 aliases and their modifiers are deliberately outside this increment.
+    // Noncanonical unused SRC1 remains rejected for unary e64 aliases.
     for opcode in 439..=443 {
         let code: Vec<_> = [0xd4000000u32 | opcode << 16 | 5, 0x02020101]
             .into_iter()

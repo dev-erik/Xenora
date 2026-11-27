@@ -197,7 +197,7 @@ fn mnemonics_display_and_existing_add_domain() {
             )
         );
     }
-    // Existing V_ADD_NC_U32 e64 remains VGPR-only with canonical zero padding.
+    // Existing VGPR/VGPR ADD keeps its representation; generic sources use the alias.
     let add = code(293, 5, [257, 258, 128], 0);
     assert_eq!(
         decode_at(Gfx1030, &add, 0).unwrap().instruction,
@@ -207,7 +207,13 @@ fn mnemonics_display_and_existing_add_domain() {
             src1: 2
         }
     );
-    for raw in [[0, 258, 128], [257, 255, 128], [257, 258, 0]] {
-        assert!(decode_at(Gfx1030, &code(293, 5, raw, 0), 0).is_err());
+    for raw in [[0, 258, 128], [257, 255, 128]] {
+        assert!(matches!(
+            decode_at(Gfx1030, &code(293, 5, raw, 0), 0)
+                .unwrap()
+                .instruction,
+            Instruction::VectorBinaryE64 { .. }
+        ));
     }
+    assert!(decode_at(Gfx1030, &code(293, 5, [257, 258, 0], 0), 0).is_err());
 }

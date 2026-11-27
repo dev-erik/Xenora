@@ -6,6 +6,36 @@ claim of Xbox hardware equivalence. Supporting raw logs, mutation records and
 source manifests remain local and are not distributed with the repository.
 The array-range descriptor increment below was validated on 26 November 2026.
 
+## Stage 3.1 increment: canonical integer e64 aliases
+
+27 November 2026. Eighteen binary and five unary aliases reuse existing integer
+semantics. This adds22 encoding identities and expands the existing ADD_NC e64
+source domain. Old VGPR/VGPR ADD retains its representation and runtime-region
+behavior; new forms preserve source order, flags, inactive lanes and graphics
+provenance. Both independent reviewers accepted the [contract](../shaders/vop3-aliases.md).
+
+Final unchanged-source checks passed341 CPU tests (thirteen ignored),26 LLVM
+tests including1043 new matrix rows and1042 three-way comparisons across158
+forms,13 compute tests including93 native dispatches, and two graphics tests
+covering353 draws. Graphics admission checks cover45 VOP3 identities and every
+active alias source position. Native execution used Apple M4 Max with API/shader
+validation; dispatch/draw totals derive from test loops.
+
+Three mutations were assertion-killed: wrong reverse-shift order, duplicate
+SRC0 capture instead of SRC1, and skipped unary SRC1 padding validation. Source
+restoration is recorded; a later diagnostic-only change retains the old binary
+SRC2 wording and is separately bound by final hashes. Obsolete rejection tests
+were migrated to literal positives while retaining invalid-field checks.
+
+All nine gates passed in `artifacts/validation-full.ApmyxJ`: workspace1260
+passed/0 failed/168 ignored; GPU503 passed/0 failed/1 ignored (overlap).
+Native audit checked141 executables. Final32-file manifest and five logs are in
+`artifacts/s31-alias/`; final independent reports are
+`artifacts/s31-alias-r1-review.md` and `s31-alias-r2-review.md`.
+Only acceptance documentation changed afterward. Full S3.1 and remaining legal
+modifier/special-source coverage stay open; synthetic Metal output does not
+establish Xbox equivalence or game compatibility.
+
 ## Stage 3.1 increment: three-input integer ordering
 
 27 November 2026. Signed and unsigned MIN3, MAX3 and MED3 preserve source words,

@@ -758,6 +758,8 @@ fn lift(
                 }
                 Instruction::VectorAlu { dst, .. }
                 | Instruction::VectorUnary { dst, .. }
+                | Instruction::VectorUnaryE64 { dst, .. }
+                | Instruction::VectorBinaryE64 { dst, .. }
                 | Instruction::VectorProduct { dst, .. }
                 | Instruction::VectorBitBinary { dst, .. }
                 | Instruction::VectorTernary { dst, .. }
@@ -1159,6 +1161,42 @@ fn lift(
                 let result = ir.push(Some(offset), Op::IntegerProduct(op, values[0], values[1]));
                 registers[usize::from(dst)] = Some(result);
             }
+            Instruction::VectorBinaryE64 {
+                op,
+                dst,
+                src0,
+                src1,
+            } if !exporting => {
+                if stage == Stage::Pixel && dst < 2 {
+                    return Err(error("pixel VGPRs 0 and 1 are reserved for interpolation"));
+                }
+                let mut values = [Value(0); 2];
+                for (slot, src) in values.iter_mut().zip([src0, src1]) {
+                    *slot = match src {
+                        VectorSource::Register(register) => read(register)?,
+                        VectorSource::Immediate(bits) => {
+                            ir.push(Some(offset), Op::ScalarBits(ScalarValue::Constant(bits)))
+                        }
+                        VectorSource::Scalar(register) => {
+                            let source = read_scalar(
+                                ScalarSource::Register(register),
+                                &scalars,
+                                &mut ir.uniform_mask,
+                                offset,
+                            )?;
+                            ir.push(Some(offset), Op::ScalarBits(source))
+                        }
+                    };
+                }
+                let (operator, reverse) = super::alias_binary(op);
+                let [left, right] = if reverse {
+                    [values[1], values[0]]
+                } else {
+                    values
+                };
+                let result = ir.push(Some(offset), Op::IntegerBinary(operator, left, right));
+                registers[usize::from(dst)] = Some(result);
+            }
             Instruction::VectorBitBinary {
                 op,
                 dst,
@@ -1223,7 +1261,10 @@ fn lift(
                 );
                 registers[usize::from(dst)] = Some(result);
             }
-            Instruction::VectorUnary { op, dst, src } if !exporting => {
+            Instruction::VectorUnary { op, dst, src }
+            | Instruction::VectorUnaryE64 { op, dst, src }
+                if !exporting =>
+            {
                 if stage == Stage::Pixel && dst < 2 {
                     return Err(error("pixel VGPRs 0 and 1 are reserved for interpolation"));
                 }

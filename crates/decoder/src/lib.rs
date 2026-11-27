@@ -4,16 +4,16 @@ use std::fmt;
 
 pub use xenora_isa::{
     Architecture, CompareRelation, ExportTarget, Instruction, InterpolationPhase, ScalarAluOp,
-    ScalarCompareOp, ScalarSource, ScalarUnaryOp, VectorAluOp, VectorBitBinaryOp, VectorCompareOp,
-    VectorProductOp, VectorSource, VectorTernaryOp, VectorUnaryOp,
+    ScalarCompareOp, ScalarSource, ScalarUnaryOp, VectorAluOp, VectorBinaryOp, VectorBitBinaryOp,
+    VectorCompareOp, VectorProductOp, VectorSource, VectorTernaryOp, VectorUnaryOp,
 };
 use xenora_isa::{
     BUFFER_LOAD_DWORD, BUFFER_STORE_DWORD, EXP, IMAGE_SAMPLE_LZ, IMAGE_STORE, S_BRANCH,
     S_CBRANCH_EXECZ, S_CBRANCH_SCC0, S_CBRANCH_VCCZ, S_ENDPGM, S_MOV_B32, S_WAITCNT,
-    S_WAITCNT_VSCNT, V_ADD_F32, V_ADD_NC_U32, V_AND_B32, V_ASHRREV_I32, V_CMP_EQ_I32, V_CMP_EQ_U32,
-    V_CMP_GE_I32, V_CMP_GE_U32, V_CMP_GT_I32, V_CMP_GT_U32, V_CMP_LE_I32, V_CMP_LE_U32,
-    V_CMP_LT_I32, V_CMP_LT_U32, V_CMP_NE_I32, V_CMP_NE_U32, V_INTERP_P1_F32, V_INTERP_P2_F32,
-    V_LSHLREV_B32, V_LSHRREV_B32, V_MOV_B32, V_MUL_F32, V_OR_B32, V_XOR_B32, VCC_LO,
+    S_WAITCNT_VSCNT, V_ADD_F32, V_AND_B32, V_ASHRREV_I32, V_CMP_EQ_I32, V_CMP_EQ_U32, V_CMP_GE_I32,
+    V_CMP_GE_U32, V_CMP_GT_I32, V_CMP_GT_U32, V_CMP_LE_I32, V_CMP_LE_U32, V_CMP_LT_I32,
+    V_CMP_LT_U32, V_CMP_NE_I32, V_CMP_NE_U32, V_INTERP_P1_F32, V_INTERP_P2_F32, V_LSHLREV_B32,
+    V_LSHRREV_B32, V_MOV_B32, V_MUL_F32, V_OR_B32, V_XOR_B32, VCC_LO,
 };
 
 use xenora_isa::meta::EncodingFamily;
@@ -43,7 +43,29 @@ const fn concat_forms<const N: usize>() -> [(&'static str, EncodingFamily); N] {
 }
 
 /// Decoded forms not yet described by the semantic registry.
-const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 80] = [
+const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 102] = [
+    ("V_MUL_I32_I24", EncodingFamily::Vop3),
+    ("V_MUL_HI_I32_I24", EncodingFamily::Vop3),
+    ("V_MUL_U32_U24", EncodingFamily::Vop3),
+    ("V_MUL_HI_U32_U24", EncodingFamily::Vop3),
+    ("V_MIN_I32", EncodingFamily::Vop3),
+    ("V_MAX_I32", EncodingFamily::Vop3),
+    ("V_MIN_U32", EncodingFamily::Vop3),
+    ("V_MAX_U32", EncodingFamily::Vop3),
+    ("V_XNOR_B32", EncodingFamily::Vop3),
+    ("V_SUB_NC_U32", EncodingFamily::Vop3),
+    ("V_SUBREV_NC_U32", EncodingFamily::Vop3),
+    ("V_AND_B32", EncodingFamily::Vop3),
+    ("V_OR_B32", EncodingFamily::Vop3),
+    ("V_XOR_B32", EncodingFamily::Vop3),
+    ("V_LSHLREV_B32", EncodingFamily::Vop3),
+    ("V_LSHRREV_B32", EncodingFamily::Vop3),
+    ("V_ASHRREV_I32", EncodingFamily::Vop3),
+    ("V_NOT_B32", EncodingFamily::Vop3),
+    ("V_BFREV_B32", EncodingFamily::Vop3),
+    ("V_FFBH_U32", EncodingFamily::Vop3),
+    ("V_FFBL_B32", EncodingFamily::Vop3),
+    ("V_FFBH_I32", EncodingFamily::Vop3),
     ("BUFFER_LOAD_DWORD", EncodingFamily::Mubuf),
     ("BUFFER_STORE_DWORD", EncodingFamily::Mubuf),
     ("EXP", EncodingFamily::Exp),
@@ -455,11 +477,6 @@ fn decode_gfx1030(bytes: &[u8], offset: usize) -> Result<(Instruction, u8), Deco
     }
     if let Some(op) = CheckedVectorOp::from_word(first) {
         return vector_integer_vop3(op, first, bytes);
-    }
-    if V_ADD_NC_U32.matches(first) {
-        let len = V_ADD_NC_U32.byte_len();
-        let second = word(bytes, len)?;
-        return Ok((add_u32(first, second)?, len));
     }
     // Pinned AMD metadata: SOPK ENCODING[31:28] and OP[27:23] form
     // mask 0xff800000. Match complete opcodes so other scalar families and
@@ -1033,6 +1050,8 @@ fn move_b32(first: u32, bytes: &[u8]) -> Result<(Instruction, u8), DecodeErrorKi
 
 // Explicit identities keep arity independent of arithmetic category.
 enum CheckedVectorOp {
+    BinaryAlias(VectorBinaryOp),
+    UnaryAlias(VectorUnaryOp),
     Product(VectorProductOp),
     BitBinary(VectorBitBinaryOp),
     Ternary(VectorTernaryOp),
@@ -1040,6 +1059,30 @@ enum CheckedVectorOp {
 impl CheckedVectorOp {
     fn from_word(first: u32) -> Option<Self> {
         Some(match first & 0xffff0000 {
+            0xd5090000 => Self::BinaryAlias(VectorBinaryOp::Alu(VectorAluOp::MulI32I24)),
+            0xd50a0000 => Self::BinaryAlias(VectorBinaryOp::Alu(VectorAluOp::MulHiI32I24)),
+            0xd50b0000 => Self::BinaryAlias(VectorBinaryOp::Alu(VectorAluOp::MulU32U24)),
+            0xd50c0000 => Self::BinaryAlias(VectorBinaryOp::Alu(VectorAluOp::MulHiU32U24)),
+            0xd5110000 => Self::BinaryAlias(VectorBinaryOp::Alu(VectorAluOp::MinI32)),
+            0xd5120000 => Self::BinaryAlias(VectorBinaryOp::Alu(VectorAluOp::MaxI32)),
+            0xd5130000 => Self::BinaryAlias(VectorBinaryOp::Alu(VectorAluOp::MinU32)),
+            0xd5140000 => Self::BinaryAlias(VectorBinaryOp::Alu(VectorAluOp::MaxU32)),
+            0xd51e0000 => Self::BinaryAlias(VectorBinaryOp::Alu(VectorAluOp::XnorB32)),
+            0xd5250000 => Self::BinaryAlias(VectorBinaryOp::Alu(VectorAluOp::AddNcU32)),
+            0xd5260000 => Self::BinaryAlias(VectorBinaryOp::Alu(VectorAluOp::SubNcU32)),
+            0xd5270000 => Self::BinaryAlias(VectorBinaryOp::Alu(VectorAluOp::SubrevNcU32)),
+            0xd51b0000 => Self::BinaryAlias(VectorBinaryOp::AndB32),
+            0xd51c0000 => Self::BinaryAlias(VectorBinaryOp::OrB32),
+            0xd51d0000 => Self::BinaryAlias(VectorBinaryOp::XorB32),
+            0xd51a0000 => Self::BinaryAlias(VectorBinaryOp::LshlrevB32),
+            0xd5160000 => Self::BinaryAlias(VectorBinaryOp::LshrrevB32),
+            0xd5180000 => Self::BinaryAlias(VectorBinaryOp::AshrrevI32),
+            0xd5b70000 => Self::UnaryAlias(VectorUnaryOp::NotB32),
+            0xd5b80000 => Self::UnaryAlias(VectorUnaryOp::BfrevB32),
+            0xd5b90000 => Self::UnaryAlias(VectorUnaryOp::FfbhU32),
+            0xd5ba0000 => Self::UnaryAlias(VectorUnaryOp::FfblB32),
+            0xd5bb0000 => Self::UnaryAlias(VectorUnaryOp::FfbhI32),
+
             0xd5690000 => Self::Product(VectorProductOp::MulLoU32),
             0xd56a0000 => Self::Product(VectorProductOp::MulHiU32),
             0xd56c0000 => Self::Product(VectorProductOp::MulHiI32),
@@ -1068,12 +1111,21 @@ impl CheckedVectorOp {
     }
     fn arity(&self) -> usize {
         match self {
-            Self::Product(_) | Self::BitBinary(_) => 2,
+            Self::Product(_) | Self::BitBinary(_) | Self::BinaryAlias(_) => 2,
+            Self::UnaryAlias(_) => 1,
             Self::Ternary(_) => 3,
         }
     }
     fn mnemonic(&self) -> &'static str {
         match self {
+            Self::BinaryAlias(op) => op.assembly_name(),
+            Self::UnaryAlias(op) => match op {
+                VectorUnaryOp::NotB32 => "v_not_b32_e64",
+                VectorUnaryOp::BfrevB32 => "v_bfrev_b32_e64",
+                VectorUnaryOp::FfbhU32 => "v_ffbh_u32_e64",
+                VectorUnaryOp::FfblB32 => "v_ffbl_b32_e64",
+                VectorUnaryOp::FfbhI32 => "v_ffbh_i32_e64",
+            },
             Self::Product(op) => op.mnemonic(),
             Self::BitBinary(op) => op.mnemonic(),
             Self::Ternary(op) => op.mnemonic(),
@@ -1081,7 +1133,7 @@ impl CheckedVectorOp {
     }
 }
 
-// This checked path is deliberately separate from the existing VGPR-only ADD.
+// Decode aliases through the same bounded source and modifier checks.
 fn vector_integer_vop3(
     op: CheckedVectorOp,
     first: u32,
@@ -1096,10 +1148,14 @@ fn vector_integer_vop3(
         ));
     }
     let raw = [second & 511, (second >> 9) & 511, (second >> 18) & 511];
-    if op.arity() == 2 && raw[2] != 128 {
+    if raw[op.arity()..].iter().any(|&selector| selector != 128) {
         return Err(unsupported(
             mnemonic,
-            "expected canonical unused SRC2 inline zero",
+            if op.arity() == 1 {
+                "expected canonical unused SRC1 and SRC2 inline zero"
+            } else {
+                "expected canonical unused SRC2 inline zero"
+            },
         ));
     }
     let active = &raw[..op.arity()];
@@ -1137,6 +1193,21 @@ fn vector_integer_vop3(
     let dst = first as u8;
     let [src0, src1, src2] = sources;
     let instruction = match op {
+        CheckedVectorOp::BinaryAlias(VectorBinaryOp::Alu(VectorAluOp::AddNcU32))
+            if matches!(
+                (src0, src1),
+                (VectorSource::Register(_), VectorSource::Register(_))
+            ) =>
+        {
+            add_u32(first, second)?
+        }
+        CheckedVectorOp::BinaryAlias(op) => Instruction::VectorBinaryE64 {
+            op,
+            dst,
+            src0,
+            src1,
+        },
+        CheckedVectorOp::UnaryAlias(op) => Instruction::VectorUnaryE64 { op, dst, src: src0 },
         CheckedVectorOp::Product(op) => Instruction::VectorProduct {
             op,
             dst,

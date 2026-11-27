@@ -121,6 +121,7 @@ enum Insn {
         src0: CmpSrc,
         src1: u8,
     },
+    VAlias(u32, u8, CmpSrc, CmpSrc),
     VAddNc(u8, u8, u8),
     VMulLow(u8, CmpSrc, CmpSrc),
     VMulHighUnsigned(u8, CmpSrc, CmpSrc),
@@ -789,7 +790,8 @@ fn lane_step(
     let read_vcc = || sgpr[106].ok_or_else(|| format!("{offset:#x}: uninitialized vcc_lo"));
     // New VOP3 forms capture every source before committing, including SRC2.
     let vop3 = match insn {
-        Insn::VMulLow(d, a, b)
+        Insn::VAlias(_, d, a, b)
+        | Insn::VMulLow(d, a, b)
         | Insn::VMulHighUnsigned(d, a, b)
         | Insn::VMask(d, a, b)
         | Insn::VCountAdd(d, a, b)
@@ -848,6 +850,15 @@ fn lane_step(
                         .wrapping_sub(if b >= 0x80000000 { a } else { 0 }),
                 }
             }
+            Insn::VAlias(kind, ..) => match kind {
+                22 => b / 2u32.pow(a % 32),
+                24 => i64::from(b as i32).div_euclid(2i64.pow(a % 32)) as u32,
+                26 => (u64::from(b) * 2u64.pow(a % 32)) as u32,
+                27 => a & b,
+                28 => a | b,
+                29 => a ^ b,
+                _ => vector_integer(kind, a, b),
+            },
             Insn::VBitSelect(..) => {
                 let mut out = 0;
                 for bit in 0..32 {
@@ -1375,6 +1386,29 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
                 | 342
                 | 344
                 | 345
+                | 265
+                | 266
+                | 267
+                | 268
+                | 273
+                | 274
+                | 275
+                | 276
+                | 286
+                | 293
+                | 294
+                | 295
+                | 282
+                | 278
+                | 280
+                | 283
+                | 284
+                | 285
+                | 439
+                | 440
+                | 441
+                | 442
+                | 443
         )
     {
         let next = word(code, offset + 4).map_err(|_| fail("truncated VOP3 instruction"))?;
@@ -1382,11 +1416,40 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
             return Err(fail("unsupported VOP3 modifiers"));
         }
         let raw = [next % 512, (next / 512) % 512, (next / 262144) % 512];
-        let count = if matches!(opcode, 361 | 362 | 364 | 867 | 868) {
+        let count = if matches!(opcode, 439..=443) {
+            1
+        } else if matches!(
+            opcode,
+            361 | 362
+                | 364
+                | 867
+                | 868
+                | 265
+                | 266
+                | 267
+                | 268
+                | 273
+                | 274
+                | 275
+                | 276
+                | 286
+                | 293
+                | 294
+                | 295
+                | 282
+                | 278
+                | 280
+                | 283
+                | 284
+                | 285
+        ) {
             2
         } else {
             3
         };
+        if count == 1 && (raw[1] != 128 || raw[2] != 128) {
+            return Err(fail("noncanonical VOP3 unary padding"));
+        }
         if count == 2 && raw[2] != 128 {
             return Err(fail("noncanonical VOP3 binary SRC2"));
         }
@@ -1423,6 +1486,32 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
         }
         let dst = first as u8;
         let insn = match opcode {
+            293 if raw[0] >= 256 && raw[1] >= 256 => Insn::VAddNc(dst, raw[0] as u8, raw[1] as u8),
+            265 => Insn::VAlias(9, dst, args[0], args[1]),
+            266 => Insn::VAlias(10, dst, args[0], args[1]),
+            267 => Insn::VAlias(11, dst, args[0], args[1]),
+            268 => Insn::VAlias(12, dst, args[0], args[1]),
+            273 => Insn::VAlias(17, dst, args[0], args[1]),
+            274 => Insn::VAlias(18, dst, args[0], args[1]),
+            275 => Insn::VAlias(19, dst, args[0], args[1]),
+            276 => Insn::VAlias(20, dst, args[0], args[1]),
+            286 => Insn::VAlias(30, dst, args[0], args[1]),
+            293 => Insn::VAlias(37, dst, args[0], args[1]),
+            294 => Insn::VAlias(38, dst, args[0], args[1]),
+            295 => Insn::VAlias(39, dst, args[0], args[1]),
+            282 => Insn::VAlias(26, dst, args[0], args[1]),
+            278 => Insn::VAlias(22, dst, args[0], args[1]),
+            280 => Insn::VAlias(24, dst, args[0], args[1]),
+            283 => Insn::VAlias(27, dst, args[0], args[1]),
+            284 => Insn::VAlias(28, dst, args[0], args[1]),
+            285 => Insn::VAlias(29, dst, args[0], args[1]),
+
+            439 => Insn::VUnary(Unary::Complement, dst, args[0]),
+            440 => Insn::VUnary(Unary::Mirror, dst, args[0]),
+            441 => Insn::VUnary(Unary::High, dst, args[0]),
+            442 => Insn::VUnary(Unary::Low, dst, args[0]),
+            443 => Insn::VUnary(Unary::SignedHigh, dst, args[0]),
+
             361 => Insn::VMulLow(dst, args[0], args[1]),
             362 => Insn::VMulHighUnsigned(dst, args[0], args[1]),
             364 => Insn::VMulHighSigned(dst, args[0], args[1]),

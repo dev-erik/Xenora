@@ -301,7 +301,7 @@ fn zero_exec_skips_unknown_sources_nonzero_checks_sources_and_old_destination() 
 }
 
 #[test]
-fn reserved_selectors_extensions_e64_and_fp_source_domains_stay_excluded() {
+fn reserved_selectors_modifiers_and_fp_domains_reject_while_e64_aliases_execute() {
     for opcode in OPS {
         for src in (107..=127).chain(209..=239).chain(249..=254) {
             reject(&program(&[op(opcode, 2, src, 1)], 2), &[0], 12, true);
@@ -317,14 +317,24 @@ fn reserved_selectors_extensions_e64_and_fp_source_domains_stay_excluded() {
             reject(&program(&[op(opcode, 2, src, 1), 0], 2), &[0], 12, true);
         }
         reject(&bytes(&[op(opcode, 2, 255, 1)]), &[0], 0, true);
-        for modifiers in [0u32, 0x8000] {
-            reject(
-                &program(&[0xd5000002 | opcode << 16 | modifiers, 0x02020301], 2),
-                &[0],
-                12,
-                true,
-            );
-        }
+        // Canonical integer e64 aliases are now supported; clamp stays excluded.
+        let expected = match opcode {
+            22 | 24 | 29 => 0,
+            26 => 2,
+            27 | 28 => 1,
+            _ => unreachable!(),
+        };
+        check(
+            &program(&[0xd5000002 | opcode << 16, 0x02020301], 2),
+            &[1],
+            &[expected],
+        );
+        reject(
+            &program(&[0xd5008002 | opcode << 16, 0x02020301], 2),
+            &[0],
+            12,
+            true,
+        );
     }
     for opcode in [3, 8] {
         // FP add/mul must retain VGPR-only source decoding.

@@ -78,6 +78,7 @@ pub enum Op {
     Vector(VectorAlu, u8, CompareSource, u8),
     /// VOP2 32-bit integer form: VDST, SRC0 (VGPR, SGPR, `vcc_lo`, inline
     /// integer or literal) and VSRC1. Writes neither VCC nor SCC.
+    VectorBinaryAlias(VectorAlias, u8, CompareSource, CompareSource),
     VectorInteger(VectorInteger, u8, CompareSource, u8),
     VectorUnary(VectorUnary, u8, CompareSource),
     VectorProduct(VectorProduct, u8, CompareSource, CompareSource),
@@ -332,6 +333,13 @@ pub enum VectorAlu {
     FloatMultiply,
 }
 
+/// Canonical e64 aliases retain two independently decoded generic sources.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum VectorAlias {
+    Legacy(VectorAlu),
+    Integer(VectorInteger),
+}
+
 /// VOP2 32-bit integer forms with a general SRC0 (AMD RDNA 2 ISA guide
 /// section 12.7). None has a carry-in or carry-out.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -523,6 +531,29 @@ pub fn decode(code: &[u8]) -> Result<Vec<DecodedInstruction>, ReferenceError> {
                                 | 342
                                 | 344
                                 | 345
+                                | 265
+                                | 266
+                                | 267
+                                | 268
+                                | 273
+                                | 274
+                                | 275
+                                | 276
+                                | 286
+                                | 293
+                                | 294
+                                | 295
+                                | 282
+                                | 278
+                                | 280
+                                | 283
+                                | 284
+                                | 285
+                                | 439
+                                | 440
+                                | 441
+                                | 442
+                                | 443
                         )
                 } =>
             {
@@ -939,12 +970,46 @@ fn decode_vop3_integer(bytes: &[u8], offset: usize) -> Result<(Op, usize), Refer
         return Err(error(offset, "unsupported VOP3 modifiers"));
     }
     let opcode = (first >> 16) & 1023;
-    let binary = matches!(opcode, 361 | 362 | 364 | 867 | 868);
+    let binary = matches!(
+        opcode,
+        361 | 362
+            | 364
+            | 867
+            | 868
+            | 265
+            | 266
+            | 267
+            | 268
+            | 273
+            | 274
+            | 275
+            | 276
+            | 286
+            | 293
+            | 294
+            | 295
+            | 282
+            | 278
+            | 280
+            | 283
+            | 284
+            | 285
+    );
+    let unary = matches!(opcode, 439..=443);
     let raw = [second & 511, (second >> 9) & 511, (second >> 18) & 511];
+    if unary && (raw[1] != 128 || raw[2] != 128) {
+        return Err(error(offset, "noncanonical VOP3 unary SRC1/SRC2"));
+    }
     if binary && raw[2] != 128 {
         return Err(error(offset, "noncanonical VOP3 binary SRC2"));
     }
-    let active = &raw[..if binary { 2 } else { 3 }];
+    let active = &raw[..if unary {
+        1
+    } else if binary {
+        2
+    } else {
+        3
+    }];
     let mut keys = std::collections::BTreeSet::new();
     for &src in active {
         if !matches!(src, 0..=106 | 128..=208 | 240..=248 | 255..=511) {
@@ -977,6 +1042,112 @@ fn decode_vop3_integer(bytes: &[u8], offset: usize) -> Result<(Op, usize), Refer
     }
     let dst = first as u8;
     let op = match opcode {
+        293 if matches!(
+            (args[0], args[1]),
+            (CompareSource::Vector(_), CompareSource::Vector(_))
+        ) =>
+        {
+            Op::Add(dst, raw[0] as u8, raw[1] as u8)
+        }
+        265 => Op::VectorBinaryAlias(
+            VectorAlias::Integer(VectorInteger::from_opcode(9).unwrap()),
+            dst,
+            args[0],
+            args[1],
+        ),
+        266 => Op::VectorBinaryAlias(
+            VectorAlias::Integer(VectorInteger::from_opcode(10).unwrap()),
+            dst,
+            args[0],
+            args[1],
+        ),
+        267 => Op::VectorBinaryAlias(
+            VectorAlias::Integer(VectorInteger::from_opcode(11).unwrap()),
+            dst,
+            args[0],
+            args[1],
+        ),
+        268 => Op::VectorBinaryAlias(
+            VectorAlias::Integer(VectorInteger::from_opcode(12).unwrap()),
+            dst,
+            args[0],
+            args[1],
+        ),
+        273 => Op::VectorBinaryAlias(
+            VectorAlias::Integer(VectorInteger::from_opcode(17).unwrap()),
+            dst,
+            args[0],
+            args[1],
+        ),
+        274 => Op::VectorBinaryAlias(
+            VectorAlias::Integer(VectorInteger::from_opcode(18).unwrap()),
+            dst,
+            args[0],
+            args[1],
+        ),
+        275 => Op::VectorBinaryAlias(
+            VectorAlias::Integer(VectorInteger::from_opcode(19).unwrap()),
+            dst,
+            args[0],
+            args[1],
+        ),
+        276 => Op::VectorBinaryAlias(
+            VectorAlias::Integer(VectorInteger::from_opcode(20).unwrap()),
+            dst,
+            args[0],
+            args[1],
+        ),
+        286 => Op::VectorBinaryAlias(
+            VectorAlias::Integer(VectorInteger::from_opcode(30).unwrap()),
+            dst,
+            args[0],
+            args[1],
+        ),
+        293 => Op::VectorBinaryAlias(
+            VectorAlias::Integer(VectorInteger::from_opcode(37).unwrap()),
+            dst,
+            args[0],
+            args[1],
+        ),
+        294 => Op::VectorBinaryAlias(
+            VectorAlias::Integer(VectorInteger::from_opcode(38).unwrap()),
+            dst,
+            args[0],
+            args[1],
+        ),
+        295 => Op::VectorBinaryAlias(
+            VectorAlias::Integer(VectorInteger::from_opcode(39).unwrap()),
+            dst,
+            args[0],
+            args[1],
+        ),
+        282 => Op::VectorBinaryAlias(
+            VectorAlias::Legacy(VectorAlu::ShiftLeft),
+            dst,
+            args[0],
+            args[1],
+        ),
+        278 => Op::VectorBinaryAlias(
+            VectorAlias::Legacy(VectorAlu::ShiftRight),
+            dst,
+            args[0],
+            args[1],
+        ),
+        280 => Op::VectorBinaryAlias(
+            VectorAlias::Legacy(VectorAlu::ArithmeticShiftRight),
+            dst,
+            args[0],
+            args[1],
+        ),
+        283 => Op::VectorBinaryAlias(VectorAlias::Legacy(VectorAlu::And), dst, args[0], args[1]),
+        284 => Op::VectorBinaryAlias(VectorAlias::Legacy(VectorAlu::Or), dst, args[0], args[1]),
+        285 => Op::VectorBinaryAlias(VectorAlias::Legacy(VectorAlu::Xor), dst, args[0], args[1]),
+        439 => Op::VectorUnary(VectorUnary::Not, dst, args[0]),
+        440 => Op::VectorUnary(VectorUnary::Reverse, dst, args[0]),
+        441 => Op::VectorUnary(VectorUnary::FirstHighUnsigned, dst, args[0]),
+        442 => Op::VectorUnary(VectorUnary::FirstLow, dst, args[0]),
+        443 => Op::VectorUnary(VectorUnary::FirstHighSigned, dst, args[0]),
+
         361 => Op::VectorProduct(VectorProduct::Low, dst, args[0], args[1]),
         362 => Op::VectorProduct(VectorProduct::HighUnsigned, dst, args[0], args[1]),
         364 => Op::VectorProduct(VectorProduct::HighSigned, dst, args[0], args[1]),
@@ -1157,6 +1328,7 @@ fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32
                 | Op::BitBinary(_, dst, ..)
                 | Op::VectorProduct(_, dst, ..)
                 | Op::VectorTernary(_, dst, ..)
+                | Op::VectorBinaryAlias(_, dst, ..)
                 | Op::VectorInteger(_, dst, ..)
                 | Op::VectorUnary(_, dst, _) => {
                     if exec != 0
@@ -1282,7 +1454,8 @@ fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32
                     results[lane] = Some((dst, kind.apply(value)));
                 }
             }
-            Op::VectorProduct(_, dst, a, b)
+            Op::VectorBinaryAlias(_, dst, a, b)
+            | Op::VectorProduct(_, dst, a, b)
             | Op::BitBinary(_, dst, a, b)
             | Op::VectorTernary(_, dst, a, b, _) => {
                 let c = match op {
@@ -1304,6 +1477,10 @@ fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32
                 for lane in (0..lanes).filter(|&lane| executes(lane)) {
                     let (a, b, c) = (source(lane, a)?, source(lane, b)?, source(lane, c)?);
                     let value = match op {
+                        Op::VectorBinaryAlias(VectorAlias::Integer(kind), ..) => kind.apply(a, b),
+                        Op::VectorBinaryAlias(VectorAlias::Legacy(kind), ..) => {
+                            vector_alu(kind, a, b, offset)?
+                        }
                         Op::VectorProduct(VectorProduct::Low, ..) => {
                             (u64::from(a) * u64::from(b)) as u32
                         }
