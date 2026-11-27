@@ -46,7 +46,11 @@ const fn concat_forms<const N: usize>() -> [(&'static str, EncodingFamily); N] {
 }
 
 /// Decoded forms not yet described by the semantic registry.
-const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 121] = [
+const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 126] = [
+    ("DS_BPERMUTE_B32", EncodingFamily::Ds),
+    ("DS_SWIZZLE_B32", EncodingFamily::Ds),
+    ("V_PERMLANE16_B32", EncodingFamily::Vop3),
+    ("V_PERMLANEX16_B32", EncodingFamily::Vop3),
     ("V_WRITELANE_B32", EncodingFamily::Vop3),
     ("V_MBCNT_LO_U32_B32", EncodingFamily::Vop3),
     ("V_MBCNT_HI_U32_B32", EncodingFamily::Vop3),
@@ -79,6 +83,7 @@ const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 121] = [
     ("V_FFBL_B32", EncodingFamily::Vop3),
     ("V_FFBH_I32", EncodingFamily::Vop3),
     ("V_READFIRSTLANE_B32", EncodingFamily::Vop1),
+    ("V_READFIRSTLANE_B32", EncodingFamily::Vop3),
     ("V_READLANE_B32", EncodingFamily::Vop3),
     ("BUFFER_LOAD_DWORD", EncodingFamily::Mubuf),
     ("BUFFER_LOAD_UBYTE", EncodingFamily::Mubuf),
@@ -350,6 +355,101 @@ fn unsupported(mnemonic: &'static str, detail: &'static str) -> DecodeErrorKind 
 
 fn decode_gfx1030(bytes: &[u8], offset: usize) -> Result<(Instruction, u8), DecodeErrorKind> {
     let first = word(bytes, 4)?;
+
+    // Spec-derived VOP3 opcode 386: AMD XML and Table 82 (pp. 257-258).
+    // LLVM does not implement this encoding. Zero unused SRC1/SRC2 is our
+    // bounded admission policy, not a claim of AMD canonical padding.
+    if first & 0xffff0000 == 0xd5820000 {
+        let second = word(bytes, 8)?;
+        let dst = first as u8;
+        if first & 0xff00 != 0 || dst > 105 || !(256..=511).contains(&second) {
+            return Err(unsupported(
+                "v_readfirstlane_b32",
+                "expected normal SGPR destination, VGPR source, zero modifiers and project-selected zero padding",
+            ));
+        }
+        return Ok((
+            Instruction::ReadFirstLaneB32 {
+                dst,
+                src: second as u8,
+            },
+            8,
+        ));
+    }
+
+    // gfx1030 DS uses OP[25:18], GDS[17], and reserved bit 16.
+    let ds_opcode = first & 0xfffc0000;
+    if matches!(ds_opcode, 0xdacc0000 | 0xd8d40000) {
+        let second = word(bytes, 8)?;
+        let bpermute = ds_opcode == 0xdacc0000;
+        let mnemonic = if bpermute {
+            "ds_bpermute_b32"
+        } else {
+            "ds_swizzle_b32"
+        };
+        if first & 0x00030000 != 0 || second & if bpermute { 0x00ff0000 } else { 0x00ffff00 } != 0 {
+            return Err(unsupported(
+                mnemonic,
+                "expected LDS mode and zero reserved/unused fields",
+            ));
+        }
+        let dst = (second >> 24) as u8;
+        let source = second as u8;
+        let offset = first as u16;
+        return Ok((
+            if bpermute {
+                Instruction::DsBpermuteB32 {
+                    dst,
+                    addr: source,
+                    data: (second >> 8) as u8,
+                    offset,
+                }
+            } else {
+                Instruction::DsSwizzleB32 {
+                    dst,
+                    src: source,
+                    offset,
+                }
+            },
+            8,
+        ));
+    }
+    let perm_opcode = first & 0xffff0000;
+    if matches!(perm_opcode, 0xd7770000 | 0xd7780000) {
+        let second = word(bytes, 8)?;
+        let cross_row = perm_opcode == 0xd7780000;
+        let mnemonic = if cross_row {
+            "v_permlanex16_b32"
+        } else {
+            "v_permlane16_b32"
+        };
+        let src = second & 511;
+        let select_lo = (second >> 9) & 511;
+        let select_hi = (second >> 18) & 511;
+        if first & 0xe700 != 0
+            || second & 0xf8000000 != 0
+            || src < 256
+            || select_lo > 105
+            || select_hi > 105
+        {
+            return Err(unsupported(
+                mnemonic,
+                "expected VGPR data, normal SGPR selectors and FI/BC only",
+            ));
+        }
+        return Ok((
+            Instruction::Permlane16B32 {
+                dst: first as u8,
+                src: src as u8,
+                select_lo: select_lo as u8,
+                select_hi: select_hi as u8,
+                cross_row,
+                fetch_inactive: first & 0x800 != 0,
+                bound_control: first & 0x1000 != 0,
+            },
+            8,
+        ));
+    }
 
     // Handwritten matches from pinned AMD rdna2.jsonl; generators remain unchanged.
     if first & 0xfe01fe00 == 0x7e000400 {
@@ -863,6 +963,9 @@ fn decode_gfx1030(bytes: &[u8], offset: usize) -> Result<(Instruction, u8), Deco
         ));
     }
     if S_WAITCNT.matches(first) {
+        if first == 0xbf8cc07f {
+            return Ok((Instruction::WaitLgkm, 4));
+        }
         return scalar_form(
             first,
             S_WAITCNT.byte_len(),

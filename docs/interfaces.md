@@ -6,7 +6,7 @@ The first input is little-endian gfx1030 machine code for a compute fixture with
 
 The production decoder takes borrowed code bytes. Its output records typed instructions, operand classes, original offsets and byte lengths. Unknown encodings and unsupported forms fail with a byte offset. The reference interpreter takes the original bytes and input words and performs its own decoding. It shares no production instruction definitions.
 
-The compiler lifts decoded instructions to typed operations and verifies register initialization, supported resource offsets and termination before generating MSL. The initial subset permits only lane-indexed 32-bit buffer accesses against two disjoint buffers with equal lengths. The input is read-only. Each invocation may write only its own output word. The compiler and reference check instruction boundaries, termination placement and buffer bindings throughout the stream. Register initialization and transfer state are checked on the path selected by compile-time known forward scalar branches. Dynamic branches, workgroup barriers and cross-lane operations remain unsupported.
+The compiler lifts decoded instructions to typed operations and verifies register initialization, supported resource offsets and termination before generating MSL. The initial subset permits only lane-indexed 32-bit buffer accesses against two disjoint buffers with equal lengths. The input is read-only. Each invocation may write only its own output word. The compiler and reference check instruction boundaries, termination placement and buffer bindings throughout the stream. Register initialization and transfer state are checked on the path selected by compile-time known forward scalar branches. General dynamic branches and workgroup barriers remain unsupported. The bounded wave operations and launch requirements below describe admitted cross-lane transfers.
 
 The same input binding supports `BUFFER_LOAD_UBYTE`, `BUFFER_LOAD_SBYTE`,
 `BUFFER_LOAD_USHORT` and `BUFFER_LOAD_SSHORT`. They read the low byte or halfword
@@ -1706,7 +1706,7 @@ The compute translator admits VOP1 `v_readfirstlane_b32` and VOP3
 ordinary VGPRs; scalar destinations are s8–s105. READLANE uses a known ordinary
 SGPR selector whose low five bits are zero. READFIRSTLANE selects zero for
 empty EXEC, or requires bit zero set. Both access the retained source value
-regardless of EXEC. Other selected lanes and graphics uses remain rejected.
+regardless of EXEC. The default entry point retains this partial-wave-safe subset; the explicit full-wave entry point below permits other selections. Graphics uses remain rejected.
 
 The compiler captures the source's IR version and recomputes pure input-derived
 values at the logical wave base `(index & ~31)`, without host SIMD operations.
@@ -1723,3 +1723,76 @@ destination. The write selects `selector & 31`, ignores EXEC, and preserves
 other destination lanes. An absent destination changes none of the present
 invocations. Pending destinations, runtime selectors, modifiers, special/inline
 sources, graphics and lane writes inside runtime branch regions remain rejected.
+
+
+### Explicit full-Wave32 compute launches
+
+`compile_with_options(architecture, bytes, CompileOptions { wave32_launch:
+Wave32Launch::FullWavesRequired })` admits any constant READFIRSTLANE selection
+and normal-SGPR READLANE selectors, including runtime values captured by earlier
+lane reads. READLANE masks the selector to five bits. Each source and selector
+is captured before the destination scalar is overwritten, including aliasing.
+The compiler replays pure input-derived expressions at the selected logical
+lane, retaining prior scalar snapshots and comparison masks.
+
+The resulting shader retains a private launch requirement.
+`CompiledShader::validate_launch` requires 1–4096 words and, for this mode,
+a multiple of 32. `NativeCompute::run_compiled_words` checks that requirement
+before Metal compilation or dispatch. Generated MSL additionally guards invalid
+grid sizes before any memory access; that safeguard does not turn a rejected
+launch into successful computation. Raw-string execution still accepts trusted
+MSL and requires the caller to preserve its launch preconditions. Public MSL
+text remains editable developer input, not a source-integrity guarantee.
+
+The independent reference exposes `execute_with_options` with its own
+`ExecuteOptions` and `Wave32Launch` types. Default `compile` and `execute`
+retain lane-zero reads and partial-wave behavior. Full-wave launches do not
+create or pad absent lanes, introduce Wave64, or establish graphics/helper-lane
+semantics. Runtime lane-read values remain restricted to supported consumers;
+this is not general scalar execution.
+
+
+### Full-wave transfers and DS completion
+
+Full-wave compute launches admit backward gather (`DS_BPERMUTE_B32`), selected
+swizzles (`DS_SWIZZLE_B32`) and within/across-row permutations
+(`V_PERMLANE16_B32` / `V_PERMLANEX16_B32`). Sources are initialized ordinary
+VGPRs. Row selectors are compile-time-known ordinary SGPRs. SWIZZLE and
+PERMLANE require full EXEC; FI/BC bits are admitted for PERMLANE only under
+that all-present, all-active contract. This does not validate their inactive
+source behavior. BPERMUTE uses issue-time static EXEC: inactive sources supply
+zero, and inactive destinations retain their old values.
+
+Each transfer captures its source version before any aliased destination is
+changed. Replaying a transfer inside a comparison, lane read or later transfer
+evaluates its operands in the appropriate selected-lane context. It does not
+use host SIMD membership. Compilation bounds replay nodes, nested gather depth
+and generated MSL size, rejecting excessive expansion before execution. These
+limits can reject programs previously compiled without an early source-size
+check; default execution semantics are preserved.
+
+DS results occupy a pending slot separate from buffer loads. Exact
+`s_waitcnt lgkmcnt(0)` (`0xbf8cc07f`) releases that slot only. VM waits do not
+release DS, and LGKM waits do not release VM. Pending destinations cannot be
+read or replaced, another DS request cannot overlap, and termination requires
+completion. This bounded model does not implement arbitrary counter thresholds,
+multiple outstanding DS operations or LDS memory.
+
+Bitmask and quad swizzles, FFT routing and unmasked left/right rotation follow
+the public RDNA2 guide. **Nonzero-mask rotation is rejected**: the guide's p207
+examples conflict with its p209 pseudocode. For left rotation by one with mask
+one, destination lane zero selects value two in the example but value one in
+the pseudocode. Resolving this requires an authoritative correction or further
+independent evidence; agreement between two implementations of the pseudocode
+is insufficient.
+
+### Spec-derived READFIRSTLANE VOP3 encoding
+
+The AMD XML inventory and VOP3 field layout describe opcode386 as an eight-byte
+READFIRSTLANE. The admitted subset uses ordinary scalar destinations and VGPR
+sources, zero modifiers and **project-selected zero padding** for unused
+source fields. This padding is not described as an AMD canonical requirement.
+It lowers to the same captured lane-read semantics as VOP1. LLVM's source
+acknowledges its missing VOP3 encoding support, so this form has no LLVM
+assembly/disassembly acceptance evidence. Metal readback tests validate
+translation behavior, not acceptance of these bytes by native AMD hardware.

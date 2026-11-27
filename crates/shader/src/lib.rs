@@ -28,11 +28,51 @@ const VCC_HI: usize = 107;
 pub const ENTRY_POINT: &str = "xenora_compute";
 const MAX_CODE_BYTES: usize = 1024;
 
+/// Dispatch population available to guest Wave32 operations.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Wave32Launch {
+    #[default]
+    PartialAllowed,
+    FullWavesRequired,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct CompileOptions {
+    pub wave32_launch: Wave32Launch,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct LaunchError(pub &'static str);
+impl fmt::Display for LaunchError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.0)
+    }
+}
+impl std::error::Error for LaunchError {}
+
 #[derive(Debug)]
 pub struct CompiledShader {
+    launch: Wave32Launch,
     pub disassembly: String,
     pub ir: String,
     pub msl: String,
+}
+
+impl CompiledShader {
+    pub fn validate_launch(&self, word_count: usize) -> Result<(), LaunchError> {
+        if !(1..=4096).contains(&word_count) {
+            return Err(LaunchError("input word count must be in 1..=4096"));
+        }
+        if self.launch == Wave32Launch::FullWavesRequired && !word_count.is_multiple_of(32) {
+            return Err(LaunchError(
+                "full Wave32 launch requires a multiple of 32 words",
+            ));
+        }
+        Ok(())
+    }
+    pub fn wave32_launch(&self) -> Wave32Launch {
+        self.launch
+    }
 }
 
 #[derive(Debug)]
@@ -116,9 +156,47 @@ impl MaskCondition {
 }
 
 #[derive(Clone, Copy)]
+enum GatherSelection {
+    Address { value: Value, offset: u16 },
+    Table([u8; 32]),
+}
+
+fn swizzle_table(offset: u16) -> [u8; 32] {
+    std::array::from_fn(|i| {
+        let i = i as u32;
+        let o = u32::from(offset);
+        let mask = o & 31;
+        let selected = if o >= 0xe000 {
+            ((i.reverse_bits() >> 27) >> mask.count_ones()) | (i & mask)
+        } else if o >= 0xc000 {
+            let rotate = (o >> 5) & 31;
+            let rotated = if o & 0x400 == 0 {
+                i.wrapping_add(rotate)
+            } else {
+                i.wrapping_sub(rotate)
+            };
+            (i & mask) | (rotated & !mask)
+        } else if o & 0x8000 != 0 {
+            (i & !3) | ((o >> (2 * (i & 3))) & 3)
+        } else {
+            ((i & mask) | ((o >> 5) & 31)) ^ ((o >> 10) & 31)
+        };
+        (selected & 31) as u8
+    })
+}
+
+#[derive(Clone, Copy)]
 enum Op {
+    Gather {
+        source: Value,
+        selection: GatherSelection,
+        exec: u32,
+    },
     Load(Option<BufferLoadKind>),
-    ReadLaneZero(Value),
+    ReadLane {
+        source: Value,
+        selector: Value,
+    },
     Constant(u32),
     Binary(Binary, Value, Value),
     Unary(VectorUnaryOp, Value),
@@ -162,9 +240,15 @@ enum Op {
 impl Op {
     fn operands(self) -> Vec<Value> {
         match self {
+            Self::Gather {
+                source, selection, ..
+            } => match selection {
+                GatherSelection::Address { value, .. } => vec![source, value],
+                GatherSelection::Table(_) => vec![source],
+            },
             Self::Load(_) | Self::Constant(_) | Self::ScalarBranch { .. } => Vec::new(),
             Self::Binary(_, left, right) => vec![left, right],
-            Self::ReadLaneZero(source) => vec![source],
+            Self::ReadLane { source, selector } => vec![source, selector],
             Self::Unary(_, source) => vec![source],
             Self::Product(_, a, b) => vec![a, b],
             Self::BitBinary(_, a, b) => vec![a, b],
@@ -252,7 +336,8 @@ impl Op {
                 name(fallthrough),
                 name(taken)
             ),
-            Self::ReadLaneZero(_)
+            Self::Gather { .. }
+            | Self::ReadLane { .. }
             | Self::Store(_)
             | Self::ScalarBranch { .. }
             | Self::LaneMask { .. }
@@ -659,15 +744,23 @@ fn exact_float_result(operator: Binary, left: KnownBits, right: KnownBits) -> Op
 /// Bind equal-length disjoint input and output word buffers and dispatch one
 /// invocation per word in a one-dimensional grid.
 pub fn compile(architecture: Architecture, bytes: &[u8]) -> Result<CompiledShader, CompileError> {
+    compile_with_options(architecture, bytes, CompileOptions::default())
+}
+
+pub fn compile_with_options(
+    architecture: Architecture,
+    bytes: &[u8],
+    options: CompileOptions,
+) -> Result<CompiledShader, CompileError> {
     let decoded = decode_fixture(architecture, bytes)?;
-    let operations = lift(&decoded, bytes.len())?;
+    let operations = lift(&decoded, bytes.len(), options.wave32_launch)?;
 
     let disassembly = decoded.iter().map(|line| format!("{line}\n")).collect();
     let mut ir = String::new();
     let has_mask = operations
         .iter()
         .any(|(_, operation)| matches!(operation, Op::LaneMask { .. }));
-    let grid = if has_mask {
+    let grid = if has_mask || options.wave32_launch == Wave32Launch::FullWavesRequired {
         ",\n    uint grid [[threads_per_grid]]"
     } else {
         ""
@@ -675,30 +768,87 @@ pub fn compile(architecture: Architecture, bytes: &[u8]) -> Result<CompiledShade
     let mut msl = format!(
         "#include <metal_stdlib>\nusing namespace metal;\nkernel void {ENTRY_POINT}(\n    device const uint* input [[buffer(0)]],\n    device uint* output [[buffer(1)]],\n    uint index [[thread_position_in_grid]]{grid}) {{\n"
     );
+    if options.wave32_launch == Wave32Launch::FullWavesRequired {
+        append_msl(
+            &mut msl,
+            "    if (grid == 0u || grid > 4096u || (grid & 31u) != 0u) { return; }\n",
+        )?;
+    }
     if operations.iter().any(|(_, operation)| {
         matches!(
             operation,
             Op::Binary(Binary::FloatAdd | Binary::FloatMul, _, _)
         )
     }) {
-        msl.push_str("    #pragma clang fp contract(off)\n    #pragma clang fp reassociate(off)\n");
+        append_msl(
+            &mut msl,
+            "    #pragma clang fp contract(off)\n    #pragma clang fp reassociate(off)\n",
+        )?;
     }
     // Wave-uniform values: identical in every lane of an RDNA wave.
+    let mut replay_nodes = 0;
+    for (i, &(_, op)) in operations.iter().enumerate() {
+        if let Op::Gather {
+            selection: GatherSelection::Table(table),
+            ..
+        } = op
+        {
+            let entries = table
+                .iter()
+                .map(|v| format!("{v}u"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            append_msl(
+                &mut msl,
+                &format!("    const uint gather_{i}[32] = {{{entries}}};\n"),
+            )?;
+        }
+    }
     let mut uniform = Vec::with_capacity(operations.len());
     for (index, &(offset, operation)) in operations.iter().enumerate() {
         let dest = Value(index);
         uniform.push(match operation {
-            Op::Constant(_) | Op::LaneMask { .. } | Op::ReadLaneZero(_) => true,
+            Op::Constant(_) | Op::LaneMask { .. } | Op::ReadLane { .. } => true,
             Op::Load(_)
+            | Op::Gather { .. }
             | Op::MergeLanes { .. }
             | Op::BitBinary(VectorBitBinaryOp::MbcntLoU32B32, _, _) => false,
             _ => operation.operands().iter().all(|value| uniform[value.0]),
         });
         let thread = |value: Value| value.to_string();
         let (step, statement) = match operation {
-            Op::ReadLaneZero(source) => {
-                let _ = writeln!(ir, "{offset:04x}: {dest} = read.lane0 {source}");
-                emit_lane_zero(&mut msl, &operations, &uniform, index, source);
+            Op::Gather { .. } => {
+                let mut replay = Replay::new(
+                    &mut msl,
+                    &operations,
+                    &uniform,
+                    index,
+                    &mut replay_nodes,
+                    "(index & 31u)".into(),
+                    "index".into(),
+                    true,
+                );
+                let value = replay.value(Value(index), 0, 0)?;
+                append_msl(replay.msl, &format!("    uint {dest} = {value};\n"))?;
+                let _ = writeln!(ir, "{offset:04x}: {dest} = gather.snapshot");
+                continue;
+            }
+            Op::ReadLane { source, selector } => {
+                let label = if matches!(operations[selector.0].1, Op::Constant(0)) {
+                    "read.lane0"
+                } else {
+                    "read.lane"
+                };
+                let _ = writeln!(ir, "{offset:04x}: {dest} = {label} {source}, {selector}");
+                emit_selected_lane(
+                    &mut msl,
+                    &operations,
+                    &uniform,
+                    index,
+                    source,
+                    selector,
+                    &mut replay_nodes,
+                )?;
                 continue;
             }
             Op::Load(kind) => (
@@ -792,7 +942,17 @@ pub fn compile(architecture: Architecture, bytes: &[u8]) -> Result<CompiledShade
                     "{offset:04x}: {dest} = wave.mask {} {src0}, {src1} exec=0x{exec:08x}",
                     op.mnemonic()
                 );
-                emit_lane_mask(&mut msl, &operations, &uniform, index, op, src0, src1, exec);
+                emit_lane_mask(
+                    &mut msl,
+                    &operations,
+                    &uniform,
+                    index,
+                    op,
+                    src0,
+                    src1,
+                    exec,
+                    &mut replay_nodes,
+                )?;
                 continue;
             }
             Op::Store(value) => (
@@ -802,57 +962,183 @@ pub fn compile(architecture: Architecture, bytes: &[u8]) -> Result<CompiledShade
         };
         // Writing to a String is infallible.
         let _ = writeln!(ir, "{offset:04x}: {step}");
-        let _ = writeln!(msl, "    {statement}");
+        append_msl(&mut msl, &format!("    {statement}\n"))?;
     }
-    msl.push_str("}\n");
+    append_msl(&mut msl, "}\n")?;
     Ok(CompiledShader {
+        launch: options.wave32_launch,
         disassembly,
         ir,
         msl,
     })
 }
 
-// Snapshot-based replay at the first existing invocation of this guest wave.
-// Lane zero exists for every nonempty partial wave; no host SIMD operation is used.
-fn emit_lane_zero(
+const MAX_MSL_BYTES: usize = 64 * 1024;
+const MAX_REPLAY_NODES: usize = 8192;
+const MAX_REPLAY_DEPTH: usize = 64;
+fn replay_error(reason: &'static str) -> CompileError {
+    CompileError::Verify { offset: 0, reason }
+}
+fn append_msl(msl: &mut String, text: &str) -> Result<(), CompileError> {
+    if text.len() > MAX_MSL_BYTES.saturating_sub(msl.len()) {
+        return Err(replay_error("generated MSL exceeds 64 KiB"));
+    }
+    msl.push_str(text);
+    Ok(())
+}
+
+// One instance per lexical scope. Context IDs are interned; memo entries never
+// escape a compare loop. Earlier uniform snapshots are reused, not re-evaluated.
+struct Replay<'a> {
+    msl: &'a mut String,
+    operations: &'a [(usize, Op)],
+    uniform: &'a [bool],
+    root: usize,
+    nodes: &'a mut usize,
+    contexts: Vec<(String, String)>,
+    context_keys: std::collections::BTreeMap<String, usize>,
+    memo: std::collections::BTreeMap<(usize, usize), String>,
+    thread_context: bool,
+}
+impl<'a> Replay<'a> {
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        msl: &'a mut String,
+        operations: &'a [(usize, Op)],
+        uniform: &'a [bool],
+        root: usize,
+        nodes: &'a mut usize,
+        lane: String,
+        index: String,
+        thread_context: bool,
+    ) -> Self {
+        Self {
+            msl,
+            operations,
+            uniform,
+            root,
+            nodes,
+            contexts: vec![(lane, index)],
+            context_keys: Default::default(),
+            memo: Default::default(),
+            thread_context,
+        }
+    }
+    fn value(
+        &mut self,
+        value: Value,
+        context: usize,
+        depth: usize,
+    ) -> Result<String, CompileError> {
+        if value.0 < self.root && (self.uniform[value.0] || (context == 0 && self.thread_context)) {
+            return Ok(value.to_string());
+        }
+        if let Some(name) = self.memo.get(&(value.0, context)) {
+            return Ok(name.clone());
+        }
+        if depth > MAX_REPLAY_DEPTH {
+            return Err(replay_error("replay depth exceeds 64"));
+        }
+        if *self.nodes >= MAX_REPLAY_NODES {
+            return Err(replay_error("replay nodes exceed 8192"));
+        }
+        *self.nodes += 1;
+        let (lane, index) = self.contexts[context].clone();
+        let operation = self.operations[value.0].1;
+        if depth >= MAX_REPLAY_DEPTH && matches!(operation, Op::Gather { .. }) {
+            return Err(replay_error("replay depth exceeds 64"));
+        }
+        let expression = if let Op::Gather {
+            source,
+            selection,
+            exec,
+        } = operation
+        {
+            let selected = match selection {
+                GatherSelection::Address {
+                    value: address,
+                    offset,
+                } => {
+                    let address = self.value(address, context, depth)?;
+                    format!("(({address} + {offset}u) >> 2u) & 31u")
+                }
+                GatherSelection::Table(_) => format!("gather_{}[{lane}]", value.0),
+            };
+            let child = if let Some(&i) = self.context_keys.get(&selected) {
+                i
+            } else {
+                let id = self.contexts.len();
+                let name = format!("c{}_{}", self.root, id);
+                append_msl(self.msl, &format!("    uint {name} = {selected};\n"))?;
+                self.context_keys.insert(selected, id);
+                self.contexts
+                    .push((name.clone(), format!("((index & ~31u) + {name})")));
+                id
+            };
+            let fetched = self.value(source, child, depth + 1)?;
+            let selected_lane = &self.contexts[child].0;
+            format!("((0x{exec:08x}u >> {selected_lane}) & 1u) != 0u ? {fetched} : 0u")
+        } else {
+            let mut names = std::collections::BTreeMap::new();
+            for operand in operation.operands() {
+                names.insert(operand.0, self.value(operand, context, depth)?);
+            }
+            operation.expression(&|v| names[&v.0].clone(), &index, &lane)
+        };
+        let name = if context == 0 && lane == "lane" {
+            format!("l{}", value.0)
+        } else {
+            format!("r{}_{}_{}", self.root, value.0, context)
+        };
+        let indent = if self.contexts[0].0 == "lane" {
+            "        "
+        } else {
+            "    "
+        };
+        append_msl(self.msl, &format!("{indent}uint {name} = {expression};\n"))?;
+        self.memo.insert((value.0, context), name.clone());
+        Ok(name)
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_selected_lane(
     msl: &mut String,
     operations: &[(usize, Op)],
     uniform: &[bool],
     index: usize,
     source: Value,
-) {
-    let mut cone = vec![false; index];
-    let mut pending = vec![source];
-    while let Some(value) = pending.pop() {
-        if uniform[value.0] || cone[value.0] {
-            continue;
-        }
-        cone[value.0] = true;
-        pending.extend(operations[value.0].1.operands());
-    }
-    let name = |value: Value| {
-        if cone[value.0] {
-            format!("r{index}_{}", value.0)
-        } else {
-            value.to_string()
-        }
+    selector: Value,
+    nodes: &mut usize,
+) -> Result<(), CompileError> {
+    let zero = matches!(operations[selector.0].1, Op::Constant(0));
+    let lane = if zero {
+        "0u".into()
+    } else {
+        format!("({selector} & 31u)")
     };
-    for (position, &(_, operation)) in operations[..index].iter().enumerate() {
-        if cone[position] {
-            let _ = writeln!(
-                msl,
-                "    uint r{index}_{position} = {};",
-                operation.expression(&name, "(index & ~31u)", "0u")
-            );
-        }
-    }
-    let _ = writeln!(msl, "    uint {} = {};", Value(index), name(source));
+    let source_index = if zero {
+        "(index & ~31u)".into()
+    } else {
+        format!("((index & ~31u) + {lane})")
+    };
+    let mut replay = Replay::new(
+        msl,
+        operations,
+        uniform,
+        index,
+        nodes,
+        lane,
+        source_index,
+        false,
+    );
+    let source = replay.value(source, 0, 0)?;
+    append_msl(
+        replay.msl,
+        &format!("    uint {} = {source};\n", Value(index)),
+    )
 }
 
-/// Emit a Wave32 compare mask without any cross-thread operation: the thread
-/// recomputes the lane-dependent operands of each lane of its own RDNA wave
-/// (dispatch indices `(index & ~31) + n`) from those lanes' input words.
-/// Absent lanes of a final partial wave contribute 0.
 #[allow(clippy::too_many_arguments)]
 fn emit_lane_mask(
     msl: &mut String,
@@ -863,43 +1149,34 @@ fn emit_lane_mask(
     src0: Value,
     src1: Value,
     exec: u32,
-) {
-    let mut cone = vec![false; index];
-    let mut pending = vec![src0, src1];
-    while let Some(value) = pending.pop() {
-        if uniform[value.0] || cone[value.0] {
-            continue;
-        }
-        cone[value.0] = true;
-        pending.extend(operations[value.0].1.operands());
-    }
-    let name = |value: Value| {
-        if cone[value.0] {
-            format!("l{}", value.0)
-        } else {
-            value.to_string()
-        }
-    };
+    nodes: &mut usize,
+) -> Result<(), CompileError> {
     let dest = Value(index);
-    let _ = writeln!(msl, "    uint {dest} = 0u;");
-    let _ = writeln!(
+    append_msl(
         msl,
-        "    for (uint lane = 0u; lane < 32u; ++lane) {{\n        uint lane_index = (index & ~31u) + lane;\n        if (lane_index >= grid) {{ break; }}"
-    );
-    for (position, &(_, operation)) in operations[..index].iter().enumerate() {
-        if cone[position] {
-            let _ = writeln!(
-                msl,
-                "        uint l{position} = {};",
-                operation.expression(&name, "lane_index", "lane")
-            );
-        }
-    }
-    let _ = writeln!(
+        &format!(
+            "    uint {dest} = 0u;\n    for (uint lane = 0u; lane < 32u; ++lane) {{\n        uint lane_index = (index & ~31u) + lane;\n        if (lane_index >= grid) {{ break; }}\n"
+        ),
+    )?;
+    let mut replay = Replay::new(
         msl,
-        "        uint pass = ({}) ? 1u : 0u;\n        {dest} |= ((0x{exec:08x}u >> lane) & pass) << lane;\n    }}",
-        compare_expression(op, &name(src0), &name(src1))
+        operations,
+        uniform,
+        index,
+        nodes,
+        "lane".into(),
+        "lane_index".into(),
+        false,
     );
+    let a = replay.value(src0, 0, 0)?;
+    let b = replay.value(src1, 0, 0)?;
+    append_msl(
+        replay.msl,
+        &format!(
+            "        uint pass = ({}) ? 1u : 0u;\n        {dest} |= ((0x{exec:08x}u >> lane) & pass) << lane;\n    }}\n",
+            compare_expression(op, &a, &b)
+        ),
+    )
 }
 
 fn decode_fixture(
@@ -912,11 +1189,16 @@ fn decode_fixture(
     xenora_decoder::decode(architecture, bytes).map_err(CompileError::Decode)
 }
 
-fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, Op)>, CompileError> {
+fn lift(
+    decoded: &[DecodedInstruction],
+    code_len: usize,
+    launch: Wave32Launch,
+) -> Result<Vec<(usize, Op)>, CompileError> {
     let mut operations = Vec::new();
     let mut registers = [None::<Value>; 256];
     let mut facts = Vec::<KnownBits>::new();
     let mut pending_load = None;
+    let mut pending_ds: Option<(usize, Value)> = None;
     let mut stored = false;
     let mut store_pending = false;
     let mut scalars = [None; 128];
@@ -935,6 +1217,11 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
     for (index, instruction) in decoded.iter().enumerate() {
         let offset = instruction.offset;
         let reason = match instruction.instruction {
+            Instruction::DsSwizzleB32 {
+                offset: immediate, ..
+            } if (0xc000..0xe000).contains(&immediate) && immediate & 31 != 0 => {
+                "DS_SWIZZLE masked rotate rejected: primary source conflict between AMD examples and pseudocode"
+            }
             Instruction::Branch { target }
             | Instruction::BranchSccZero { target }
             | Instruction::BranchSccOne { target }
@@ -958,6 +1245,13 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
             Instruction::BufferStoreDword {
                 index, resource, ..
             } if (index, resource) != (0, 4) => "unsupported resource or buffer index",
+            Instruction::DsBpermuteB32 { .. }
+            | Instruction::DsSwizzleB32 { .. }
+            | Instruction::Permlane16B32 { .. }
+                if launch != Wave32Launch::FullWavesRequired =>
+            {
+                "gathers require full Wave32 launch"
+            }
             Instruction::Export { .. }
             | Instruction::Interpolate { .. }
             | Instruction::ImageSampleLz { .. }
@@ -1136,6 +1430,81 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
         }
         let next = Value(operations.len());
         let (dest, operation) = match instruction.instruction {
+            Instruction::DsBpermuteB32 { dst, .. }
+            | Instruction::DsSwizzleB32 { dst, .. }
+            | Instruction::Permlane16B32 { dst, .. } => {
+                let slot = usize::from(dst);
+                let is_ds = !matches!(instruction.instruction, Instruction::Permlane16B32 { .. });
+                if dst == 0
+                    || pending_load.is_some_and(|(r, _)| r == slot)
+                    || pending_ds.is_some_and(|(r, _)| r == slot)
+                    || (is_ds && pending_ds.is_some())
+                {
+                    return Err(error(
+                        "gather writes reserved/pending destination or overlaps DS",
+                    ));
+                }
+                let (source, selection) = match instruction.instruction {
+                    Instruction::DsBpermuteB32 {
+                        addr, data, offset, ..
+                    } => (
+                        read(data)?,
+                        GatherSelection::Address {
+                            value: read(addr)?,
+                            offset,
+                        },
+                    ),
+                    Instruction::DsSwizzleB32 { src, offset, .. } => {
+                        if exec != u32::MAX {
+                            return Err(error("swizzle requires full EXEC"));
+                        }
+                        (read(src)?, GatherSelection::Table(swizzle_table(offset)))
+                    }
+                    Instruction::Permlane16B32 {
+                        src,
+                        select_lo,
+                        select_hi,
+                        cross_row,
+                        ..
+                    } => {
+                        if exec != u32::MAX {
+                            return Err(error("permlane requires full EXEC"));
+                        }
+                        let lo = read_scalar(ScalarSource::Register(select_lo))?;
+                        let hi = read_scalar(ScalarSource::Register(select_hi))?;
+                        let table = std::array::from_fn(|i| {
+                            let nibble = (if i & 15 < 8 { lo } else { hi } >> ((i & 7) * 4)) & 15;
+                            (((i as u32 & 16) ^ if cross_row { 16 } else { 0 }) | nibble) as u8
+                        });
+                        (read(src)?, GatherSelection::Table(table))
+                    }
+                    _ => unreachable!(),
+                };
+                let old = registers[slot];
+                operations.push((
+                    offset,
+                    Op::Gather {
+                        source,
+                        selection,
+                        exec,
+                    },
+                ));
+                facts.push(KnownBits::UNKNOWN);
+                let value = merge_lanes(&mut operations, &mut facts, offset, exec, next, old)?;
+                if is_ds {
+                    registers[slot] = None;
+                    pending_ds = Some((slot, value));
+                } else {
+                    registers[slot] = Some(value);
+                }
+                continue;
+            }
+            Instruction::WaitLgkm => {
+                if let Some((slot, value)) = pending_ds.take() {
+                    registers[slot] = Some(value);
+                }
+                continue;
+            }
             Instruction::WriteLaneB32 { dst, src, lane } => {
                 let selected = read_scalar(ScalarSource::Register(lane))? & 31;
                 let old = read(dst)?;
@@ -1160,26 +1529,36 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
                 if dst < 8 {
                     return Err(error("lane read would modify a resource descriptor"));
                 }
-                let lane = match instruction.instruction {
+                let source = read(src)?;
+                let selector = match instruction.instruction {
                     Instruction::ReadFirstLaneB32 { .. } => {
-                        if exec == 0 {
-                            0
-                        } else {
-                            exec.trailing_zeros()
+                        let lane = if exec == 0 { 0 } else { exec.trailing_zeros() };
+                        if lane != 0 && launch == Wave32Launch::PartialAllowed {
+                            return Err(error(
+                                "lane read requires selected lane zero for partial-wave safety",
+                            ));
                         }
+                        constant(&mut operations, &mut facts, offset, lane)
                     }
                     Instruction::ReadLaneB32 { lane, .. } => {
-                        read_scalar(ScalarSource::Register(lane))? & 31
+                        if let Some(bits) = scalars[usize::from(lane)] {
+                            if bits & 31 != 0 && launch == Wave32Launch::PartialAllowed {
+                                return Err(error(
+                                    "lane read requires selected lane zero for partial-wave safety",
+                                ));
+                            }
+                            constant(&mut operations, &mut facts, offset, bits & 31)
+                        } else if launch == Wave32Launch::FullWavesRequired {
+                            lane_scalars[usize::from(lane)]
+                                .ok_or_else(|| error("scalar source has no known value"))?
+                        } else {
+                            return Err(error("scalar source has no known value"));
+                        }
                     }
                     _ => unreachable!(),
                 };
-                if lane != 0 {
-                    return Err(error(
-                        "lane read requires selected lane zero for partial-wave safety",
-                    ));
-                }
-                let source = read(src)?;
-                operations.push((offset, Op::ReadLaneZero(source)));
+                let next = Value(operations.len());
+                operations.push((offset, Op::ReadLane { source, selector }));
                 facts.push(KnownBits::UNKNOWN);
                 scalars[usize::from(dst)] = None;
                 lane_scalars[usize::from(dst)] = Some(next);
@@ -1188,7 +1567,10 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
             Instruction::BufferLoadDword { data, .. }
             | Instruction::BufferLoadNarrow { data, .. } => {
                 let slot = usize::from(data);
-                if data == 0 || pending_load.is_some() {
+                if data == 0
+                    || pending_load.is_some()
+                    || pending_ds.is_some_and(|(dst, _)| dst == slot)
+                {
                     return Err(error(
                         "load writes the index register or another load is outstanding",
                     ));
@@ -1225,7 +1607,10 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
             } => {
                 let value = read(src)?;
                 let slot = usize::from(dst);
-                if dst == 0 || pending_load.is_some_and(|(register, _)| register == slot) {
+                if dst == 0
+                    || (pending_load.is_some_and(|(register, _)| register == slot)
+                        || pending_ds.is_some_and(|(register, _)| register == slot))
+                {
                     return Err(error(
                         "move writes the index register or replaces a pending load",
                     ));
@@ -1251,7 +1636,10 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
                 && let Some(mask) = lane_vcc =>
             {
                 let slot = usize::from(dst);
-                if dst == 0 || pending_load.is_some_and(|(register, _)| register == slot) {
+                if dst == 0
+                    || (pending_load.is_some_and(|(register, _)| register == slot)
+                        || pending_ds.is_some_and(|(register, _)| register == slot))
+                {
                     return Err(error(
                         "move writes the index register or replaces a pending load",
                     ));
@@ -1274,7 +1662,10 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
                 && let Some(value) = lane_scalars[usize::from(register)] =>
             {
                 let slot = usize::from(dst);
-                if dst == 0 || pending_load.is_some_and(|(pending, _)| pending == slot) {
+                if dst == 0
+                    || (pending_load.is_some_and(|(pending, _)| pending == slot)
+                        || pending_ds.is_some_and(|(pending, _)| pending == slot))
+                {
                     return Err(error(
                         "move writes the index register or replaces a pending load",
                     ));
@@ -1499,7 +1890,7 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
                     } else {
                         MaskCondition::NonZero
                     };
-                if pending_load.is_some() {
+                if pending_load.is_some() || pending_ds.is_some() {
                     return Err(error(if condition == MaskCondition::Zero {
                         "a runtime s_cbranch_vccz requires no outstanding vector load"
                     } else {
@@ -1845,12 +2236,18 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
                 ));
             }
             Instruction::EndProgram => {
-                if !stored || store_pending || pending_load.is_some() {
+                if !stored || store_pending || pending_load.is_some() || pending_ds.is_some() {
                     return Err(error(
                         "termination requires one completed store and no pending loads",
                     ));
                 }
                 return Ok(operations);
+            }
+            #[allow(unreachable_patterns)]
+            _ => {
+                return Err(error(
+                    "instruction requires an unsupported compute execution contract",
+                ));
             }
         };
         let value_bits = match operation {
@@ -1871,7 +2268,10 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
         operations.push((offset, operation));
         if let Some(dest) = dest {
             let slot = usize::from(dest);
-            if dest == 0 || pending_load.is_some_and(|(register, _)| register == slot) {
+            if dest == 0
+                || (pending_load.is_some_and(|(register, _)| register == slot)
+                    || pending_ds.is_some_and(|(register, _)| register == slot))
+            {
                 return Err(error(
                     "instruction writes the index register or replaces a pending load",
                 ));
@@ -1982,3 +2382,7 @@ mod tests {
         assert!(sum.values.is_none());
     }
 }
+
+#[cfg(test)]
+#[path = "gather_replay_tests.rs"]
+mod gather_replay_tests;

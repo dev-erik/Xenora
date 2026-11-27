@@ -240,3 +240,65 @@ The separate LLVM run passed **29 tests**, including **1,274 comparisons across
 inventory tests, generated-map consistency, claims and dependency audits passed.
 The nine-gate full-suite result above belongs to commit `3465da0`; it is not
 represented as a fresh full-suite result for this subsequent write increment.
+
+
+## Full-wave lane-read continuation
+
+An explicit full-Wave32 launch requirement now permits every constant lane
+selection and initialized runtime ordinary-SGPR selectors captured by earlier
+lane reads. The default partial-wave entry points remain unchanged. Typed
+Metal execution rejects invalid lengths before submission. The independent
+reference declares and enforces its own launch options.
+
+The independent native corpus passed **6 tests, zero ignored**, covering
+**127 original programs and 139 dispatches**, plus five host launch-rejection
+checks. Coverage includes all 32 selections, wrapped selectors, source/selector
+snapshots and aliasing, retained inactive values, comparison joins and threadgroup
+widths 2/17/32/64. An initial width-one harness configuration exceeded the existing
+64-group cap; only that test configuration was corrected. The cap was preserved.
+
+Two independent static reviewers approved this bounded contract. A deliberate
+production mutation that replayed lane zero instead of the selected lane failed
+an independent native output assertion. The original source was restored exactly.
+Logs: `artifacts/s34-full-wave/native-restored.log` and
+`artifacts/s34-full-wave/wrong-lane-mutation.log`. These checks do not establish
+Wave64, graphics participation, general scalar execution or full S3.4 closure.
+
+
+## Full-wave transfer continuation
+
+The bounded transfer layer adds DS_BPERMUTE, DS_SWIZZLE, PERMLANE16 and
+PERMLANEX16, plus an independently decoded LGKM-zero wait. It also adds a
+spec-derived VOP3 READFIRSTLANE subset. Native execution remains synthetic
+Wave32 compute; see the exact [interface contracts](../interfaces.md#full-wave-transfers-and-ds-completion).
+
+- Independent CPU coverage includes 183 transfer programs and 36 e64 READFIRST
+  programs, plus readiness, scalar, graphics, encoding and disputed-mode rejections.
+- The combined native run passed **29 tests, zero ignored**, with **1,093 GPU
+  dispatches**: 138 transfer/e64 dispatches, 139 general lane-read dispatches,
+  312 original lane-read programs and 504 lane-write programs. Metal API and
+  shader validation were enabled.
+- A deliberate identity-routing mutation failed an independent native output
+  assertion. The production source was restored exactly afterward.
+- Independent review identified the masked-rotation source contradiction.
+  Compiler and reference now reject nonzero-mask rotation, including unreachable
+  occurrences, instead of silently choosing one of the inconsistent descriptions.
+  Both reviewers approved the resulting bounded layer.
+- Logs: `artifacts/s34-transfers/native.log` and
+  `artifacts/s34-transfers/identity-route-mutation.log`.
+
+S3.4 is **10/11 decoded forms**. DS_PERMUTE, masked rotation, broader operand
+and EXEC modes, Wave64 and graphics/helper-lane semantics remain open. S3.2
+is still **8/24 decoded forms**; no control-flow completion is claimed.
+The e64 READFIRST form has **no LLVM or native AMD encoding validation**.
+Its Metal result establishes translated behavior only.
+
+Full regression acceptance for this continuation: **all nine gates passed**.
+Workspace: **1,465 passed, zero failed, 182 ignored**. GPU gate: **520 passed,
+zero failed, one ignored**. Ignored tests are not counted as verification.
+Logs: `artifacts/validation-full.BgbmCy`. The separate encoding run passed
+**40 tests**, including **1,311 three-way instruction comparisons across
+181 forms** (`artifacts/s34-transfers/llvm-restored.log`). E64 READFIRST is
+excluded from that LLVM claim. The fixture inventory still requires every
+declared form; spec-derived raw words carry explicit expected mnemonics and
+are checked against byte identification, rather than being excluded.

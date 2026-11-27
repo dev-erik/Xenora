@@ -19,12 +19,29 @@ fn name_of(values: &[u32]) -> (&'static str, usize) {
     (found.form.name, found.len)
 }
 
-/// Mnemonics in a fixture's assembly source, without LLVM's encoding suffixes.
+/// Expected mnemonics from assembly or explicitly annotated spec-derived words.
+/// Raw data directives do not establish LLVM instruction encoding evidence.
 fn source_mnemonics(source: &str) -> Vec<String> {
     source
         .lines()
-        .map(|line| line.split("//").next().unwrap().trim())
-        .filter(|line| !line.is_empty() && !line.starts_with('.') && !line.ends_with(':'))
+        .filter_map(|line| {
+            let instruction = line.split("//").next().unwrap().trim();
+            if instruction.starts_with(".long ") {
+                let (_, expected) = line
+                    .split_once("// spec-instruction:")
+                    .expect("raw instruction words require an explicit expected mnemonic");
+                let expected = expected.trim();
+                assert!(!expected.is_empty() && !expected.chars().any(char::is_whitespace));
+                Some(expected)
+            } else if instruction.is_empty()
+                || instruction.starts_with('.')
+                || instruction.ends_with(':')
+            {
+                None
+            } else {
+                Some(instruction)
+            }
+        })
         .map(|line| {
             let mnemonic = line.split_whitespace().next().unwrap().to_ascii_uppercase();
             mnemonic
@@ -36,7 +53,7 @@ fn source_mnemonics(source: &str) -> Vec<String> {
 }
 
 #[test]
-fn llvm_fixtures_identify_with_exact_boundaries_and_mnemonics() {
+fn fixtures_identify_with_exact_boundaries_and_mnemonics() {
     let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/rdna2");
     let mut checked = 0;
     for entry in fs::read_dir(&directory).unwrap() {
@@ -59,6 +76,15 @@ fn llvm_fixtures_identify_with_exact_boundaries_and_mnemonics() {
         checked += 1;
     }
     assert!(checked >= 11, "only {checked} fixtures found");
+}
+
+#[test]
+fn spec_annotations_are_checked_against_identified_bytes() {
+    let expected =
+        source_mnemonics(".long 0xd5820008, 0x101 // spec-instruction: V_READFIRSTLANE_B32");
+    assert_eq!(expected, [name_of(&[0xd5820008, 0x101]).0]);
+    let wrong = source_mnemonics(".long 0xd5820008, 0x101 // spec-instruction: V_READLANE_B32");
+    assert_ne!(wrong, expected);
 }
 
 #[test]

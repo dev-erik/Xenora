@@ -92,3 +92,17 @@ register state for lanes outside its final partial wave. Reading those lanes
 cannot silently invent a zero value. Admission or a separately specified launch
 contract must resolve this before general lane reads are accepted. This is a
 project ABI constraint, not a claim about Xbox hardware.
+
+
+### Subsequent bounded wave progress
+
+- [x] Explicit full-Wave32 launch validation and general normal-SGPR lane reads.
+- [x] Context-aware gather replay with source/node/depth bounds.
+- [x] DS_BPERMUTE, supported DS_SWIZZLE modes and full-EXEC row permutations.
+- [x] Separate DS/LGKM readiness and qualified spec-derived e64 READFIRST.
+- [x] Independent native readback and wrong-routing mutation detection.
+- [ ] DS_PERMUTE scatter and collision-policy validation.
+- [ ] Resolve the AMD masked-rotation example/pseudocode contradiction.
+
+These entries record bounded increments; the full-stage closure checklist above
+remains open, including Wave64, graphics participation and broader operand modes.

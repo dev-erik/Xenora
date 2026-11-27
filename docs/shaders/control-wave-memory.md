@@ -10,20 +10,20 @@ Implemented increments: SCC1 complements SCC0; Wave32 compute EXECNZ/VCCNZ compl
 
 ## S3.4 wave and lane
 
-Implemented subsets: MBCNT LO/HI, bounded lane-zero reads and selected-lane writes under an explicit Wave32 compute contract. LO counts selected bits below the guest lane and adds the accumulator; HI adds no bits for lanes below 32. Typed decoding, compute lowering and an independent CPU reference are implemented. Native validation is recorded in the checkpoint; this does not complete wave/lane support.
+Implemented subsets: MBCNT LO/HI, validated full-wave lane reads, selected-lane writes and bounded gather/swizzle transfers under an explicit Wave32 compute contract. LO counts selected bits below the guest lane and adds the accumulator; HI adds no bits for lanes below 32. Typed decoding, compute lowering and an independent CPU reference are implemented. Native validation is recorded in the checkpoint; this does not complete wave/lane support.
 
 | Family | Form | Decoder present at audit |
 | --- | --- | --- |
-| DS | `DS_BPERMUTE_B32` | no |
+| DS | `DS_BPERMUTE_B32` | yes; full-wave compute and separate LGKM completion |
 | DS | `DS_PERMUTE_B32` | no |
-| DS | `DS_SWIZZLE_B32` | no |
-| VOP1 | `V_READFIRSTLANE_B32` | yes; lane-zero compute subset |
+| DS | `DS_SWIZZLE_B32` | yes; full EXEC; masked rotation rejected |
+| VOP1 | `V_READFIRSTLANE_B32` | yes; lane-zero default and explicit full-wave compute subset |
 | VOP3 | `V_MBCNT_HI_U32_B32` | yes; Wave32 compute subset |
 | VOP3 | `V_MBCNT_LO_U32_B32` | yes; Wave32 compute subset |
-| VOP3 | `V_PERMLANE16_B32` | no |
-| VOP3 | `V_PERMLANEX16_B32` | no |
-| VOP3 | `V_READFIRSTLANE_B32` | no |
-| VOP3 | `V_READLANE_B32` | yes; lane-zero compute subset |
+| VOP3 | `V_PERMLANE16_B32` | yes; full-wave/full-EXEC compute |
+| VOP3 | `V_PERMLANEX16_B32` | yes; full-wave/full-EXEC compute |
+| VOP3 | `V_READFIRSTLANE_B32` | yes; spec-derived zero-padding subset; LLVM unavailable |
+| VOP3 | `V_READLANE_B32` | yes; lane-zero default and explicit full-wave compute subset |
 | VOP3 | `V_WRITELANE_B32` | yes; selected-lane Wave32 compute subset |
 
 The implemented compute contract is Wave32 only, with guest lane `index & 31`:
@@ -56,7 +56,7 @@ Waits cannot be blanket no-ops. Resource graphs and local readback tests do not 
 
 ## Evidence and next gates
 
-The [first-increment checkpoint](../testing/stage3-control-memory-opening.md) records SCC1 and VMCNT evidence. S3.4 has bounded masked-bit-count and lane-zero-read increments; six forms remain undecoded.
+The [first-increment checkpoint](../testing/stage3-control-memory-opening.md) records SCC1 and VMCNT evidence. S3.4 has ten decoded forms with bounded native fixture evidence; DS_PERMUTE remains undecoded. Masked rotation, broader operand modes, Wave64 and graphics participation remain open. VOP3 READFIRSTLANE has spec-derived encoding evidence without LLVM validation.
 
 The [opening plan](../superpowers/plans/2026-11-27-stage3-opening.md) tracks the first increments. Require exact encoding checks, independent CPU expectations, applicable native compute/graphics readback and independent review before acceptance. Checkpoint results must identify the tested source version; this document alone records no passing GPU tests.
 
@@ -69,7 +69,7 @@ These are dependency groups, not equal-sized tasks or a complete operand matrix.
 | Stage | Next bounded work | Architectural work still required |
 | --- | --- | --- |
 | S3.2 | Additional proven loop shapes | Compute loops and live-out joins; code addresses and calls/returns; exceptions; dynamic EXEC and reconvergence |
-| S3.4 | Expand lane-read selection and establish contracts for six remaining forms | Inactive/absent source lanes; cross-lane data movement; graphics/helper lanes; Wave64; DPP/SDWA mode coverage |
+| S3.4 | DS_PERMUTE scatter and unresolved masked-rotation semantics | Inactive/absent source lanes; cross-lane data movement; graphics/helper lanes; Wave64; DPP/SDWA mode coverage |
 | S3.5 | More buffer transfer forms with explicit addressing and destination spans | Multiple outstanding transfers; descriptors and address spaces; scalar/private/LDS memory; atomics and rendezvous; image/stage-interface matrices |
 
 Each accepted increment needs exact source and destination modes, negative cases,
@@ -177,3 +177,9 @@ This is valid only while absent-lane state cannot later be exposed under the
 fixture contract. Source and destination snapshots remain intact during
 comparison and later lane-read replay. Graphics and runtime-branch-region lane
 writes remain rejected. Independent native results are recorded in the [checkpoint](../testing/stage3-control-memory-opening.md#selected-lane-write-continuation); full S3.4 remains open.
+
+
+The full-wave transfer contracts and source contradiction are recorded in
+[interfaces](../interfaces.md#full-wave-transfers-and-ds-completion). The
+[latest checkpoint](../testing/stage3-control-memory-opening.md) records actual
+readback tests. Ten decoded wave/lane forms are not full S3.4 completion.

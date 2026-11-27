@@ -14,9 +14,11 @@ zero-offset and explicit-wait rules apply to all four narrow forms.
 
 
 Pure lane-read replay may read an earlier immutable input value at the current
-logical wave's first index. This extends internal input access beyond the
+logical wave's first index, or any selected lane under an explicit full-wave
+launch requirement. This extends internal input access beyond the
 caller's own element, while preserving disjoint outputs and input bounds:
-lane zero exists for every nonempty partial Wave32 group. It does not admit
+lane zero exists for every nonempty partial Wave32 group, and the typed runner
+requires complete groups before executing general lane reads. It does not admit
 shared writable memory, arbitrary addresses or values for absent lanes. The
 [bounded lane-read interface](../interfaces.md#bounded-wave32-lane-read-scalar-values)
 defines operand and consumer restrictions.

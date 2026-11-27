@@ -29,6 +29,14 @@ remains unsupported.
 - Extended the read-only RDNA2 planning CLI (`python3 -m qa rdna2`) with family/status filters, compact summaries, Codex-ready manifests under `artifacts/`, active-claim exclusion (family claims exclude those families; path-only claims block overlapping permitted files), coverage reconcile against `semantic_coverage` without inflating counts, and inventory diffs. Covered by `tests/qa/test_rdna2_plan.py`; planning only, no GPU production edits.
 
 ### Added
+- Added full-wave backward gathers, row permutations and supported swizzle modes
+  with separate DS/LGKM completion and bounded nested replay. Masked rotation
+  remains rejected because the public ISA examples contradict its pseudocode.
+- Added a qualified, spec-derived VOP3 READFIRSTLANE encoding subset; LLVM
+  encoding validation remains unavailable for that form.
+- Added an explicit full-Wave32 launch contract for arbitrary constant and captured
+  runtime lane-read selectors, with typed Metal launch validation and independent
+  reference execution. Default partial-wave lane-zero behavior is preserved.
 - Added bounded Wave32 selected-lane writes that ignore EXEC, preserve other
   destination lanes and support captured lane-read scalar data; graphics and
   unsupported operand modes remain rejected.

@@ -305,6 +305,36 @@ fn reference_scalar(scalar: ScalarSource) -> Source {
 
 fn reference_op(instruction: Instruction) -> Op {
     match instruction {
+        Instruction::DsBpermuteB32 {
+            dst,
+            addr,
+            data,
+            offset,
+        } => Op::DsBpermuteB32 {
+            dst,
+            addr,
+            data,
+            offset,
+        },
+        Instruction::DsSwizzleB32 { dst, src, offset } => Op::DsSwizzleB32 { dst, src, offset },
+        Instruction::Permlane16B32 {
+            dst,
+            src,
+            select_lo,
+            select_hi,
+            cross_row,
+            fetch_inactive,
+            bound_control,
+        } => Op::Permlane16B32 {
+            dst,
+            src,
+            select_lo,
+            select_hi,
+            cross_row,
+            fetch_inactive,
+            bound_control,
+        },
+        Instruction::WaitLgkm => Op::WaitLgkm,
         Instruction::BufferLoadDword {
             data,
             index,
@@ -819,10 +849,14 @@ fn compares_fixture_instructions_against_llvm() {
         include_bytes!("../../../fixtures/rdna2/lane-write.bin"),
         include_bytes!("../../../fixtures/rdna2/mask-nonzero-branch.bin"),
         include_bytes!("../../../fixtures/rdna2/buffer-narrow-load.bin"),
+        include_bytes!("../../../fixtures/rdna2/wave-bpermute.bin"),
+        include_bytes!("../../../fixtures/rdna2/wave-swizzle.bin"),
+        include_bytes!("../../../fixtures/rdna2/wave-permlane16.bin"),
+        include_bytes!("../../../fixtures/rdna2/wave-permlanex16.bin"),
     ] {
         count += compare_against_llvm(fixture, &mut forms);
     }
-    assert_eq!(forms.len(), 177, "forms compared: {forms:?}");
+    assert_eq!(forms.len(), 181, "forms compared: {forms:?}");
     eprintln!(
         "{count} three-way instruction comparisons across {} forms",
         forms.len()
@@ -1195,6 +1229,10 @@ fn literal_bits(text: &str) -> Option<u32> {
 fn normalize_llvm_assembly(assembly: &str, next_offset: usize) -> String {
     let (mnemonic, operands) = assembly.split_once(' ').unwrap_or((assembly, ""));
     match mnemonic {
+        "ds_swizzle_b32" if operands.ends_with(" offset:swizzle(SWAP,16)") => {
+            let registers = operands.strip_suffix(" offset:swizzle(SWAP,16)").unwrap();
+            format!("{mnemonic} {registers} offset:16415")
+        }
         mnemonic if mnemonic.starts_with("s_cmpk_") => {
             let (reg, immediate) = operands.split_once(", ").unwrap();
             let raw = immediate
@@ -1317,9 +1355,18 @@ fn normalize_llvm_assembly(assembly: &str, next_offset: usize) -> String {
                 .collect();
             format!("{mnemonic} {}{suffix}", parts.join(", "))
         }
-        // VOPC and the registry VOP2 forms print SRC0 (the second operand) as bits.
+        // Integer VOPC/VOP2 forms print SRC0 (the second operand) as bits.
         mnemonic
             if mnemonic.starts_with("v_cmp_")
+                || matches!(
+                    mnemonic,
+                    "v_and_b32_e32"
+                        | "v_or_b32_e32"
+                        | "v_xor_b32_e32"
+                        | "v_lshlrev_b32_e32"
+                        | "v_lshrrev_b32_e32"
+                        | "v_ashrrev_i32_e32"
+                )
                 || VectorAluOp::ALL
                     .iter()
                     .any(|op| op.assembly_name() == mnemonic) =>
@@ -2923,4 +2970,31 @@ fn original_writelane_llvm_encodings_match_both_decoders() {
         assert_eq!(compare_against_llvm(&bytes, &mut forms), 1);
     }
     assert_eq!(forms.len(), 1);
+}
+
+#[test]
+fn legacy_integer_vop2_normalization_preserves_exact_source_bits() {
+    for mnemonic in [
+        "v_and_b32_e32",
+        "v_or_b32_e32",
+        "v_xor_b32_e32",
+        "v_lshlrev_b32_e32",
+        "v_lshrrev_b32_e32",
+        "v_ashrrev_i32_e32",
+    ] {
+        for (source, expected) in [
+            ("2", "0x2"),
+            ("4", "0x4"),
+            ("-1", "0xffffffff"),
+            ("lit(0x80000000)", "0x80000000"),
+            ("v5", "v5"),
+            ("s8", "s8"),
+            ("0x4", "0x4"),
+        ] {
+            assert_eq!(
+                normalize_llvm_assembly(&format!("{mnemonic} v2, {source}, v3"), 4),
+                format!("{mnemonic} v2, {expected}, v3")
+            );
+        }
+    }
 }

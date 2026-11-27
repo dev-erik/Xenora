@@ -15,7 +15,7 @@ acceptance remain outside the verified count. All results concern synthetic fixt
 
 | Family | Identified | Encoding-validated | Declared | Decoder-supported | IR | MSL | Reference-verified | Metal-verified | Unsupported operand variants |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| DS | 123 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| DS | 123 | 2 | 0 | 2 | 2 | 2 | 2 | 2 | 0 |
 | EXP | 1 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 |
 | FLAT | 54 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | GLOBAL | 57 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
@@ -32,11 +32,11 @@ acceptance remain outside the verified count. All results concern synthetic fixt
 | VINTRP | 3 | 0 | 0 | 2 | 0 | 0 | 0 | 0 | 0 |
 | VOP1 | 81 | 7 | 5 | 7 | 7 | 7 | 7 | 7 | 6 |
 | VOP2 | 47 | 20 | 12 | 20 | 20 | 20 | 7 | 7 | 6 |
-| VOP3 | 416 | 55 | 0 | 55 | 55 | 55 | 55 | 55 | 0 |
+| VOP3 | 416 | 57 | 0 | 58 | 58 | 58 | 58 | 58 | 0 |
 | VOP3P | 29 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | VOP3SDST | 10 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | VOPC | 190 | 12 | 0 | 12 | 12 | 12 | 0 | 0 | 0 |
-| **Total** | 1465 | 192 | 76 | 197 | 192 | 192 | 110 | 110 | 39 |
+| **Total** | 1465 | 196 | 76 | 202 | 197 | 197 | 115 | 115 | 39 |
 
 ## Unsupported operand variants
 

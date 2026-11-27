@@ -499,6 +499,27 @@ kernel void sample_rgba8(texture2d<float, access::sample> tex [[texture(0)]],
         })
     }
 
+    /// Validate the compiled shader's immutable launch requirement before GPU work.
+    ///
+    /// Full-wave shaders require 32-word multiples; all shaders require 1..=4096
+    /// words. Public mutable MSL remains trusted developer input: this validates
+    /// launch metadata, not modifications to the source. The trusted-kernel
+    /// requirements of [`Self::run_words`] still apply.
+    ///
+    /// # Errors
+    /// Returns a launch error before compilation or submission for invalid input
+    /// lengths, or an error from [`Self::run_words`].
+    pub fn run_compiled_words(
+        &self,
+        shader: &xenora_shader::CompiledShader,
+        input: &[u32],
+    ) -> Result<Vec<u32>, MetalError> {
+        shader
+            .validate_launch(input.len())
+            .map_err(|error| MetalError::new("compiled shader launch", error.to_string()))?;
+        self.run_words(&shader.msl, xenora_shader::ENTRY_POINT, input)
+    }
+
     /// Run trusted MSL with read-only words at buffer 0 and output words at buffer 1.
     ///
     /// The kernel must use one invocation per word and restrict its memory accesses

@@ -433,6 +433,29 @@ impl BufferLoadKind {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[allow(missing_docs)]
 pub enum Instruction {
+    /// Gather a VGPR lane through a byte address; result requires an LGKM wait.
+    DsBpermuteB32 {
+        dst: u8,
+        addr: u8,
+        data: u8,
+        offset: u16,
+    },
+    /// Swizzle VGPR lanes using the DS immediate; result requires an LGKM wait.
+    DsSwizzleB32 {
+        dst: u8,
+        src: u8,
+        offset: u16,
+    },
+    /// Gather within or across 16-lane rows using two normal SGPR selectors.
+    Permlane16B32 {
+        dst: u8,
+        src: u8,
+        select_lo: u8,
+        select_hi: u8,
+        cross_row: bool,
+        fetch_inactive: bool,
+        bound_control: bool,
+    },
     /// Write normal SGPR data to one VGPR lane, independently of EXEC.
     WriteLaneB32 {
         dst: u8,
@@ -471,6 +494,8 @@ pub enum Instruction {
     },
     /// `s_waitcnt vmcnt(0)`.
     WaitLoad,
+    /// `s_waitcnt lgkmcnt(0)`.
+    WaitLgkm,
     /// `s_waitcnt_vmcnt null, 0`.
     WaitVmcnt,
     /// `s_waitcnt_vscnt null, 0`.
@@ -756,6 +781,15 @@ impl Instruction {
     /// Returns the mnemonic for the exact encoding family represented.
     pub fn mnemonic(self) -> &'static str {
         match self {
+            Self::DsBpermuteB32 { .. } => "ds_bpermute_b32",
+            Self::DsSwizzleB32 { .. } => "ds_swizzle_b32",
+            Self::Permlane16B32 {
+                cross_row: false, ..
+            } => "v_permlane16_b32",
+            Self::Permlane16B32 {
+                cross_row: true, ..
+            } => "v_permlanex16_b32",
+            Self::WaitLgkm => "s_waitcnt",
             Self::WriteLaneB32 { .. } => "v_writelane_b32",
             Self::ReadFirstLaneB32 { .. } => "v_readfirstlane_b32",
             Self::ReadLaneB32 { .. } => "v_readlane_b32",
@@ -828,6 +862,46 @@ impl fmt::Display for Instruction {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(self.mnemonic())?;
         match *self {
+            Self::DsBpermuteB32 {
+                dst,
+                addr,
+                data,
+                offset,
+            } => {
+                write!(formatter, " v{dst}, v{addr}, v{data}")?;
+                if offset != 0 {
+                    write!(formatter, " offset:{offset}")?;
+                }
+                Ok(())
+            }
+            Self::DsSwizzleB32 { dst, src, offset } => {
+                write!(formatter, " v{dst}, v{src}")?;
+                if offset != 0 {
+                    write!(formatter, " offset:{offset}")?;
+                }
+                Ok(())
+            }
+            Self::Permlane16B32 {
+                dst,
+                src,
+                select_lo,
+                select_hi,
+                fetch_inactive,
+                bound_control,
+                ..
+            } => {
+                write!(formatter, " v{dst}, v{src}, s{select_lo}, s{select_hi}")?;
+                if fetch_inactive || bound_control {
+                    write!(
+                        formatter,
+                        " op_sel:[{},{}]",
+                        u8::from(fetch_inactive),
+                        u8::from(bound_control)
+                    )?;
+                }
+                Ok(())
+            }
+            Self::WaitLgkm => formatter.write_str(" lgkmcnt(0)"),
             Self::WriteLaneB32 { dst, src, lane } => write!(formatter, " v{dst}, s{src}, s{lane}"),
             Self::ReadFirstLaneB32 { dst, src } => write!(formatter, " s{dst}, v{src}"),
             Self::ReadLaneB32 { dst, src, lane } => write!(formatter, " s{dst}, v{src}, s{lane}"),

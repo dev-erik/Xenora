@@ -699,6 +699,7 @@ fn compile_graphics_core(
         types,
         storage,
         shader: CompiledShader {
+            launch: crate::Wave32Launch::PartialAllowed,
             disassembly,
             ir,
             msl,
@@ -721,6 +722,18 @@ fn lift(
     extended: bool,
 ) -> Result<StageIr, CompileError> {
     for decoded in decoded {
+        if matches!(
+            decoded.instruction,
+            Instruction::DsBpermuteB32 { .. }
+                | Instruction::DsSwizzleB32 { .. }
+                | Instruction::Permlane16B32 { .. }
+                | Instruction::WaitLgkm
+        ) {
+            return Err(CompileError::Verify {
+                offset: decoded.offset,
+                reason: "gathers and LGKM waits require the full Wave32 compute contract",
+            });
+        }
         if matches!(decoded.instruction, Instruction::WriteLaneB32 { .. }) {
             return Err(CompileError::Verify {
                 offset: decoded.offset,

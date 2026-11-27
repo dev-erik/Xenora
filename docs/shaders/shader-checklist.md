@@ -10,12 +10,12 @@ For the Xbox Series X|S target and non-shader requirements, see the [master comp
 
 | Status | Forms | Meaning |
 | --- | ---: | --- |
-| Converted subset; fixture accepted | 110 | Translation is recorded and the status registry records accepted native fixture evidence; only the documented operand subset is covered. |
+| Converted subset; fixture accepted | 115 | Translation is recorded and the status registry records accepted native fixture evidence; only the documented operand subset is covered. |
 | Converted subset; acceptance pending | 82 | Translation is recorded, but the registry does not record accepted native fixture evidence. This may reflect pending acceptance or documentation lag. |
 | Decoded; translation evidence unrecorded | 5 | The decoder lists the form, but no translation evidence row is recorded. This is an evidence gap, not proof that lowering is absent. |
-| Not converted | 1268 | No supported decoder identity exists. Opcode recognition from metadata alone does not implement execution. |
+| Not converted | 1263 | No supported decoder identity exists. Opcode recognition from metadata alone does not implement execution. |
 
-**Decoder coverage: 197/1465. Not yet decoded: 1268.**
+**Decoder coverage: 202/1465. Not yet decoded: 1263.**
 
 No row means “all operand modes complete.” Sources, literals, modifiers, register widths, execution masks, graphics versus compute applicability, control-flow interactions and numerical behavior still require their own contracts and tests. This list covers the pinned inventory, not every future AMD instruction or every Xbox graphics method.
 
@@ -23,7 +23,7 @@ The evidence columns reproduce `docs/status.toml` without turning local readback
 
 ## Stage 3 planning map
 
-**All S3 stages remain open.** See the [latest validated checkpoint](../testing/stage3-control-memory-opening.md) for bounded scalar/mask branches, compute loads and waits, and Wave32 masked bit counts, bounded lane-zero reads and selected-lane writes. Other wave/lane operations remain open.
+**All S3 stages remain open.** See the [latest validated checkpoint](../testing/stage3-control-memory-opening.md) for bounded scalar/mask branches, compute loads and waits, and Wave32 masked bit counts, validated full-wave lane reads, selected-lane writes and bounded gathers/swizzles. Other wave/lane operations remain open.
 
 The partition below includes SOPP control flow and memory families alongside arithmetic. It is provisional, not a claim that a stage is complete or that forms outside arithmetic are optional. S3.6 numerical correctness applies across floating-point operations and is not counted as a disjoint opcode bucket. State assignments remain explicit gaps; scalar comparisons retain their historical arithmetic assignment pending a separate ownership audit. Counts exclude operand-mode debt such as DPP/SDWA, wave sizes, masks and ordering. The earlier 7/8/12 totals for S3.2/S3.4/S3.5 excluded whole families and were not stage completion denominators.
 
@@ -32,7 +32,7 @@ The partition below includes SOPP control flow and memory families alongside ari
 | S3.1 Arithmetic | 480 | 158 | 322 |
 | S3.2 Control flow | 24 | 8 | 16 |
 | S3.3 Masks / comparisons | 419 | 12 | 407 |
-| S3.4 Wave / lane | 11 | 5 | 6 |
+| S3.4 Wave / lane | 11 | 10 | 1 |
 | S3.5 Memory / interfaces | 509 | 14 | 495 |
 | State / assignment pending | 22 | 0 | 22 |
 
@@ -42,7 +42,7 @@ The partition below includes SOPP control flow and memory families alongside ari
 
 | Family | Total | Fixture accepted | Acceptance pending | Evidence gap | Not converted |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| [DS](#ds) | 123 | 0 | 0 | 0 | 123 |
+| [DS](#ds) | 123 | 2 | 0 | 0 | 121 |
 | [EXP](#exp) | 1 | 0 | 0 | 1 | 0 |
 | [FLAT](#flat) | 54 | 0 | 0 | 0 | 54 |
 | [GLOBAL](#global) | 57 | 0 | 0 | 0 | 57 |
@@ -59,7 +59,7 @@ The partition below includes SOPP control flow and memory families alongside ari
 | [VINTRP](#vintrp) | 3 | 0 | 0 | 2 | 1 |
 | [VOP1](#vop1) | 81 | 7 | 0 | 0 | 74 |
 | [VOP2](#vop2) | 47 | 7 | 13 | 0 | 27 |
-| [VOP3](#vop3) | 416 | 55 | 0 | 0 | 361 |
+| [VOP3](#vop3) | 416 | 58 | 0 | 0 | 358 |
 | [VOP3P](#vop3p) | 29 | 0 | 0 | 0 | 29 |
 | [VOP3SDST](#vop3sdst) | 10 | 0 | 0 | 0 | 10 |
 | [VOPC](#vopc) | 190 | 0 | 12 | 0 | 178 |
@@ -130,7 +130,7 @@ Update the implementation and its evidence in `docs/status.toml`, then regenerat
 | 50 | `DS_MIN_RTN_F32` | Not converted | — | — | — |
 | 51 | `DS_MAX_RTN_F32` | Not converted | — | — | — |
 | 52 | `DS_WRAP_RTN_B32` | Not converted | — | — | — |
-| 53 | `DS_SWIZZLE_B32` | Not converted | — | — | — |
+| 53 | `DS_SWIZZLE_B32` | Converted subset; fixture accepted | MSL context-aware swizzle replay with source snapshots and separate LGKM readiness | fixture verified | fixture verified |
 | 54 | `DS_READ_B32` | Not converted | — | — | — |
 | 55 | `DS_READ2_B32` | Not converted | — | — | — |
 | 56 | `DS_READ2ST64_B32` | Not converted | — | — | — |
@@ -197,7 +197,7 @@ Update the implementation and its evidence in `docs/status.toml`, then regenerat
 | 176 | `DS_WRITE_ADDTID_B32` | Not converted | — | — | — |
 | 177 | `DS_READ_ADDTID_B32` | Not converted | — | — | — |
 | 178 | `DS_PERMUTE_B32` | Not converted | — | — | — |
-| 179 | `DS_BPERMUTE_B32` | Not converted | — | — | — |
+| 179 | `DS_BPERMUTE_B32` | Converted subset; fixture accepted | MSL captured address gather with inactive-source zero, retained inactive destination and separate LGKM readiness | fixture verified | fixture verified |
 | 222 | `DS_WRITE_B96` | Not converted | — | — | — |
 | 223 | `DS_WRITE_B128` | Not converted | — | — | — |
 | 254 | `DS_READ_B96` | Not converted | — | — | — |
@@ -809,7 +809,7 @@ Update the implementation and its evidence in `docs/status.toml`, then regenerat
 | 9 | `S_CBRANCH_EXECNZ` | Converted subset; fixture accepted | resolved nonzero EXEC_LO branch; existing runtime-region whitelist retained | fixture verified | fixture verified |
 | 10 | `S_BARRIER` | Not converted | — | — | — |
 | 11 | `S_SETKILL` | Not converted | — | — | — |
-| 12 | `S_WAITCNT` | Converted subset; fixture accepted | verified load wait | fixture verified | fixture verified |
+| 12 | `S_WAITCNT` | Converted subset; fixture accepted | verified separate buffer-load and DS-result completion; neither wait releases the other counter | fixture verified | fixture verified |
 | 13 | `S_SETHALT` | Not converted | — | — | — |
 | 14 | `S_SLEEP` | Not converted | — | — | — |
 | 15 | `S_SETPRIO` | Not converted | — | — | — |
@@ -848,7 +848,7 @@ Update the implementation and its evidence in `docs/status.toml`, then regenerat
 | ---: | --- | --- | --- | --- | --- |
 | 0 | `V_NOP` | Not converted | — | — | — |
 | 1 | `V_MOV_B32` | Converted subset; fixture accepted | constant or register value | fixture verified | fixture verified |
-| 2 | `V_READFIRSTLANE_B32` | Converted subset; fixture accepted | MSL snapshot replay at logical wave lane zero; runtime scalar result consumed through vector move; other lanes and graphics rejected | fixture verified | fixture verified |
+| 2 | `V_READFIRSTLANE_B32` | Converted subset; fixture accepted | MSL selected-lane snapshot replay under validated Wave32 launch; captured scalar results; graphics rejected | fixture verified | fixture verified |
 | 3 | `V_CVT_I32_F64` | Not converted | — | — | — |
 | 4 | `V_CVT_F64_I32` | Not converted | — | — | — |
 | 5 | `V_CVT_F32_I32` | Not converted | — | — | — |
@@ -1261,7 +1261,7 @@ Update the implementation and its evidence in `docs/status.toml`, then regenerat
 | 376 | `V_XOR3_B32` | Converted subset; fixture accepted | MSL uint three-input bitwise XOR; compute and graphics | fixture verified | fixture verified |
 | 384 | `V_NOP` | Not converted | — | — | — |
 | 385 | `V_MOV_B32` | Not converted | — | — | — |
-| 386 | `V_READFIRSTLANE_B32` | Not converted | — | — | — |
+| 386 | `V_READFIRSTLANE_B32` | Converted subset; fixture accepted | MSL selected-lane snapshot replay sharing the VOP1 launch and execution contract | fixture verified | fixture verified |
 | 387 | `V_CVT_I32_F64` | Not converted | — | — | — |
 | 388 | `V_CVT_F64_I32` | Not converted | — | — | — |
 | 389 | `V_CVT_F32_I32` | Not converted | — | — | — |
@@ -1379,7 +1379,7 @@ Update the implementation and its evidence in `docs/status.toml`, then regenerat
 | 858 | `V_INTERP_P2_F16` | Not converted | — | — | — |
 | 862 | `V_MAD_I16` | Not converted | — | — | — |
 | 863 | `V_DIV_FIXUP_F16` | Not converted | — | — | — |
-| 864 | `V_READLANE_B32` | Converted subset; fixture accepted | MSL snapshot replay at logical wave lane zero independent of EXEC; runtime scalar result consumed through vector move | fixture verified | fixture verified |
+| 864 | `V_READLANE_B32` | Converted subset; fixture accepted | MSL selected-lane snapshot replay independent of EXEC; runtime selector and destination snapshots preserved | fixture verified | fixture verified |
 | 865 | `V_WRITELANE_B32` | Converted subset; fixture accepted | MSL selected-lane merge independent of EXEC, retaining every other destination lane and captured scalar source | fixture verified | fixture verified |
 | 866 | `V_LDEXP_F32` | Not converted | — | — | — |
 | 867 | `V_BFM_B32` | Converted subset; fixture accepted | MSL uint masked width and offset mask creation; compute and graphics | fixture verified | fixture verified |
@@ -1397,8 +1397,8 @@ Update the implementation and its evidence in `docs/status.toml`, then regenerat
 | 883 | `V_MAD_U32_U16` | Not converted | — | — | — |
 | 885 | `V_MAD_I32_I16` | Not converted | — | — | — |
 | 886 | `V_SUB_NC_I32` | Not converted | — | — | — |
-| 887 | `V_PERMLANE16_B32` | Not converted | — | — | — |
-| 888 | `V_PERMLANEX16_B32` | Not converted | — | — | — |
+| 887 | `V_PERMLANE16_B32` | Converted subset; fixture accepted | MSL nibble-selected same-row gather with captured source and selector versions | fixture verified | fixture verified |
+| 888 | `V_PERMLANEX16_B32` | Converted subset; fixture accepted | MSL nibble-selected opposite-row gather with captured source and selector versions | fixture verified | fixture verified |
 | 895 | `V_ADD_NC_I32` | Not converted | — | — | — |
 
 ## VOP3P

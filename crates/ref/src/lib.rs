@@ -39,6 +39,27 @@ pub type ScalarSource = Source;
 /// Operations decoded independently by the reference interpreter.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Op {
+    DsBpermuteB32 {
+        dst: u8,
+        addr: u8,
+        data: u8,
+        offset: u16,
+    },
+    DsSwizzleB32 {
+        dst: u8,
+        src: u8,
+        offset: u16,
+    },
+    Permlane16B32 {
+        dst: u8,
+        src: u8,
+        select_lo: u8,
+        select_hi: u8,
+        cross_row: bool,
+        fetch_inactive: bool,
+        bound_control: bool,
+    },
+    WaitLgkm,
     WriteLane {
         dst: u8,
         src: u8,
@@ -480,11 +501,37 @@ impl VectorInteger {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Wave32Launch {
+    #[default]
+    PartialAllowed,
+    FullWavesRequired,
+}
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ExecuteOptions {
+    pub wave32_launch: Wave32Launch,
+}
+
 /// Execute original little-endian gfx1030 bytes with the synthetic binding ABI.
 ///
 /// Each dispatched lane reads the corresponding input word and may write only
 /// its own output word. Integer operations are exact modulo 2^32.
 pub fn execute(code: &[u8], input: &[u32]) -> Result<Vec<u32>, ReferenceError> {
+    execute_with_options(code, input, ExecuteOptions::default())
+}
+
+pub fn execute_with_options(
+    code: &[u8],
+    input: &[u32],
+    options: ExecuteOptions,
+) -> Result<Vec<u32>, ReferenceError> {
+    if options.wave32_launch == Wave32Launch::FullWavesRequired && !input.len().is_multiple_of(32) {
+        return Err(error(
+            0,
+            "full Wave32 input must contain a multiple of 32 words",
+        ));
+    }
+
     if input.is_empty() || input.len() > MAX_INPUT_WORDS {
         return Err(error(0, "input word count outside reference limits"));
     }
@@ -494,6 +541,22 @@ pub fn execute(code: &[u8], input: &[u32]) -> Result<Vec<u32>, ReferenceError> {
     let program = decode(code)?;
     for instruction in &program {
         match instruction.op {
+            Op::DsSwizzleB32 {
+                offset: immediate, ..
+            } if (0xc000..0xe000).contains(&immediate) && immediate & 31 != 0 => {
+                return Err(error(
+                    instruction.offset,
+                    "DS_SWIZZLE masked rotate rejected: primary source conflict between AMD examples and pseudocode",
+                ));
+            }
+            Op::DsBpermuteB32 { .. } | Op::DsSwizzleB32 { .. } | Op::Permlane16B32 { .. }
+                if options.wave32_launch != Wave32Launch::FullWavesRequired =>
+            {
+                return Err(error(
+                    instruction.offset,
+                    "gathers require full Wave32 launch",
+                ));
+            }
             Op::End if instruction.offset + instruction.byte_len != code.len() => {
                 return Err(error(
                     instruction.offset + instruction.byte_len,
@@ -532,7 +595,7 @@ pub fn execute(code: &[u8], input: &[u32]) -> Result<Vec<u32>, ReferenceError> {
     // wave has absent lanes, which contribute 0 to compare masks.
     let mut output = Vec::with_capacity(input.len());
     for wave in input.chunks(32) {
-        output.extend(execute_wave(&program, wave)?);
+        output.extend(execute_wave(&program, wave, options.wave32_launch)?);
     }
     Ok(output)
 }
@@ -563,6 +626,80 @@ pub fn decode(code: &[u8]) -> Result<Vec<DecodedInstruction>, ReferenceError> {
     let mut offset = 0;
     while let Some(bytes) = code.get(offset..).filter(|bytes| !bytes.is_empty()) {
         let (op, length) = match bytes {
+            [
+                lo,
+                hi,
+                tag @ (0xcc | 0xd4),
+                family @ (0xda | 0xd8),
+                tail @ ..,
+            ] if (*tag, *family) == (0xcc, 0xda) || (*tag, *family) == (0xd4, 0xd8) => {
+                let [addr, data, unused, dst, ..] = tail else {
+                    return Err(error(offset, "truncated DS gather"));
+                };
+                let immediate = u16::from_le_bytes([*lo, *hi]);
+                if *unused != 0 || (*family == 0xd8 && *data != 0) {
+                    return Err(error(offset, "unsupported DS gather fields"));
+                }
+                (
+                    if *family == 0xda {
+                        Op::DsBpermuteB32 {
+                            dst: *dst,
+                            addr: *addr,
+                            data: *data,
+                            offset: immediate,
+                        }
+                    } else {
+                        Op::DsSwizzleB32 {
+                            dst: *dst,
+                            src: *addr,
+                            offset: immediate,
+                        }
+                    },
+                    8,
+                )
+            }
+            [dst, flags, opcode @ (0x77 | 0x78), 0xd7, tail @ ..] => {
+                let [a, b, c, d, ..] = tail else {
+                    return Err(error(offset, "truncated permlane"));
+                };
+                let fields = u32::from_le_bytes([*a, *b, *c, *d]);
+                let data = fields & 511;
+                let lo = (fields >> 9) & 511;
+                let hi = (fields >> 18) & 511;
+                if flags & !0x18 != 0 || fields >> 27 != 0 || data < 256 || lo > 105 || hi > 105 {
+                    return Err(error(offset, "unsupported permlane fields"));
+                }
+                (
+                    Op::Permlane16B32 {
+                        dst: *dst,
+                        src: data as u8,
+                        select_lo: lo as u8,
+                        select_hi: hi as u8,
+                        cross_row: *opcode == 0x78,
+                        fetch_inactive: flags & 8 != 0,
+                        bound_control: flags & 16 != 0,
+                    },
+                    8,
+                )
+            }
+            [0x7f, 0xc0, 0x8c, 0xbf, ..] => (Op::WaitLgkm, 4),
+            // Spec-derived VOP3 READFIRST subset: no LLVM encoding oracle exists.
+            [dst, flags, 0x82, 0xd5, tail @ ..] => {
+                let [src, bank, pad0, pad1, ..] = tail else {
+                    return Err(error(offset, "truncated readfirst VOP3"));
+                };
+                if *dst > 105 || *flags != 0 || *bank != 1 || *pad0 != 0 || *pad1 != 0 {
+                    return Err(error(offset, "unsupported readfirst VOP3 fields"));
+                }
+                (
+                    Op::ReadLane {
+                        dst: *dst,
+                        src: *src,
+                        index: None,
+                    },
+                    8,
+                )
+            }
             [lo, packed, upper, tag @ 0x7e..=0x7f, ..] if upper & 1 == 0 && packed >> 1 == 2 => {
                 let dst = (upper >> 1) | ((tag & 1) << 7);
                 if dst > 105 || packed & 1 == 0 {
@@ -1462,7 +1599,11 @@ const EXEC_LO: usize = 126;
 
 /// Runs one Wave32 wave in lockstep. Scalar state is shared by the lanes;
 /// VGPRs, transfers and outputs are per lane.
-fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32>, ReferenceError> {
+fn execute_wave(
+    program: &[DecodedInstruction],
+    input: &[u32],
+    launch: Wave32Launch,
+) -> Result<Vec<u32>, ReferenceError> {
     let lanes = input.len();
     let mut registers = vec![[None::<u32>; 256]; lanes];
     let mut scalars = [None; 128];
@@ -1474,6 +1615,7 @@ fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32
     let mut lane_derived_vcc = false;
     let mut target = 0;
     let mut pending_read = None;
+    let mut pending_ds: Option<(u8, Vec<u32>)> = None;
     let mut pending_format = None;
     let mut pending_write = vec![None; lanes];
     let mut output = vec![None; lanes];
@@ -1505,7 +1647,9 @@ fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32
             if register == 0 {
                 return Err(error(offset, "v0 is reserved for the resource index"));
             }
-            if pending_read == Some(register) {
+            if pending_read == Some(register)
+                || pending_ds.as_ref().is_some_and(|(dst, _)| *dst == register)
+            {
                 return Err(error(offset, "VGPR read before load wait"));
             }
             registers[lane][usize::from(register)]
@@ -1552,6 +1696,113 @@ fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32
         // Per-lane results of a vector ALU instruction, applied after all lanes read.
         let mut results: Vec<Option<(u8, u32)>> = vec![None; lanes];
         match op {
+            Op::WaitLgkm => {
+                if let Some((dst, values)) = pending_ds.take() {
+                    for (lane, value) in values.into_iter().enumerate() {
+                        results[lane] = Some((dst, value));
+                    }
+                }
+            }
+            Op::DsBpermuteB32 { dst, .. }
+            | Op::DsSwizzleB32 { dst, .. }
+            | Op::Permlane16B32 { dst, .. } => {
+                let is_ds = !matches!(op, Op::Permlane16B32 { .. });
+                if dst == 0
+                    || pending_read == Some(dst)
+                    || pending_ds.as_ref().is_some_and(|(r, _)| *r == dst)
+                    || (is_ds && pending_ds.is_some())
+                {
+                    return Err(error(
+                        offset,
+                        "invalid gather destination or outstanding DS",
+                    ));
+                }
+                if !matches!(op, Op::DsBpermuteB32 { .. }) && exec != u32::MAX {
+                    return Err(error(offset, "swizzle/permlane requires full EXEC"));
+                }
+                let selectors = if let Op::Permlane16B32 {
+                    select_lo,
+                    select_hi,
+                    ..
+                } = op
+                {
+                    (
+                        read_scalar(Source::Register(select_lo))?,
+                        read_scalar(Source::Register(select_hi))?,
+                    )
+                } else {
+                    (0, 0)
+                };
+                let mut values = Vec::with_capacity(lanes);
+                for lane in 0..lanes {
+                    let (source, selected) = match op {
+                        Op::DsBpermuteB32 {
+                            addr,
+                            data,
+                            offset: immediate,
+                            ..
+                        } => {
+                            let address = read(lane, addr)?;
+                            // Independently model byte addressing modulo the 128-byte Wave32 bank.
+                            (
+                                data,
+                                (address.wrapping_add(u32::from(immediate)) % 128 / 4) as usize,
+                            )
+                        }
+                        Op::DsSwizzleB32 {
+                            src,
+                            offset: immediate,
+                            ..
+                        } => {
+                            let o = usize::from(immediate);
+                            let mask = o % 32;
+                            let target = match o {
+                                0xe000.. => {
+                                    let reversed = (0..5)
+                                        .fold(0, |bits, b| bits | (((lane >> b) & 1) << (4 - b)));
+                                    (reversed >> mask.count_ones()) | (lane & mask)
+                                }
+                                0xc000.. => {
+                                    let amount = (o / 32) % 32;
+                                    let rotated = if o & 1024 == 0 {
+                                        lane + amount
+                                    } else {
+                                        lane + 32 - amount
+                                    };
+                                    (lane & mask) | (rotated & !mask)
+                                }
+                                0x8000.. => (lane / 4) * 4 + ((o >> (2 * (lane % 4))) & 3),
+                                _ => ((lane & mask) | ((o / 32) % 32)) ^ ((o / 1024) % 32),
+                            };
+                            (src, target % 32)
+                        }
+                        Op::Permlane16B32 { src, cross_row, .. } => {
+                            let within = lane % 16;
+                            let packed = if within < 8 { selectors.0 } else { selectors.1 };
+                            let selected = ((packed >> (4 * (within % 8))) & 15) as usize;
+                            (src, ((lane / 16) ^ usize::from(cross_row)) * 16 + selected)
+                        }
+                        _ => unreachable!(),
+                    };
+                    // Validate the initialized source snapshot even when EXEC disables the fetch.
+                    let source_value = read(selected, source)?;
+                    let value = if exec & (1 << lane) == 0 {
+                        read(lane, dst)?
+                    } else if exec & (1 << selected) == 0 {
+                        0
+                    } else {
+                        source_value
+                    };
+                    values.push(value);
+                }
+                if is_ds {
+                    pending_ds = Some((dst, values));
+                } else {
+                    for (lane, value) in values.into_iter().enumerate() {
+                        results[lane] = Some((dst, value));
+                    }
+                }
+            }
             Op::WriteLane { dst, src, index } => {
                 let selected = read_scalar(Source::Register(index))? & 31;
                 let value = scalars[usize::from(src)]
@@ -1567,22 +1818,32 @@ fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32
                     return Err(error(offset, "lane read writes resource descriptor"));
                 }
                 let lane = if let Some(index) = index {
-                    read_scalar(Source::Register(index))? % 32
+                    let value = if launch == Wave32Launch::FullWavesRequired {
+                        scalars[usize::from(index)]
+                            .or(lane_scalars[usize::from(index)])
+                            .ok_or_else(|| error(offset, "read from uninitialized SGPR"))?
+                    } else {
+                        read_scalar(Source::Register(index))?
+                    };
+                    value & 31
                 } else {
                     (0..32).find(|bit| exec & (1 << bit) != 0).unwrap_or(0)
                 };
-                if lane != 0 {
+                if lane != 0 && launch == Wave32Launch::PartialAllowed {
                     return Err(error(
                         offset,
                         "lane read requires selected lane zero for partial-wave safety",
                     ));
                 }
-                let value = read(0, src)?;
+                let value = read(lane as usize, src)?;
                 scalars[usize::from(dst)] = None;
                 lane_scalars[usize::from(dst)] = Some(value);
             }
             Op::Load { data: dst, .. } | Op::LoadNarrow { data: dst, .. } => {
-                if dst == 0 || pending_read.is_some() {
+                if dst == 0
+                    || pending_read.is_some()
+                    || pending_ds.as_ref().is_some_and(|(r, _)| *r == dst)
+                {
                     return Err(error(
                         offset,
                         "invalid load destination or overlapping load",
@@ -2183,7 +2444,7 @@ fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32
                         &registers,
                         &region_scalars,
                         exec,
-                        pending_read.is_some(),
+                        pending_read.is_some() || pending_ds.is_some(),
                         offset,
                     )?;
                 }
@@ -2205,7 +2466,10 @@ fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32
                 }
             }
             Op::End => {
-                if pending_read.is_some() || pending_write.iter().any(Option::is_some) {
+                if pending_read.is_some()
+                    || pending_ds.is_some()
+                    || pending_write.iter().any(Option::is_some)
+                {
                     return Err(error(offset, "outstanding transfer at termination"));
                 }
                 return output
@@ -2218,7 +2482,10 @@ fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32
         }
         for (lane, result) in results.into_iter().enumerate() {
             if let Some((dst, value)) = result {
-                if dst == 0 || pending_read == Some(dst) {
+                if dst == 0
+                    || pending_read == Some(dst)
+                    || pending_ds.as_ref().is_some_and(|(r, _)| *r == dst)
+                {
                     return Err(error(offset, "write to immutable or pending VGPR"));
                 }
                 registers[lane][usize::from(dst)] = Some(value);

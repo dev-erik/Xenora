@@ -1,4 +1,5 @@
-//! Ties the decoder's declared semantic forms to what it decodes from LLVM-assembled fixtures.
+//! Ties declared forms to checked-in fixtures. Most use LLVM mnemonics;
+//! lane-read-e64-spec uses explicitly reviewed bytes, not an LLVM encoding oracle.
 
 use std::collections::BTreeSet;
 use std::fs;

@@ -15,15 +15,20 @@ fn upper_exec_write_does_not_change_wave32_lowering() {
 }
 
 #[test]
-fn cross_lane_permute_is_rejected() {
+fn unqualified_cross_lane_permute_requires_explicit_wave32_launch() {
     assert!(compile(Architecture::Gfx1030, WAVE32_CONTROL).is_ok());
 
     // ds_bpermute_b32 v2, v0, v1 assembled for gfx1030 with
-    // +wavefrontsize64. This operation requires access to other lanes.
+    // +wavefrontsize64. These instruction bytes also occur in Wave32; the
+    // assembler flag supplies no launch metadata in this raw stream. Decoding
+    // is now supported, but the default ABI must still reject its execution.
     let mut stream = vec![0, 0, 0xcc, 0xda, 0, 1, 0, 2];
     stream.extend_from_slice(WAVE32_CONTROL);
     assert!(matches!(
         compile(Architecture::Gfx1030, &stream),
-        Err(CompileError::Decode(_))
+        Err(CompileError::Verify {
+            offset: 0,
+            reason: "gathers require full Wave32 launch"
+        })
     ));
 }
