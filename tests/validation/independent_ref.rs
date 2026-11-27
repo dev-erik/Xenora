@@ -133,6 +133,7 @@ enum Insn {
     VBitSelect(u8, CmpSrc, CmpSrc, CmpSrc),
     VAddThree(u8, CmpSrc, CmpSrc, CmpSrc),
     VAndOr(u8, CmpSrc, CmpSrc, CmpSrc),
+    VMad16(bool, u8, CmpSrc, CmpSrc, CmpSrc),
     VXad(u8, CmpSrc, CmpSrc, CmpSrc),
     VLerp(u8, CmpSrc, CmpSrc, CmpSrc),
     VMsad(u8, CmpSrc, CmpSrc, CmpSrc),
@@ -836,6 +837,7 @@ fn lane_step(
         | Insn::VXorThree(d, a, b, c)
         | Insn::VBitSelect(d, a, b, c)
         | Insn::VAddThree(d, a, b, c)
+        | Insn::VMad16(_, d, a, b, c)
         | Insn::VXad(d, a, b, c)
         | Insn::VLerp(d, a, b, c)
         | Insn::VMsad(d, a, b, c)
@@ -1071,6 +1073,17 @@ fn lane_step(
                 out
             }
             // Independent arithmetic decomposition of AMD packed-byte definitions.
+            Insn::VMad16(signed, ..) => {
+                let half = |word: u32| {
+                    let low = i64::from(word % 65536);
+                    if signed && low >= 32768 {
+                        low - 65536
+                    } else {
+                        low
+                    }
+                };
+                (half(a) * half(b) + i64::from(c)).rem_euclid(4294967296) as u32
+            }
             Insn::VXad(..) => ripple(a ^ b, c, false).0,
             Insn::VLerp(..) => {
                 let mut packed = 0u64;
@@ -1539,6 +1552,8 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
                 | 838
                 | 839
                 | 879
+                | 883
+                | 885
                 | 837
                 | 333
                 | 369
@@ -1648,6 +1663,13 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
         } else {
             0
         };
+        // Deliberate subset restrictions; no claim these encodings are invalid AMD forms.
+        if matches!(opcode, 883 | 885)
+            && (raw[..2].iter().any(|x| (240..=248).contains(x))
+                || (raw[..2].contains(&255) && literal >= 65536))
+        {
+            return Err(fail("unsupported MAD16 multiplicand constant"));
+        }
         let mut args = [CmpSrc::Imm(0); 3];
         for i in 0..count {
             args[i] = match raw[i] {
@@ -1713,6 +1735,7 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
             344 => Insn::VMiddleSigned(dst, args[0], args[1], args[2]),
             345 => Insn::VMiddleUnsigned(dst, args[0], args[1], args[2]),
             329 => Insn::VSignedField(dst, args[0], args[1], args[2]),
+            883 | 885 => Insn::VMad16(opcode == 885, dst, args[0], args[1], args[2]),
             837 => Insn::VXad(dst, args[0], args[1], args[2]),
             333 => Insn::VLerp(dst, args[0], args[1], args[2]),
             369 => Insn::VMsad(dst, args[0], args[1], args[2]),

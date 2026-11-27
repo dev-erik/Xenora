@@ -2466,3 +2466,27 @@ gpu = "fixture verified"
 recognized = true
 decoded = true
 llvm = "three-way passed"
+
+[[instruction]]
+form = "v_mad_u32_u16"
+encoding = "VOP3; checked three sources; zero modifiers and bounded multiplicand constants"
+representation = "8 B or 12 B with shared literal"
+lowering = "MSL low-halfword multiplication and full-word wrapping accumulation; compute and graphics"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_mad_i32_i16"
+encoding = "VOP3; checked three sources; zero modifiers and bounded multiplicand constants"
+representation = "8 B or 12 B with shared literal"
+lowering = "MSL low-halfword multiplication and full-word wrapping accumulation; compute and graphics"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"

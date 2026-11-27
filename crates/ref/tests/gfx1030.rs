@@ -222,3 +222,31 @@ fn packed_integer_opcodes_have_independent_typed_decoding() {
         );
     }
 }
+
+#[test]
+fn mad16_exact_decode_and_literal_boundaries() {
+    use xenora_ref::{CompareSource, VectorTernary};
+    for (word, kind) in [
+        (0xd7730004, VectorTernary::MadU32U16),
+        (0xd7750004, VectorTernary::MadI32I16),
+    ] {
+        let second = 257 | (258 << 9) | (259 << 18);
+        let decoded = decode(&bytes(&[word, second])).unwrap();
+        assert_eq!(decoded[0].byte_len, 8);
+        assert_eq!(
+            decoded[0].op,
+            Op::VectorTernary(
+                kind,
+                4,
+                CompareSource::Vector(1),
+                CompareSource::Vector(2),
+                CompareSource::Vector(3)
+            )
+        );
+        let literal = bytes(&[word, 255 | (129 << 9) | (255 << 18), 0xffff]);
+        assert_eq!(decode(&literal).unwrap()[0].byte_len, 12);
+        for len in 1..12 {
+            assert!(decode(&literal[..len]).is_err());
+        }
+    }
+}

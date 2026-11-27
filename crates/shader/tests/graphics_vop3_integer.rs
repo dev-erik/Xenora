@@ -5,7 +5,9 @@ use xenora_shader::{
     compile_graphics_pipeline_typed,
 };
 const VS: &[u8] = include_bytes!("../../../fixtures/rdna2/x9-constant-vs.bin");
-const OPS: [u32; 65] = [
+const OPS: [u32; 67] = [
+    883,
+    885,
     837,
     333,
     369,
@@ -96,7 +98,11 @@ fn operation(op: u32, dst: u32, position: usize, source: u32) -> Vec<u32> {
         raw[0] | raw[1] << 9 | raw[2] << 18,
     ];
     if source == 255 {
-        words.push(0x7fc12345);
+        words.push(if matches!(op, 883 | 885) && position < 2 {
+            0xffff
+        } else {
+            0x7fc12345
+        });
     }
     words
 }
@@ -150,6 +156,10 @@ fn every_operation_position_reads_isolated_uniform_and_accepts_source_classes() 
                 (255, 0),
             ] {
                 let pixel = finish(operation(op, 10, position, source), 10);
+                if matches!(op, 883 | 885) && position < 2 && (240..=248).contains(&source) {
+                    rejects(VS, &pixel, types(), "floating inline selectors");
+                    continue;
+                }
                 assert_eq!(
                     compile_graphics_pipeline_typed(Gfx1030, VS, &pixel, types())
                         .unwrap()

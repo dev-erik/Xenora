@@ -399,3 +399,123 @@ fn xad_lerp_msad_source_snapshots_scalar_literal_and_shared_literal_pixels() {
         );
     }
 }
+
+// AMD RDNA2 section12.12 p185: op883 uses unsigned low16 multiplicands;
+// op885 sign-extends each low16 multiplicand. Both add the full32 accumulator.
+// Literal answers below retain the low32 result, with no input/output modifiers.
+// Columns are inputs, unsigned result, signed result. Upper multiplicand bits
+// deliberately differ from bit15; they cannot participate in either product.
+const MAD16_GRAPHICS_CASES: &[([u32; 3], u32, u32)] = &[
+    ([0xffff0000, 0xabcdffff, 0x89abcdef], 0x89abcdef, 0x89abcdef),
+    ([0x0000ffff, 0x0000ffff, 0], 0xfffe0001, 1),
+    ([0x00008000, 0x0000ffff, 0], 0x7fff8000, 0x00008000),
+    ([0x00007fff, 2, 0xffff0002], 0, 0),
+    ([0x00008000, 2, 0x7fffffff], 0x8000ffff, 0x7ffeffff),
+    ([0x00008000, 0x00008000, 0xc0000000], 0, 0),
+    ([0x0000ffff, 2, 1], 0x0001ffff, 0xffffffff),
+    ([0xabcdffff, 0x12340002, 0xffffffff], 0x0001fffd, 0xfffffffd),
+    ([0x00007fff, 0x00007fff, 0], 0x3fff0001, 0x3fff0001),
+    ([0x0000ffff, 0x0000ffff, 0x0001ffff], 0, 0x00020000),
+    ([0x00008000, 1, 0], 0x00008000, 0xffff8000),
+    ([0xffff0000, 0xffff0001, 0x80000000], 0x80000000, 0x80000000),
+];
+
+#[test]
+fn mad16_low_half_signed_boundaries_dirty_upper_bits_and_wrap_pixels() {
+    let gpu = NativeCompute::new().unwrap();
+    assert_eq!(MAD16_GRAPHICS_CASES.len(), 12);
+    for &(inputs, unsigned, signed) in MAD16_GRAPHICS_CASES {
+        for (op, expected) in [(883, unsigned), (885, signed)] {
+            assert_eq!(
+                render(
+                    &gpu,
+                    &pixel(op, 11, [264, 265, 266], None, false),
+                    [inputs[0], inputs[1], inputs[2], 0, 0, 0, 0, 0],
+                ),
+                vec![expected.to_le_bytes().to_vec()],
+                "op={op} inputs={inputs:08x?}",
+            );
+        }
+    }
+}
+
+#[test]
+fn mad16_source_aliases_scalar_legal_literals_and_shared_literal_pixels() {
+    let gpu = NativeCompute::new().unwrap();
+    // (-1)*(-32768)-1 = 32767; unsigned 65535*32768-1 = 0x7fff7fff.
+    // Both multiplicand literals fit16; the SRC2 literal retains all32 bits.
+    let inputs = [0x0000ffff, 0x00008000, 0xffffffff];
+    for (op, expected) in [(883, 0x7fff7fffu32), (885, 0x00007fff)] {
+        for position in 0..3 {
+            for selector in [264 + position as u32, 24 + position as u32, 255] {
+                let mut source = [264, 265, 266];
+                source[position] = selector;
+                assert_eq!(
+                    render(
+                        &gpu,
+                        &pixel(
+                            op,
+                            8 + position as u32,
+                            source,
+                            (selector == 255).then_some(inputs[position]),
+                            false,
+                        ),
+                        [inputs[0], inputs[1], inputs[2], 0, 0, 0, 0, 0],
+                    ),
+                    vec![expected.to_le_bytes().to_vec()],
+                    "op={op} alias position={position} selector={selector}",
+                );
+            }
+        }
+        for (literal, unsigned, signed) in [
+            (1, 2u32, 2u32),
+            (0x8000, 0x40008000, 0x40008000),
+            (0xffff, 0xffff0000, 0x00010000),
+        ] {
+            let answer = if op == 883 { unsigned } else { signed };
+            assert_eq!(
+                render(&gpu, &pixel(op, 11, [255; 3], Some(literal), false), [0; 8],),
+                vec![answer.to_le_bytes().to_vec()],
+                "op={op} shared literal={literal:08x}",
+            );
+        }
+    }
+}
+
+#[test]
+fn mad16_graphics_strict_multiplicand_source_contract_rejections() {
+    // These are admission checks for the initial subset, not claims that the
+    // excluded encodings are invalid on AMD hardware. Keep SRC2 full32 literals
+    // covered positively above; only multiplicand literal values are bounded.
+    let mut types = GraphicsPipelineTypes::default();
+    types.colors[0] = GraphicsExportType::Uint;
+    for op in [883, 885] {
+        for position in 0..2 {
+            for selector in 240..=248 {
+                let mut source = [264, 265, 266];
+                source[position] = selector;
+                let code = pixel(op, 11, source, None, false);
+                assert!(
+                    compile_graphics_pipeline_typed(Architecture::Gfx1030, VS, &code, types)
+                        .is_err(),
+                    "op={op} position={position} float inline={selector}",
+                );
+            }
+            for literal in [0x00010000, 0x80000000, 0xffffffff] {
+                let mut source = [264, 265, 266];
+                source[position] = 255;
+                let code = pixel(op, 11, source, Some(literal), false);
+                assert!(
+                    compile_graphics_pipeline_typed(Architecture::Gfx1030, VS, &code, types)
+                        .is_err(),
+                    "op={op} position={position} overwide literal={literal:08x}",
+                );
+            }
+        }
+        let code = pixel(op, 11, [255; 3], Some(0x00010000), false);
+        assert!(
+            compile_graphics_pipeline_typed(Architecture::Gfx1030, VS, &code, types).is_err(),
+            "op={op} shared literal is also a multiplicand",
+        );
+    }
+}

@@ -6,6 +6,51 @@ claim of Xbox hardware equivalence. Supporting raw logs, mutation records and
 source manifests remain local and are not distributed with the repository.
 The array-range descriptor increment below was validated on 26 November 2026.
 
+## Stage 3.1 increment: mixed-width multiply-add
+
+27 November 2026. Added `V_MAD_U32_U16` and `V_MAD_I32_I16`: low16-bit
+multiplicands with a full32-bit wrapping accumulator and result. The signed
+operation sign-extends each multiplicand; upper register halves are ignored.
+The [contract](../shaders/vop3-integer.md#low-halfword-multiply-add)
+limits this increment to zero modifiers, excludes multiplicand floating inline
+selectors and bounds multiplicand literals to0xffff. SRC2-only literals retain
+all32 bits. These are project restrictions, not assertions of hardware invalidity.
+Arithmetic decoding is163/480 forms, leaving317 undecoded; S3.1 remains open.
+
+Independent specification and code-quality reviews found no blockers. The focused
+LLVM test passed96 exact encoding rows, and the assembled fixture corpus passed
+1,343 three-way comparisons across187 forms. Assembly reproduction and exact
+208-form coverage passed.
+The final four-package CPU regression passed885 tests with60 ignored; ignored
+tests are not native evidence. Workspace all-target Clippy, formatting, generated
+map consistency, claims and dependency checks also passed.
+
+With Metal API and shader validation enabled on Apple M4 Max, all10 independent
+compute tests passed with zero ignored:259 native dispatches cover signed/unsigned
+boundaries, dirty upper halves, wrap, aliases, inactive-lane retention, source
+positions, flags and an assembled fixture with five independent expected words.
+Graphics validation passed48 new R32Uint renders and50 source rejection checks.
+The restored seven-test graphics suite also passed existing MAD/SAD and byte
+arithmetic cases. A mutation removing signed extension triggered an exact pixel
+assertion; the source was restored byte-for-byte before final native validation.
+
+Two older negative decoder tests used newly supported opcode883. They now use
+still-unsupported opcode886 with the same rejection assertions. No admission
+rules or existing test expectations were relaxed to make unsupported inputs pass.
+
+Raw logs and reviews are local under `artifacts/s31-mad16/`. Counts derive from
+test loops and are not game compatibility percentages or AMD/Xbox hardware evidence.
+
+Reproduce the focused native checks on Apple Silicon:
+
+```sh
+export CARGO_BUILD_JOBS=2 CARGO_BUILD_TARGET=aarch64-apple-darwin
+export MTL_DEBUG_LAYER=1 MTL_SHADER_VALIDATION=1
+export MTL_SHADER_VALIDATION_REPORT_TO_STDERR=1 MTL_SHADER_VALIDATION_ABORT_ON_FAULT=1
+cargo test --locked -p xenora-semantic-review --test mad16_independent -- --include-ignored --test-threads=1
+cargo test --locked -p xenora-metal --features gpu-tests --test native_compute mad16_ -- --test-threads=1
+```
+
 ## Stage 3.1 increment: XOR-add, byte average and masked differences
 
 27 November 2026. Added bounded zero-modifier `V_XAD_U32`, `V_LERP_U8` and

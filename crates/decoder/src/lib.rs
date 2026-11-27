@@ -46,7 +46,7 @@ const fn concat_forms<const N: usize>() -> [(&'static str, EncodingFamily); N] {
 }
 
 /// Decoded forms not yet described by the semantic registry.
-const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 130] = [
+const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 132] = [
     ("DS_PERMUTE_B32", EncodingFamily::Ds),
     ("DS_BPERMUTE_B32", EncodingFamily::Ds),
     ("DS_SWIZZLE_B32", EncodingFamily::Ds),
@@ -137,6 +137,8 @@ const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 130] = [
     ("V_XAD_U32", EncodingFamily::Vop3),
     ("V_LERP_U8", EncodingFamily::Vop3),
     ("V_MSAD_U8", EncodingFamily::Vop3),
+    ("V_MAD_U32_U16", EncodingFamily::Vop3),
+    ("V_MAD_I32_I16", EncodingFamily::Vop3),
     ("V_BFE_I32", EncodingFamily::Vop3),
     ("V_LSHL_ADD_U32", EncodingFamily::Vop3),
     ("V_ADD_LSHL_U32", EncodingFamily::Vop3),
@@ -1382,6 +1384,8 @@ impl CheckedVectorOp {
             0xd7450000 => Self::Ternary(VectorTernaryOp::XadU32),
             0xd54d0000 => Self::Ternary(VectorTernaryOp::LerpU8),
             0xd5710000 => Self::Ternary(VectorTernaryOp::MsadU8),
+            0xd7730000 => Self::Ternary(VectorTernaryOp::MadU32U16),
+            0xd7750000 => Self::Ternary(VectorTernaryOp::MadI32I16),
 
             _ => return None,
         })
@@ -1480,6 +1484,25 @@ fn vector_integer_vop3(
     } else {
         None
     };
+    // Conservative mixed-width subset, not a hardware-invalidity claim.
+    // Half-format floating inline operands need position-aware expansion.
+    if matches!(
+        op,
+        CheckedVectorOp::Ternary(VectorTernaryOp::MadU32U16 | VectorTernaryOp::MadI32I16)
+    ) {
+        if raw[..2].iter().any(|s| matches!(s, 240..=248)) {
+            return Err(unsupported(
+                mnemonic,
+                "16-bit multiplicand floating inline selectors are outside the supported subset",
+            ));
+        }
+        if raw[..2].contains(&255) && literal.is_some_and(|bits| bits > 0xffff) {
+            return Err(unsupported(
+                mnemonic,
+                "multiplicand shared literal must fit the supported unsigned 16-bit subset",
+            ));
+        }
+    }
     // Nonliteral selectors use the existing bounded vector-source domain.
     // Every active literal position receives the same single trailing word.
     let mut sources = [VectorSource::Immediate(0); 3];

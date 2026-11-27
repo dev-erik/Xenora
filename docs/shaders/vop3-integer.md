@@ -210,3 +210,47 @@ The [arithmetic checkpoint](../testing/local-graphics-checkpoint.md#stage-31-inc
 records independent review, CPU/LLVM checks, 473 native compute dispatches and
 52 new typed integer graphics renders on Apple M4 Max. This evidence covers the
 bounded contract above, not every operand mode or Xbox execution.
+
+
+## Low-halfword multiply-add
+
+Two bounded VOP3 forms multiply the low16 bits of SRC0 and SRC1, then add the
+full32-bit SRC2 and retain the low32 result bits:
+
+| Instruction | OP | Result modulo 2^32 |
+| --- | ---: | --- |
+| `V_MAD_U32_U16` | 883 | unsigned16(a) × unsigned16(b) + unsigned32(c) |
+| `V_MAD_I32_I16` | 885 | signed16(a) × signed16(b) + signed32(c) |
+
+The signed form sign-extends each low halfword before multiplication; the
+unsigned form zero-extends it. Upper multiplicand bits do not affect the result.
+SRC2 and the output remain full32-bit words. Overflow wraps without saturation,
+and SCC, VCC and EXEC are preserved. All modifiers are rejected, including
+OP_SEL, CLAMP, ABS, NEG and OMOD; high-half selection is not admitted.
+
+The checked three-source domain applies with two position-specific restrictions:
+
+- Floating-named inline selectors240–248 are rejected in SRC0 and SRC1 pending
+  position-aware halfword encoding support. SRC2 retains the existing32-bit
+  inline-word mapping.
+- If SRC0 or SRC1 selects the literal, its raw payload must be at most0xffff.
+  This is a conservative implementation restriction, not a claim of ISA
+  invalidity. A literal used only in SRC2 may contain any32-bit word. If SRC2
+  shares that literal with either multiplicand, the0xffff restriction still applies.
+
+There is at most one shared trailing literal word and at most two distinct
+scalar-bus identities, checked before immediates are collapsed. Encodings are
+8 bytes without a literal and12 with one. Normal SGPRs, checked mask halves,
+integer inline values and VGPRs otherwise retain their existing source rules;
+LDS-direct, DPP/SDWA and other unsupported special selectors remain excluded.
+
+Compute captures operands before alias writes, preserves initialized inactive
+destinations and suppresses value reads under empty EXEC after decoding. Pending
+register and initialization checks remain, as do runtime VCC-region exclusions.
+Graphics retains its uniform/descriptor restrictions, integer provenance,
+branch/loop handling and compatible typed-output requirements; it does not
+admit mask-register sources or integer values escaping into floating outputs.
+
+The [MAD16 checkpoint](../testing/local-graphics-checkpoint.md#stage-31-increment-mixed-width-multiply-add)
+records independent review, 259 native compute dispatches and 48 typed integer
+graphics renders on Apple M4 Max. These results cover only this bounded subset.

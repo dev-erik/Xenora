@@ -267,6 +267,10 @@ pub enum VectorTernaryOp {
     LerpU8,
     /// Byte SAD excluding components with zero SRC1 bytes.
     MsadU8,
+    /// Low unsigned 16-bit product plus a full 32-bit accumulator.
+    MadU32U16,
+    /// Low signed 16-bit product plus a full 32-bit accumulator.
+    MadI32I16,
 }
 
 impl VectorTernaryOp {
@@ -293,6 +297,8 @@ impl VectorTernaryOp {
             Self::XadU32 => "v_xad_u32",
             Self::LerpU8 => "v_lerp_u8",
             Self::MsadU8 => "v_msad_u8",
+            Self::MadU32U16 => "v_mad_u32_u16",
+            Self::MadI32I16 => "v_mad_i32_i16",
         }
     }
 }

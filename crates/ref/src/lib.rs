@@ -177,6 +177,8 @@ pub enum VectorTernary {
     AlignBits,
     OrThree,
     XorThree,
+    MadU32U16,
+    MadI32I16,
     XorAdd,
     LerpU8,
     MaskedSadU8,
@@ -859,6 +861,8 @@ pub fn decode(code: &[u8]) -> Result<Vec<DecodedInstruction>, ReferenceError> {
                                 | 838
                                 | 839
                                 | 879
+                                | 883
+                                | 885
                                 | 837
                                 | 333
                                 | 369
@@ -1401,6 +1405,17 @@ fn decode_vop3_integer(bytes: &[u8], offset: usize) -> Result<(Op, usize), Refer
     if literal && bytes.len() < 12 {
         return Err(error(offset, "truncated VOP3 literal"));
     }
+    // Conservative admitted subset: half-width floating constants and high
+    // literal halves are deferred, not declared architecturally invalid.
+    if matches!(opcode, 883 | 885) {
+        if raw[..2].iter().any(|src| matches!(src, 240..=248)) {
+            return Err(error(offset, "unsupported MAD16 floating multiplicand"));
+        }
+        if raw[..2].contains(&255) && u32::from_le_bytes(bytes[8..12].try_into().unwrap()) > 0xffff
+        {
+            return Err(error(offset, "unsupported MAD16 high literal half"));
+        }
+    }
     let mut args = [CompareSource::Immediate(0); 3];
     for (i, &src) in active.iter().enumerate() {
         args[i] = decode_vector_source(
@@ -1577,6 +1592,8 @@ fn decode_vop3_integer(bytes: &[u8], offset: usize) -> Result<(Op, usize), Refer
             args[2],
         ),
         329 => Op::VectorTernary(VectorTernary::ExtractSigned, dst, args[0], args[1], args[2]),
+        883 => Op::VectorTernary(VectorTernary::MadU32U16, dst, args[0], args[1], args[2]),
+        885 => Op::VectorTernary(VectorTernary::MadI32I16, dst, args[0], args[1], args[2]),
         837 => Op::VectorTernary(VectorTernary::XorAdd, dst, args[0], args[1], args[2]),
         333 => Op::VectorTernary(VectorTernary::LerpU8, dst, args[0], args[1], args[2]),
         369 => Op::VectorTernary(VectorTernary::MaskedSadU8, dst, args[0], args[1], args[2]),
@@ -2215,6 +2232,14 @@ fn execute_wave(
                         }
                         // AMD RDNA2 pp170,178,181: independent byte components,
                         // reference-byte (SRC1) masking, and unsigned wrap respectively.
+                        // AMD RDNA2 p185: 16-bit multiplicands, full 32-bit addend.
+                        Op::VectorTernary(VectorTernary::MadU32U16, ..) => u32::from(a as u16)
+                            .wrapping_mul(u32::from(b as u16))
+                            .wrapping_add(c),
+                        Op::VectorTernary(VectorTernary::MadI32I16, ..) => {
+                            (i32::from(a as i16) * i32::from(b as i16)).wrapping_add(c as i32)
+                                as u32
+                        }
                         Op::VectorTernary(VectorTernary::XorAdd, ..) => (a ^ b).wrapping_add(c),
                         Op::VectorTernary(VectorTernary::LerpU8, ..) => {
                             let aa = a.to_le_bytes();

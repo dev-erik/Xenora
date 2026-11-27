@@ -644,6 +644,13 @@ fn vector_bit_binary_expression(op: VectorBitBinaryOp, a: &str, b: &str, lane: &
 }
 fn vector_ternary_expression(op: VectorTernaryOp, a: &str, b: &str, c: &str) -> String {
     match op {
+        VectorTernaryOp::MadU32U16 => format!("((({a}) & 65535u) * (({b}) & 65535u)) + ({c})"),
+        VectorTernaryOp::MadI32I16 => {
+            // Sign-extend low16 into unsigned words. Both product and addition
+            // then wrap in uint, without signed-overflow assumptions.
+            let signed_word = |v: &str| format!("(((({v}) & 65535u) ^ 32768u) - 32768u)");
+            format!("({} * {}) + ({c})", signed_word(a), signed_word(b))
+        }
         VectorTernaryOp::XadU32 => format!("(({a}) ^ ({b})) + ({c})"),
         // AMD RDNA2 §12.12: SRC2 contributes only bits 0,8,16,24.
         // Each byte sum is at most511, so averaging cannot carry across bytes.

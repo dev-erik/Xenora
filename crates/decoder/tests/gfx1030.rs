@@ -637,6 +637,8 @@ fn reference_op(instruction: Instruction) -> Op {
                 xenora_decoder::VectorTernaryOp::BfiB32 => xenora_ref::VectorTernary::BitSelect,
                 xenora_decoder::VectorTernaryOp::Add3U32 => xenora_ref::VectorTernary::AddThree,
                 xenora_decoder::VectorTernaryOp::AndOrB32 => xenora_ref::VectorTernary::AndOr,
+                xenora_decoder::VectorTernaryOp::MadU32U16 => xenora_ref::VectorTernary::MadU32U16,
+                xenora_decoder::VectorTernaryOp::MadI32I16 => xenora_ref::VectorTernary::MadI32I16,
                 xenora_decoder::VectorTernaryOp::XadU32 => xenora_ref::VectorTernary::XorAdd,
                 xenora_decoder::VectorTernaryOp::LerpU8 => xenora_ref::VectorTernary::LerpU8,
                 xenora_decoder::VectorTernaryOp::MsadU8 => xenora_ref::VectorTernary::MaskedSadU8,
@@ -854,6 +856,7 @@ fn compares_fixture_instructions_against_llvm() {
         include_bytes!("../../../fixtures/rdna2/vop3-clamp.bin"),
         include_bytes!("../../../fixtures/rdna2/vop3-mad-sad.bin"),
         include_bytes!("../../../fixtures/rdna2/vop3-byte-arithmetic.bin"),
+        include_bytes!("../../../fixtures/rdna2/vop3-mad16.bin"),
         include_bytes!("../../../fixtures/rdna2/vector-compare.bin"),
         high_registers,
         &matrix,
@@ -872,7 +875,7 @@ fn compares_fixture_instructions_against_llvm() {
     ] {
         count += compare_against_llvm(fixture, &mut forms);
     }
-    assert_eq!(forms.len(), 185, "forms compared: {forms:?}");
+    assert_eq!(forms.len(), 187, "forms compared: {forms:?}");
     eprintln!(
         "{count} three-way instruction comparisons across {} forms",
         forms.len()
@@ -1313,6 +1316,8 @@ fn normalize_llvm_assembly(assembly: &str, next_offset: usize) -> String {
         | "v_and_or_b32"
         | "v_xad_u32"
         | "v_lerp_u8"
+        | "v_mad_u32_u16"
+        | "v_mad_i32_i16"
         | "v_msad_u8"
         | "v_bfe_u32"
         | "v_bfm_b32"
