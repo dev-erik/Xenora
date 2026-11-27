@@ -8,6 +8,10 @@ then read the [interface contracts](interfaces.md). Reproduce an
 [independent validation suite](../tests/validation/README.md) before changing
 either path. The [changelog](../CHANGELOG.md) records notable changes.
 
+## Compatibility target
+
+- [Xbox Series X|S compatibility coverage map](xbox-compatibility.md) — Master target, 58 feature areas, known foundations, unresolved Xbox contracts and completion criteria. AnyPS5 was a presentation reference only.
+
 ## Architecture and technical design
 
 - [Original guest graphics calls](graphics-call-v1.md) — Versioned synthetic resource, pipeline, transfer and command descriptors.

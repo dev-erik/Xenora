@@ -2,6 +2,8 @@
 
 Generated from the pinned AMD RDNA2 inventory, the handwritten and generated decoder identities, and [recorded evidence](../status.toml). Every one of the inventory’s **1,465 encoding forms** appears below, including unsupported forms. These are shader instructions, not Rust methods or runtime API functions. The same mnemonic in two encoding families is two forms.
 
+For the Xbox Series X|S target and non-shader requirements, see the [master compatibility coverage map](../xbox-compatibility.md). This desktop inventory does not establish the console ISA, ABI or complete system compatibility. AnyPS5 was a documentation-layout reference only.
+
 ![Conversion map](../assets/shader-conversion-map.svg)
 
 ## Status meanings

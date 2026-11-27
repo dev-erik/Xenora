@@ -8,6 +8,12 @@ Xenora is an open-source project written primarily in Rust that builds and verif
 
 Xenora is still experimental. Verified work is restricted to independently authored synthetic programs and shaders; authentic Xbox executable loading, system-service compatibility and commercial game execution remain unsupported. See the [current limitations](#current-limitations).
 
+The long-term target is **comprehensive Xbox Series X and Series S compatibility
+on native Apple Silicon with Metal**. The [Xbox compatibility coverage map](docs/xbox-compatibility.md)
+tracks CPU, loading, Xbox interfaces, graphics, audio, input, storage and services,
+including unresolved contracts. The RDNA2 checklist is one supporting inventory;
+it is not a complete Xbox feature list or an overall completion percentage.
+
 ### At a glance
 
 - **Native graphics:** translated gfx1030 vertex and pixel stages and native passes (indexed draws, blend, depth) run on Apple Silicon GPUs — verified, see [Blend pass](#blend-pass) and [Verified Apple M5 results](#verified-apple-m5-results).
