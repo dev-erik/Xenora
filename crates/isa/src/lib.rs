@@ -129,6 +129,14 @@ pub enum VectorTernaryOp {
     Or3B32,
     /// `v_xor3_b32`.
     Xor3B32,
+    /// `v_bfe_i32`.
+    BfeI32,
+    /// `v_lshl_add_u32`.
+    LshlAddU32,
+    /// `v_add_lshl_u32`.
+    AddLshlU32,
+    /// `v_lshl_or_b32`.
+    LshlOrB32,
 }
 
 impl VectorTernaryOp {
@@ -142,6 +150,10 @@ impl VectorTernaryOp {
             Self::AlignbitB32 => "v_alignbit_b32",
             Self::Or3B32 => "v_or3_b32",
             Self::Xor3B32 => "v_xor3_b32",
+            Self::BfeI32 => "v_bfe_i32",
+            Self::LshlAddU32 => "v_lshl_add_u32",
+            Self::AddLshlU32 => "v_add_lshl_u32",
+            Self::LshlOrB32 => "v_lshl_or_b32",
         }
     }
 }

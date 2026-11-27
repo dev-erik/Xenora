@@ -120,7 +120,7 @@ fn canonical_padding_and_each_modifier_bit() {
         }
     }
     // Nearby full-width/ternary opcodes are not admitted by a family catch-all.
-    for op in [329, 335, 375, 377, 866, 869, 870, 883] {
+    for op in [336, 335, 375, 377, 866, 869, 870, 883] {
         assert!(decode_at(Gfx1030, &code(op, 5, [257, 258, 259], 0), 0).is_err());
     }
 }

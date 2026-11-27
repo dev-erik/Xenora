@@ -83,6 +83,29 @@ position have the same graphics restrictions as the preceding six forms.
 LLVM accepts an ALIGNBIT clamp modifier; the current no-modifiers contract is
 a deliberate subset restriction, and broader modifier coverage remains S3.1 debt.
 
+## Signed extraction and shift arithmetic
+
+Four additional three-source operations retain the same checked source and
+integer graphics contract:
+
+| Instruction | OP | Result |
+| --- | ---: | --- |
+| `V_BFE_I32` | 329 | Signed extraction at b&31 with width c&31 |
+| `V_LSHL_ADD_U32` | 838 | (a shifted left by b&31) + c |
+| `V_ADD_LSHL_U32` | 839 | (a + b) shifted left by c&31 |
+| `V_LSHL_OR_B32` | 879 | (a shifted left by b&31) OR c |
+
+Signed extraction returns zero for zero masked width. Otherwise it extracts
+min(width,32-offset) available bits and sign-extends that field. A crossing
+field therefore extends the original high bit; a narrower field extends its own
+highest selected bit. Generated shifts never use count32. Shift/add operations
+use uint arithmetic and wrap to32 bits; no flags are changed.
+
+This interpretation follows the public signed-bitfield compiler transformations
+in [LLVM AMDGPU lowering](https://llvm.googlesource.com/llvm-project/+/7aef15d44bf13fad3ae95546fee9b2ac15da8aa3/llvm/lib/Target/AMDGPU/AMDGPUISelLowering.cpp)
+alongside the AMD ISA guide. ALIGNBYTE remains unsupported pending resolution
+of its large-count behavior; it is not treated as completed work.
+
 ## Evidence and acceptance
 
 Semantics and fields follow the public [AMD RDNA2 ISA, sections 6.2.1, 12.12
@@ -99,6 +122,6 @@ accepted the original six-form increment after CPU, LLVM, native Metal and
 full repository validation. See the
 [local checkpoint](../testing/local-graphics-checkpoint.md) for counts and limits.
 The extension uses `fixtures/rdna2/vop3-bitfield.s` and the separate encoding
-record `artifacts/s31-bitfield-source-evidence.md`. Its integrated acceptance
-remains pending; the original six-form acceptance does not cover it. Neither
-increment completes S3.1 or establishes Xbox compatibility.
+record `artifacts/s31-bitfield-source-evidence.md`. Both independent reviewers accepted that extension with the evidence recorded
+in the local checkpoint. Both reviewers also accepted the four arithmetic forms above after separate
+validation recorded in that checkpoint. None of these increments completes S3.1 or establishes Xbox compatibility.

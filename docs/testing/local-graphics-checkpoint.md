@@ -6,6 +6,32 @@ claim of Xbox hardware equivalence. Supporting raw logs, mutation records and
 source manifests remain local and are not distributed with the repository.
 The array-range descriptor increment below was validated on 26 November 2026.
 
+## Stage 3.1 increment: signed extraction and shift arithmetic
+
+27 November 2026. BFE_I32, LSHL_ADD, ADD_LSHL and LSHL_OR extend the three-source
+integer path. Both independent reviewers accepted the implementation, including
+signed fields crossing bit31, zero-width results, count masking and wrapping
+arithmetic. ALIGNBYTE remains unsupported pending a sufficiently precise
+large-count semantic rule; full S3.1 remains open.
+
+Final unchanged-source validation passed 330 CPU tests (eleven ignored), 24 LLVM
+tests including 332 new matrix rows and 948 three-way comparisons across130 forms,
+13 compute tests including 57 native dispatches, and two native graphics tests
+covering96 draws. Graphics operand/provenance checks cover all16 current VOP3
+identities. Native tests ran on Apple M4 Max with API/shader validation; draw and
+dispatch counts derive from loops. Synthetic outputs do not establish Xbox
+hardware equivalence or game compatibility.
+
+Two mutations were assertion-killed: unsigned field extension and wrong
+shift-count position; sources were restored. Full validation caught an accidental
+scalar reference API rename, which was restored before the successful full rerun
+and final source-bound checks. All nine gates passed in
+`artifacts/validation-full.8ghC2W`: workspace1222 passed/0 failed/164 ignored;
+GPU497 passed/0 failed/1 ignored (overlap). Native audit checked137 executables.
+Final25-file manifest and five command logs are in `artifacts/s31-arithmetic/`;
+independent acceptance reports are `artifacts/s31-arithmetic-r1-review.md` and
+`s31-arithmetic-r2-review.md`. Only acceptance documentation changed afterward.
+
 ## Stage 3.1 increment: bitfields, alignment and population count
 
 27 November 2026. BFE_U32, BFM, ALIGNBIT, BCNT, OR3 and XOR3 extend the checked

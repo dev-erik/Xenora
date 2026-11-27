@@ -351,6 +351,18 @@ fn vector_ternary_expression(op: VectorTernaryOp, a: &str, b: &str, c: &str) -> 
         ),
         VectorTernaryOp::Or3B32 => format!("({a}) | ({b}) | ({c})"),
         VectorTernaryOp::Xor3B32 => format!("({a}) ^ ({b}) ^ ({c})"),
+        VectorTernaryOp::BfeI32 => {
+            let offset = format!("(({b}) & 31u)");
+            let width = format!("(({c}) & 31u)");
+            // A zero-width field is zero. Crossing the word boundary sign-extends
+            // bit31; narrower fields sign-extend their own highest selected bit.
+            format!(
+                "({width} == 0u ? 0u : ({offset} + {width} >= 32u ? as_type<uint>(as_type<int>({a}) >> {offset}) : as_type<uint>(as_type<int>(({a}) << ((32u - {offset} - {width}) & 31u)) >> ((32u - {width}) & 31u))))"
+            )
+        }
+        VectorTernaryOp::LshlAddU32 => format!("(({a}) << (({b}) & 31u)) + ({c})"),
+        VectorTernaryOp::AddLshlU32 => format!("(({a}) + ({b})) << (({c}) & 31u)"),
+        VectorTernaryOp::LshlOrB32 => format!("(({a}) << (({b}) & 31u)) | ({c})"),
     }
 }
 

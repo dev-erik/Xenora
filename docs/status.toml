@@ -1741,3 +1741,51 @@ gpu = "fixture verified"
 recognized = true
 decoded = true
 llvm = "three-way passed"
+
+[[instruction]]
+form = "v_bfe_i32"
+encoding = "VOP3; three checked sources; two scalar identities; modifiers excluded"
+representation = "8 B or 12 B with shared literal"
+lowering = "MSL signed field extraction with zero-width handling; compute and graphics"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_lshl_add_u32"
+encoding = "VOP3; three checked sources; two scalar identities; modifiers excluded"
+representation = "8 B or 12 B with shared literal"
+lowering = "MSL masked shift then wrapping addition; compute and graphics"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_add_lshl_u32"
+encoding = "VOP3; three checked sources; two scalar identities; modifiers excluded"
+representation = "8 B or 12 B with shared literal"
+lowering = "MSL wrapping addition then masked shift; compute and graphics"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_lshl_or_b32"
+encoding = "VOP3; three checked sources; two scalar identities; modifiers excluded"
+representation = "8 B or 12 B with shared literal"
+lowering = "MSL masked shift then bitwise OR; compute and graphics"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"

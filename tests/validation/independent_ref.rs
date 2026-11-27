@@ -128,6 +128,10 @@ enum Insn {
     VBitSelect(u8, CmpSrc, CmpSrc, CmpSrc),
     VAddThree(u8, CmpSrc, CmpSrc, CmpSrc),
     VAndOr(u8, CmpSrc, CmpSrc, CmpSrc),
+    VSignedField(u8, CmpSrc, CmpSrc, CmpSrc),
+    VShiftThenSum(u8, CmpSrc, CmpSrc, CmpSrc),
+    VSumThenShift(u8, CmpSrc, CmpSrc, CmpSrc),
+    VShiftUnion(u8, CmpSrc, CmpSrc, CmpSrc),
     VExtractUnsigned(u8, CmpSrc, CmpSrc, CmpSrc),
     VMask(u8, CmpSrc, CmpSrc),
     VAlignBits(u8, CmpSrc, CmpSrc, CmpSrc),
@@ -784,7 +788,11 @@ fn lane_step(
         | Insn::VMask(d, a, b)
         | Insn::VCountAdd(d, a, b)
         | Insn::VMulHighSigned(d, a, b) => Some((d, [a, b, CmpSrc::Imm(0)])),
-        Insn::VExtractUnsigned(d, a, b, c)
+        Insn::VSignedField(d, a, b, c)
+        | Insn::VShiftThenSum(d, a, b, c)
+        | Insn::VSumThenShift(d, a, b, c)
+        | Insn::VShiftUnion(d, a, b, c)
+        | Insn::VExtractUnsigned(d, a, b, c)
         | Insn::VAlignBits(d, a, b, c)
         | Insn::VOrThree(d, a, b, c)
         | Insn::VXorThree(d, a, b, c)
@@ -841,6 +849,34 @@ fn lane_step(
                 let low = a % 65536 + b % 65536 + c % 65536;
                 let high = a / 65536 + b / 65536 + c / 65536 + low / 65536;
                 low % 65536 + (high % 65536) * 65536
+            }
+            Insn::VSignedField(..) => {
+                let start = b % 32;
+                let available = (c % 32).min(32 - start);
+                let mut out = 0;
+                if available != 0 {
+                    for bit in 0..32 {
+                        let source_bit = start + bit.min(available - 1);
+                        if !(a / 2u32.pow(source_bit)).is_multiple_of(2) {
+                            out |= 2u32.pow(bit);
+                        }
+                    }
+                }
+                out
+            }
+            Insn::VShiftThenSum(..) => {
+                let shifted = (u64::from(a) * 2u64.pow(b % 32)) as u32;
+                ripple(shifted, c, false).0
+            }
+            Insn::VSumThenShift(..) => (u64::from(ripple(a, b, false).0) * 2u64.pow(c % 32)) as u32,
+            Insn::VShiftUnion(..) => {
+                let mut out = c;
+                for bit in b % 32..32 {
+                    if !(a / 2u32.pow(bit - b % 32)).is_multiple_of(2) {
+                        out |= 2u32.pow(bit);
+                    }
+                }
+                out
             }
             Insn::VAndOr(..) => !((!a | !b) & !c),
             Insn::VCountAdd(..) => {
@@ -1259,7 +1295,21 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
     if first >> 26 == 53
         && matches!(
             opcode,
-            361 | 362 | 364 | 330 | 877 | 881 | 328 | 867 | 334 | 868 | 882 | 376
+            361 | 362
+                | 364
+                | 330
+                | 877
+                | 881
+                | 328
+                | 867
+                | 334
+                | 868
+                | 882
+                | 376
+                | 329
+                | 838
+                | 839
+                | 879
         )
     {
         let next = word(code, offset + 4).map_err(|_| fail("truncated VOP3 instruction"))?;
@@ -1314,6 +1364,10 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
             330 => Insn::VBitSelect(dst, args[0], args[1], args[2]),
             877 => Insn::VAddThree(dst, args[0], args[1], args[2]),
             881 => Insn::VAndOr(dst, args[0], args[1], args[2]),
+            329 => Insn::VSignedField(dst, args[0], args[1], args[2]),
+            838 => Insn::VShiftThenSum(dst, args[0], args[1], args[2]),
+            839 => Insn::VSumThenShift(dst, args[0], args[1], args[2]),
+            879 => Insn::VShiftUnion(dst, args[0], args[1], args[2]),
             328 => Insn::VExtractUnsigned(dst, args[0], args[1], args[2]),
             867 => Insn::VMask(dst, args[0], args[1]),
             334 => Insn::VAlignBits(dst, args[0], args[1], args[2]),

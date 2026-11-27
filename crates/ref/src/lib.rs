@@ -105,6 +105,10 @@ pub enum BitBinary {
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum VectorTernary {
+    ExtractSigned,
+    ShiftAdd,
+    AddShift,
+    ShiftOr,
     ExtractUnsigned,
     AlignBits,
     OrThree,
@@ -492,7 +496,21 @@ pub fn decode(code: &[u8]) -> Result<Vec<DecodedInstruction>, ReferenceError> {
                     first & 0xfc000000 == 0xd4000000
                         && matches!(
                             (first >> 16) & 1023,
-                            361 | 362 | 364 | 330 | 877 | 881 | 328 | 867 | 334 | 868 | 882 | 376
+                            361 | 362
+                                | 364
+                                | 330
+                                | 877
+                                | 881
+                                | 328
+                                | 867
+                                | 334
+                                | 868
+                                | 882
+                                | 376
+                                | 329
+                                | 838
+                                | 839
+                                | 879
                         )
                 } =>
             {
@@ -950,6 +968,10 @@ fn decode_vop3_integer(bytes: &[u8], offset: usize) -> Result<(Op, usize), Refer
         361 => Op::VectorProduct(VectorProduct::Low, dst, args[0], args[1]),
         362 => Op::VectorProduct(VectorProduct::HighUnsigned, dst, args[0], args[1]),
         364 => Op::VectorProduct(VectorProduct::HighSigned, dst, args[0], args[1]),
+        329 => Op::VectorTernary(VectorTernary::ExtractSigned, dst, args[0], args[1], args[2]),
+        838 => Op::VectorTernary(VectorTernary::ShiftAdd, dst, args[0], args[1], args[2]),
+        839 => Op::VectorTernary(VectorTernary::AddShift, dst, args[0], args[1], args[2]),
+        879 => Op::VectorTernary(VectorTernary::ShiftOr, dst, args[0], args[1], args[2]),
         330 => Op::VectorTernary(VectorTernary::BitSelect, dst, args[0], args[1], args[2]),
         877 => Op::VectorTernary(VectorTernary::AddThree, dst, args[0], args[1], args[2]),
         881 => Op::VectorTernary(VectorTernary::AndOr, dst, args[0], args[1], args[2]),
@@ -1266,6 +1288,27 @@ fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32
                         Op::BitBinary(BitBinary::CountBitsAdd, ..) => {
                             a.count_ones().wrapping_add(b)
                         }
+                        Op::VectorTernary(VectorTernary::ExtractSigned, ..) => {
+                            let width = (c & 31).min(32 - (b & 31));
+                            if width == 0 {
+                                0
+                            } else {
+                                let field = (u64::from(a) >> (b & 31)) & ((1u64 << width) - 1);
+                                let signed = if field & (1u64 << (width - 1)) != 0 {
+                                    field as i64 - (1i64 << width)
+                                } else {
+                                    field as i64
+                                };
+                                signed as u32
+                            }
+                        }
+                        Op::VectorTernary(VectorTernary::ShiftAdd, ..) => {
+                            (a << (b & 31)).wrapping_add(c)
+                        }
+                        Op::VectorTernary(VectorTernary::AddShift, ..) => {
+                            a.wrapping_add(b) << (c & 31)
+                        }
+                        Op::VectorTernary(VectorTernary::ShiftOr, ..) => (a << (b & 31)) | c,
                         Op::VectorTernary(VectorTernary::ExtractUnsigned, ..) => {
                             (a >> (b & 31)) & ((1u32 << (c & 31)) - 1)
                         }

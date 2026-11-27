@@ -154,6 +154,10 @@ The wider LLVM operand matrix exercises decoding only. ABI means application bin
 | `v_bcnt_u32_b32` | VOP3; 2 checked sources; two scalar identities; modifiers excluded | 8 B or 12 B with shared literal | yes | yes | three-way passed | MSL uint population count plus wrapping accumulator; compute and graphics | implemented | fixture verified | fixture verified |
 | `v_or3_b32` | VOP3; 3 checked sources; two scalar identities; modifiers excluded | 8 B or 12 B with shared literal | yes | yes | three-way passed | MSL uint three-input bitwise OR; compute and graphics | implemented | fixture verified | fixture verified |
 | `v_xor3_b32` | VOP3; 3 checked sources; two scalar identities; modifiers excluded | 8 B or 12 B with shared literal | yes | yes | three-way passed | MSL uint three-input bitwise XOR; compute and graphics | implemented | fixture verified | fixture verified |
+| `v_bfe_i32` | VOP3; three checked sources; two scalar identities; modifiers excluded | 8 B or 12 B with shared literal | yes | yes | three-way passed | MSL signed field extraction with zero-width handling; compute and graphics | implemented | fixture verified | fixture verified |
+| `v_lshl_add_u32` | VOP3; three checked sources; two scalar identities; modifiers excluded | 8 B or 12 B with shared literal | yes | yes | three-way passed | MSL masked shift then wrapping addition; compute and graphics | implemented | fixture verified | fixture verified |
+| `v_add_lshl_u32` | VOP3; three checked sources; two scalar identities; modifiers excluded | 8 B or 12 B with shared literal | yes | yes | three-way passed | MSL wrapping addition then masked shift; compute and graphics | implemented | fixture verified | fixture verified |
+| `v_lshl_or_b32` | VOP3; three checked sources; two scalar identities; modifiers excluded | 8 B or 12 B with shared literal | yes | yes | three-way passed | MSL masked shift then bitwise OR; compute and graphics | implemented | fixture verified | fixture verified |
 <!-- status:instructions:end -->
 
 ## Automated three-way comparison

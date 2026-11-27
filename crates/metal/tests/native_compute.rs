@@ -508,3 +508,6 @@ mod vop3_integer_graphics;
 
 #[path = "native/vop3_bitfield_graphics.rs"]
 mod vop3_bitfield_graphics;
+
+#[path = "native/vop3_arithmetic_graphics.rs"]
+mod vop3_arithmetic_graphics;
