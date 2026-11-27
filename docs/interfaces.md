@@ -1561,3 +1561,17 @@ owned-only layouts. The native request stays unchanged: checked guest bytes beco
 an immutable Host input, charged for the full logical buffer before capture. Exact
 Produced destination dependencies and complete-backing preservation remain intact.
 See [guest image sources](graphics-call-v1.md#guest-backed-buffer-image-sources).
+
+### Explicit guest resource mirrors
+
+`bind_guest_memory` associates an idle owned root with a complete checked guest
+mapping. `synchronize_guest_memory` imports or exports 1–16 full roots at a time.
+Imports stage all payloads and advance host publication epochs only after every
+validation succeeds; exports preflight every mapped writable span. Duplicate and
+overlapping bindings reject within a batch. Retained submissions block binding
+and synchronization. Guest mapping identities prevent writeback through recycled
+addresses; explicit rebind selects replacement storage. Destruction drops the
+association, and no asynchronous callback holds a guest pointer.
+
+The GPU continues to own immutable snapshots. This is explicit synchronization,
+not automatic shared-memory coherence. See the [ABI contract](graphics-call-v1.md#explicit-guest-resource-synchronization).

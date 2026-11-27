@@ -90,7 +90,7 @@ fn cpu_invalid_envelopes_and_reserved_words_preserve_result() {
         (0, 0),
         (0, 2),
         (1, 0),
-        (1, 75), // First unassigned opcode after descriptor tables.
+        (1, 77), // First unassigned opcode after guest synchronization.
         (1, u64::MAX),
         (2, 1),
         (15, 1),

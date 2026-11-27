@@ -16,6 +16,8 @@ either path. The [changelog](../CHANGELOG.md) records notable changes.
 
 ## Native Metal graphics
 
+- [Guest resource synchronization](graphics-call-v1.md#explicit-guest-resource-synchronization) — Packed texture/buffer bindings and atomic import/export; [completion plan](superpowers/plans/2026-11-27-guest-synchronization.md).
+
 - [Guest-backed image sources](graphics-call-v1.md#guest-backed-buffer-image-sources) — Checked submission-time buffer snapshots for pitched, mip/array and typed transfers; [implementation plan](superpowers/plans/2026-11-27-guest-image-sources.md).
 
 - [Descriptor tables and runtime indexing](descriptor-tables.md) — Immutable recorded revisions, four-slot bindings, selector rules and validation commands.

@@ -104,8 +104,8 @@ pub fn graphics_call_v1(
     let used = match opcode {
         1 => 0,
         2 | 3 | 12 | 26 | 27 | 31 | 32 | 33 | 36 | 38 | 47 | 60 | 62 | 68 | 70 | 72 => 1,
-        4 | 11 | 14 | 25 | 28 | 30 | 34 | 39 | 48 | 66 | 69 | 73 => 2,
-        5 | 7 | 15 | 17 | 29 | 41 | 42 | 56 | 63 => 3,
+        4 | 11 | 14 | 25 | 28 | 30 | 34 | 39 | 48 | 66 | 69 | 73 | 75 => 2,
+        5 | 7 | 15 | 17 | 29 | 41 | 42 | 56 | 63 | 76 => 3,
         9 | 10 | 13 | 16 | 18 | 19 | 20 | 35 | 46 | 49 | 64 | 67 | 71 => 4,
         6 | 8 | 21 | 23 | 37 | 45 | 61 => 5,
         24 | 40 | 43 | 51 | 52 | 55 | 59 | 65 | 74 => 6,
@@ -722,6 +722,33 @@ pub fn graphics_call_v1(
                 value = graphics
                     .create_typed_graphics_pipeline4(args.handle(0), &vertex, &pixel, types)?
                     .to_u64();
+            }
+            75 => graphics.bind_guest_memory(args.handle(0), args.0[1], memory)?,
+            76 => {
+                let count = args.size(1)?;
+                if !(1..=16).contains(&count) {
+                    return Err(GraphicsError::InvalidDescriptor);
+                }
+                let import = args.flag(2)?;
+                let mut raw = vec![0; count * 8];
+                memory.read_bytes(args.0[0], &mut raw)?;
+                let roots: Vec<_> = raw
+                    .as_chunks::<8>()
+                    .0
+                    .iter()
+                    .map(|b| GraphicsHandle::from_u64(u64::from_le_bytes(*b)))
+                    .collect();
+                if !import {
+                    let result_end = result
+                        .checked_add(8)
+                        .ok_or(GraphicsError::InvalidDescriptor)?;
+                    for (address, length) in graphics.guest_sync_ranges(&roots)? {
+                        if address < result_end && result < address + length as u64 {
+                            return Err(GraphicsError::InvalidDescriptor);
+                        }
+                    }
+                }
+                graphics.synchronize_guest_memory(&roots, import, memory)?;
             }
             67 => {
                 value = graphics

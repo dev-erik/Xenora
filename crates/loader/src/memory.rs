@@ -6,6 +6,15 @@
 //! (Read, Write, Execute) and bounds enforcement without host OS mapping tricks.
 
 use std::fmt;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static NEXT_MAPPING_ID: AtomicU64 = AtomicU64::new(1);
+
+fn allocate_mapping_id() -> Result<u64, MemoryError> {
+    NEXT_MAPPING_ID
+        .try_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
+        .map_err(|_| MemoryError::AllocationFailed)
+}
 
 pub(crate) const ALLOCATION_GRANULARITY: u64 = 65_536;
 
@@ -85,12 +94,25 @@ impl fmt::Display for MemoryError {
 
 impl std::error::Error for MemoryError {}
 
-#[derive(Clone)]
 struct MappedRegion {
+    identity: u64,
     base: u64,
     data: Vec<u8>,
     permissions: MemoryPermissions,
     virtual_allocation: bool,
+}
+
+impl Clone for MappedRegion {
+    fn clone(&self) -> Self {
+        Self {
+            // Clone cannot return an allocation error; never reuse an identity.
+            identity: allocate_mapping_id().expect("guest mapping identity counter exhausted"),
+            base: self.base,
+            data: self.data.clone(),
+            permissions: self.permissions,
+            virtual_allocation: self.virtual_allocation,
+        }
+    }
 }
 
 impl MappedRegion {
@@ -167,6 +189,7 @@ impl GuestMemory {
         data[..copy_len].copy_from_slice(&initial_data[..copy_len]);
 
         self.regions.push(MappedRegion {
+            identity: allocate_mapping_id()?,
             base,
             data,
             permissions,
@@ -307,6 +330,21 @@ impl GuestMemory {
         Ok(())
     }
 
+    /// Return region identities in address order after checking the entire mapped span.
+    /// Permissions do not affect identity. Empty spans follow the access resolver
+    /// semantics and return no identities when their address is mapped.
+    pub(crate) fn mapping_identity(
+        &self,
+        address: u64,
+        len: usize,
+    ) -> Result<Vec<u64>, MemoryError> {
+        Ok(self
+            .resolve(address, len, None)?
+            .into_iter()
+            .map(|(index, _, _)| self.regions[index].identity)
+            .collect())
+    }
+
     /// Preflight an entire output span without changing guest memory.
     pub fn validate_write_range(&self, address: u64, len: usize) -> Result<(), MemoryError> {
         self.resolve(address, len, Some("write")).map(|_| ())
@@ -392,5 +430,151 @@ impl GuestMemory {
     /// Write a 16-bit little-endian integer to guest memory.
     pub fn write_u16(&mut self, address: u64, value: u16) -> Result<(), MemoryError> {
         self.write_bytes(address, &value.to_le_bytes())
+    }
+}
+
+#[cfg(test)]
+mod mapping_identity_tests {
+    use super::*;
+
+    #[test]
+    fn identities_span_regions_and_ignore_permissions() {
+        let mut memory = GuestMemory::new();
+        memory
+            .map_region(0x1004, 4, MemoryPermissions::NO_ACCESS)
+            .unwrap();
+        memory
+            .map_region(0x1000, 4, MemoryPermissions::READ_WRITE)
+            .unwrap();
+        let first = memory.mapping_identity(0x1000, 4).unwrap();
+        let second = memory.mapping_identity(0x1004, 4).unwrap();
+        assert_eq!(first.len(), 1);
+        assert_eq!(second.len(), 1);
+        assert_ne!(first, second);
+        assert_eq!(
+            memory.mapping_identity(0x1002, 4).unwrap(),
+            vec![first[0], second[0]]
+        );
+        memory.regions[0].permissions = MemoryPermissions::NO_ACCESS;
+        memory.regions[1].permissions = MemoryPermissions::READ_WRITE_EXECUTE;
+        assert_eq!(
+            memory.mapping_identity(0x1000, 8).unwrap(),
+            vec![first[0], second[0]]
+        );
+        memory.write_bytes(0x1004, &[1, 2, 3, 4]).unwrap();
+        assert_eq!(memory.mapping_identity(0x1004, 4).unwrap(), second);
+    }
+
+    #[test]
+    fn remapping_changes_only_the_replaced_identity() {
+        let mut memory = GuestMemory::new();
+        memory
+            .map_virtual_allocation(0x1000, 4, MemoryPermissions::READ_WRITE)
+            .unwrap();
+        memory
+            .map_region(0x1004, 4, MemoryPermissions::READ_WRITE)
+            .unwrap();
+        let before = memory.mapping_identity(0x1000, 8).unwrap();
+        assert!(memory.release_virtual_allocation(0x1000));
+        assert_eq!(
+            memory.mapping_identity(0x1000, 8),
+            Err(MemoryError::UnmappedAddress(0x1000))
+        );
+        memory
+            .map_virtual_allocation(0x1000, 4, MemoryPermissions::READ_WRITE)
+            .unwrap();
+        let after = memory.mapping_identity(0x1000, 8).unwrap();
+        assert_ne!(before[0], after[0]);
+        assert_eq!(before[1], after[1]);
+    }
+
+    #[test]
+    fn clone_preserves_contents_and_metadata_but_has_disjoint_identities() {
+        let mut memory = GuestMemory::new();
+        memory
+            .map_virtual_allocation(0x1000, 4, MemoryPermissions::READ_WRITE)
+            .unwrap();
+        memory.write_bytes(0x1000, &[1, 2, 3, 4]).unwrap();
+        memory
+            .map_region(0x1004, 4, MemoryPermissions::READ_EXECUTE)
+            .unwrap();
+        let original = memory.mapping_identity(0x1000, 8).unwrap();
+        let mut cloned = memory.clone();
+        let identities = cloned.mapping_identity(0x1000, 8).unwrap();
+        assert!(identities.iter().all(|id| !original.contains(id)));
+        for (a, b) in memory.regions.iter().zip(&cloned.regions) {
+            assert_eq!(a.base, b.base);
+            assert_eq!(a.data, b.data);
+            assert_eq!(a.permissions, b.permissions);
+            assert_eq!(a.virtual_allocation, b.virtual_allocation);
+        }
+        cloned.write_u8(0x1000, 9).unwrap();
+        assert_eq!(memory.read_u8(0x1000), Ok(1));
+        assert!(cloned.release_virtual_allocation(0x1000));
+        assert_eq!(memory.mapping_identity(0x1000, 8).unwrap(), original);
+        cloned.clone_from(&memory);
+        assert!(
+            cloned
+                .mapping_identity(0x1000, 8)
+                .unwrap()
+                .iter()
+                .all(|id| !original.contains(id) && !identities.contains(id))
+        );
+        let mut independent = GuestMemory::new();
+        independent
+            .map_region(0x1000, 8, MemoryPermissions::READ_WRITE)
+            .unwrap();
+        assert!(!original.contains(&independent.mapping_identity(0x1000, 8).unwrap()[0]));
+    }
+
+    #[test]
+    fn invalid_ranges_and_failed_accesses_leave_bytes_and_identities_unchanged() {
+        let mut memory = GuestMemory::new();
+        memory
+            .map_region_with_data(0x1000, 4, MemoryPermissions::READ_WRITE, &[1, 2, 3, 4])
+            .unwrap();
+        memory
+            .map_region_with_data(0x1004, 4, MemoryPermissions::NO_ACCESS, &[5, 6, 7, 8])
+            .unwrap();
+        memory
+            .map_region(0x1009, 1, MemoryPermissions::READ_WRITE)
+            .unwrap();
+        let identities = memory.mapping_identity(0x1000, 8).unwrap();
+        let bytes: Vec<_> = memory.regions.iter().map(|r| r.data.clone()).collect();
+        assert_eq!(
+            memory.mapping_identity(0x1000, 10),
+            Err(MemoryError::UnmappedAddress(0x1000))
+        );
+        assert_eq!(
+            memory.mapping_identity(u64::MAX, 2),
+            Err(MemoryError::Overflow)
+        );
+        assert_eq!(
+            memory.mapping_identity(0x2000, 0),
+            Err(MemoryError::UnmappedAddress(0x2000))
+        );
+        assert_eq!(memory.mapping_identity(0x1000, 0), Ok(vec![]));
+        assert_eq!(memory.mapping_identity(0x1008, 0), Ok(vec![]));
+        assert!(
+            memory
+                .map_region(0x1000, 4, MemoryPermissions::READ_WRITE)
+                .is_err()
+        );
+        assert!(memory.write_bytes(0x1002, &[9; 4]).is_err());
+        assert!(memory.write_checked(0x1002, &[9; 8], None).is_err());
+        let mut dst = [0xaa; 8];
+        assert!(memory.read_bytes(0x1000, &mut dst).is_err());
+        assert_eq!(dst, [0xaa; 8]);
+        assert!(memory.read_checked(0x1002, &mut dst, None).is_err());
+        assert_eq!(dst, [0xaa; 8]);
+        assert_eq!(
+            memory
+                .regions
+                .iter()
+                .map(|r| r.data.clone())
+                .collect::<Vec<_>>(),
+            bytes
+        );
+        assert_eq!(memory.mapping_identity(0x1000, 8).unwrap(), identities);
     }
 }

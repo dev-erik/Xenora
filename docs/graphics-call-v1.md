@@ -636,8 +636,8 @@ fresh bytes. Guest-memory faults retain the existing guest fault behavior.
 Pending work owns the snapshot independently of guest mappings and source handles.
 The synchronous submission call defines the capture boundary; it does not promise
 an atomic snapshot against concurrent external writers. Guest-backed destinations,
-guest-backed texture creation and general coherent shared memory remain unsupported.
-Guest-backed buffer image sources are described below. The native backend and shader ABI are unchanged.
+direct streaming texture creation and automatic shared-memory coherence remain unsupported.
+Explicit packed texture mirrors use opcodes75–76 below. Guest-backed buffer image sources are described below. The native backend and shader ABI are unchanged.
 
 
 ### Guest-backed buffer-region sources
@@ -978,5 +978,48 @@ backend capability gates still apply, including BC block alignment and runtime s
 
 Exact produced destination versions remain the prior contents for partial copies.
 Untouched borders, mips and array slices are preserved through publication. This
-extension does not add guest-backed textures, guest destinations, automatic mapping
-coherence or writeback. Those remain separate S2.6 work.
+source extension does not itself add guest-backed textures or writeback. The
+explicit mirror binding and import/export interface below supplies those roles
+without automatic mapping coherence.
+
+## Explicit guest resource synchronization
+
+Opcodes75–76 add persistent guest bindings to owned resource roots. Create a
+buffer or texture with the existing creation operations, then bind it; this
+composition creates a guest-backed mirror with the same packed mip/slice/format
+layout as the owned resource. It does not change opcode49 streaming sources.
+
+| Opcode | Arguments | Effect |
+| --- | --- | --- |
+| 75 | root handle, guest address | Bind the complete packed root to the current guest mapping; no bytes copied |
+| 76 | address of u64 root-handle array, count, import flag | Synchronize 1–16 complete roots atomically; flag1 imports, flag0 exports |
+
+Imports require COPY_DEST and readable guest bytes. Exports require COPY_SOURCE
+and writable guest bytes. All roots must be idle: wait for submissions and release
+receipts (including any consumers retaining dependencies) before synchronizing.
+The calls never implicitly wait. Recorded commands resolve imported contents at
+submission, as with ordinary uploads. A bind alone does not initialize contents.
+
+Imports stage every full packed root before changing any contents or publication
+epoch. Exports preflight every destination before writing under exclusive guest
+memory access. Invalid late entries leave the entire batch unchanged. Duplicate
+handles and overlapping guest spans reject. Export spans may not overlap the
+call's result slot. Descriptor/handle-array bytes are captured before export.
+
+Bindings retain mapping identities, not native pointers. Freeing/remapping the
+same address or using a cloned address space rejects synchronization until an
+explicit opcode75 rebind. Current permissions are checked at synchronization.
+Rebinding is allowed only without retained submission references. Destroying the
+resource removes its binding; delayed GPU completion never writes guest memory.
+
+Guest writes become visible to GPU work only after import; GPU results become
+visible to the guest only after export. Pending native inputs remain immutable.
+This explicit synchronization model supports the existing packed format matrix,
+mips and array slices. Packed depth supports exact bits; an opaque render-depth
+snapshot must first be copied into a packed transfer root for export.
+
+The finite S2.6 synchronization interface passed the acceptance checks recorded
+in the [local checkpoint](testing/local-graphics-checkpoint.md#s26-completion-explicit-guest-resource-synchronization). Automatic shared-memory coherence, concurrent
+external writers, unrestricted aliases and general resource dependency graphs
+are outside this interface. No console memory model or game compatibility is
+claimed. See the [acceptance plan](superpowers/plans/2026-11-27-guest-synchronization.md).

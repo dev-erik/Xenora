@@ -16,6 +16,53 @@ run ends with `PASS`. Quick mode also rejects filters that select no passing tes
 Use `--help` for prerequisites. These tests render offscreen and compare pixels;
 they do not open an application window. Avoid other GPU test runs at the same time.
 
+## S2.6 completion: explicit guest resource synchronization
+
+27 November 2026. The [synchronization contract](../graphics-call-v1.md#explicit-guest-resource-synchronization)
+completes S2.6 through explicit import/export boundaries. Existing buffer and typed
+texture creation plus binding creates a packed guest-backed mirror, including mips,
+array slices and packed depth. Atomic batches synchronize up to16 disjoint roots.
+Imports stage all bytes and publication epochs; exports validate every destination
+before writing. Guest mapping replacement requires explicit rebind. Current
+permissions and retained submissions are checked before any transfer.
+
+Synchronization guards retain original handles across successful or failed terminal
+completion until release/pruning, independently of native input retirement. No
+asynchronous callback writes guest memory. A native regression also exposed and
+fixed missing depth-barrier publication in legacy buffer-copy completion.
+
+The focused acceptance set is **22 tests**: twelve CPU integration, four mapping
+identity, two private publication/remapping and four original native guest tests.
+CPU coverage includes all ten packed formats, adjacent regions, clone/remap
+invalidation, read-only/write-only permissions, batch atomicity, alias/count/state
+rejection and nonqueued async success/failure. Native queued coverage includes
+literal partial copies of RGBA8 mips/arrays, uint, depth and odd buffers, guarded
+writeback, explicit rebind/destruction, retained receipts and **24 repeated transfer
+cycles**. These are copy/synchronization cycles, not rendered game frames. Mapping
+fault/remap evidence is CPU-side; native compressed-format synchronization and
+all-adapter coverage are not claimed by these new tests.
+
+All nine gates passed in `artifacts/validation-full.6jRepZ`: **1,012 workspace tests
+passed, zero failed, 144 ignored**; the native suite reported **451 passed, zero
+failed, one ignored**. Suites overlap; ignored tests are not GPU evidence. Logs
+remain local. The earlier full run stopped on a fixed-size decoding lint, corrected
+before the successful final run.
+
+Four isolated mutations produced assertion failures: accepting stale mappings,
+publishing an import before validating later roots, omitting export permission
+preflight, and dropping terminal synchronization guards. Exact source restoration
+was verified against each manifest's hash. Evidence remains under
+`artifacts/s26-sync-mutations`. Independent reviewers accepted production behavior,
+memory identities, native literals, CPU expectations and mutation evidence without
+authors certifying their own components. Their final-gate condition is satisfied.
+
+The [completed checklist](../superpowers/plans/2026-11-27-guest-synchronization.md)
+defines the finite milestone. Opaque native depth requires conversion into a packed
+transfer root before export. Automatic shared-memory coherence, concurrent external
+writers, unrestricted aliases and a console memory model are not established.
+**S2.7 and final integrated Stage2 acceptance remain open.** Historical S2.6
+increment sections below describe the limits at their earlier checkpoints.
+
 ## S2.6 increment: guest-buffer image sources
 
 27 November 2026. Guest-backed buffers now supply pitched, mip/array and typed

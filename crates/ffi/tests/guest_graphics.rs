@@ -6482,3 +6482,6 @@ mod descriptor_tables;
 
 #[path = "guest_graphics/guest_image_sources.rs"]
 mod guest_image_sources;
+
+#[path = "guest_graphics/guest_sync.rs"]
+mod guest_sync;

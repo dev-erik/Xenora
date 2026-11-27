@@ -18,6 +18,10 @@ remains unsupported.
 - Extended the read-only RDNA2 planning CLI (`python3 -m qa rdna2`) with family/status filters, compact summaries, Codex-ready manifests under `artifacts/`, active-claim exclusion (family claims exclude those families; path-only claims block overlapping permitted files), coverage reconcile against `semantic_coverage` without inflating counts, and inventory diffs. Covered by `tests/qa/test_rdna2_plan.py`; planning only, no GPU production edits.
 
 ### Added
+- Explicit guest-memory bindings for packed buffer, texture and depth roots through
+  opcodes75–76. Atomic batch import/export checks states, retained submissions,
+  mapping identities and permissions; remapping requires explicit rebind. GPU
+  results are written back only at an explicit idle synchronization boundary.
 - Guest-backed buffers can supply pitched image transfers through the existing
   image, mip/array and typed-copy operations. Submission snapshots the complete
   checked logical buffer after budget validation; pending work remains independent
@@ -481,6 +485,9 @@ remains unsupported.
   native DBT.
 
 ### Fixed
+- Legacy queued copy completion now publishes depth-resource barriers alongside
+  buffer/color barriers, so subsequent depth readback and synchronization observe
+  the validated state transition.
 - Validate COMMON/PRESENT barrier starting states exactly like other states.
   Stale transitions and list replays now fail without committing resource state,
   presentation or history. Regression coverage reproduces the prior wildcard.

@@ -30,6 +30,9 @@ mod storage;
 pub use attachments::*;
 use attachments::{AttachmentCommit, AttachmentPlan};
 use storage::StorageDrawValidation;
+#[path = "graphics_guest_sync.rs"]
+mod guest_sync;
+use guest_sync::GuestBinding;
 #[path = "graphics_descriptors.rs"]
 mod descriptors;
 pub use descriptors::*;
@@ -1259,6 +1262,8 @@ struct PreparedSubmission {
 }
 
 struct SubmissionReceipt {
+    // Handle-only synchronization guards survive native input retirement.
+    sync_references: HashSet<GraphicsHandle>,
     descriptor_revisions: Vec<Arc<GraphicsDescriptorRevision>>,
     handle: GraphicsHandle,
     pending: Option<Box<dyn GraphicsPendingSubmission>>,
@@ -1352,6 +1357,7 @@ pub struct GraphicsContext {
     queued_serial: u64,
     published_serial: u64,
     root_publications: HashMap<GraphicsHandle, RootPublication>,
+    guest_bindings: HashMap<GraphicsHandle, GuestBinding>,
     submission: Option<SubmissionReceipt>,
     retired_resources: HashMap<GraphicsHandle, GraphicsResource>,
     retired_depth: HashMap<GraphicsHandle, DepthResource>,
@@ -1450,6 +1456,7 @@ impl GraphicsContext {
             queued_serial: 0,
             published_serial: 0,
             root_publications: HashMap::new(),
+            guest_bindings: HashMap::new(),
             submission: None,
             retired_resources: HashMap::new(),
             retired_depth: HashMap::new(),
@@ -2066,6 +2073,7 @@ impl GraphicsContext {
                     handle,
                     pending: None,
                     commit: None,
+                    sync_references: references.clone(),
                     references,
                     status: GraphicsSubmissionStatus::Pending,
                     error: None,
@@ -2689,6 +2697,7 @@ impl GraphicsContext {
                     handle,
                     pending: None,
                     commit: None,
+                    sync_references: references.clone(),
                     references,
                     status: GraphicsSubmissionStatus::Pending,
                     error: None,
@@ -2740,6 +2749,8 @@ impl GraphicsContext {
         for (handle, state) in commit.states {
             if let Some(resource) = self.resources.get_mut(&handle) {
                 resource.state = state;
+            } else if let Some(depth) = self.depth_resources.get_mut(&handle) {
+                depth.state = state;
             }
         }
         let history = &mut self
@@ -3804,6 +3815,7 @@ impl GraphicsContext {
             handle,
             pending: Some(pending),
             commit: Some(prepared.commit),
+            sync_references: references.clone(),
             references,
             status: GraphicsSubmissionStatus::Pending,
             error: None,
@@ -5275,6 +5287,7 @@ impl GraphicsContext {
             self.retired_depth.insert(resource, value);
         }
         self.root_publications.remove(&resource);
+        self.guest_bindings.remove(&resource);
         Ok(())
     }
 

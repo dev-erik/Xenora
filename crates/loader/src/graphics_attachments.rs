@@ -691,6 +691,7 @@ impl GraphicsContext {
                     handle,
                     pending: None,
                     commit: None,
+                    sync_references: references.clone(),
                     references,
                     status: GraphicsSubmissionStatus::Pending,
                     error: None,
