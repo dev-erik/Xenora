@@ -552,6 +552,28 @@ fn compares_fixture_instructions_against_llvm() {
     );
 }
 
+#[test]
+#[ignore = "requires LLVM with the gfx1030 AMDGPU target"]
+fn compares_sopk_fixture_against_llvm() {
+    let fixture = include_bytes!("../../../fixtures/rdna2/scalar-immediate.bin");
+    let mut forms = std::collections::BTreeSet::new();
+    let count = compare_against_llvm(fixture, &mut forms);
+    let identities: std::collections::BTreeSet<_> = decode(Architecture::Gfx1030, fixture)
+        .unwrap()
+        .into_iter()
+        .filter_map(|i| {
+            let form = xenora_isa::meta::identify(&fixture[i.offset..])
+                .unwrap()
+                .form;
+            (form.family == xenora_isa::meta::EncodingFamily::Sopk).then_some(form.name)
+        })
+        .collect();
+    assert!(identities.contains("S_MOVK_I32"));
+    assert!(identities.contains("S_ADDK_I32"));
+    assert!(identities.contains("S_MULK_I32"));
+    eprintln!("{count} three-way signed-immediate fixture comparisons");
+}
+
 fn assemble_matrix() -> Vec<u8> {
     use std::fmt::Write as _;
     // Cover register banks and extrema, immediate classes in both scalar
@@ -782,10 +804,20 @@ fn distinguishes_llvm_invalid_encodings_from_xenora_subset_rejections() {
         &[0xd516_0001, 0x0202_0501],                           // Right shift e64
         &[0x3602_0680],                                        // VOP2 inline source
         &[0xbf8c_3f71],                                        // Different wait counter
-        &[0xbf82_ffff],                                        // Backward branch
+        &[0xbf82_fffe],                                        // Branch before stream
         &[0xbf82_0001, 0xbf81_0000],                           // Branch to EOF
         &[0xbf84_0001, 0x7e04_02ff, 0x1234_5678, 0xbf81_0000], // Branch into literal
     ];
+    // Signed backward offsets are decoded; consumers separately reject unsupported cycles.
+    let backward = 0xbf82_ffffu32.to_le_bytes();
+    let decoded = decode(Architecture::Gfx1030, &backward).unwrap();
+    assert_eq!(decoded[0].instruction, Instruction::Branch { target: 0 });
+    // The compute reference deliberately retains its acyclic execution subset.
+    assert_eq!(
+        xenora_ref::decode(&backward).unwrap_err().detail,
+        "backward branch"
+    );
+    assert_llvm_success(&llvm_disassemble(&backward));
     for (words, llvm_accepts) in malformed
         .iter()
         .map(|words| (words, false))
@@ -823,6 +855,24 @@ fn literal_bits(text: &str) -> Option<u32> {
 fn normalize_llvm_assembly(assembly: &str, next_offset: usize) -> String {
     let (mnemonic, operands) = assembly.split_once(' ').unwrap_or((assembly, ""));
     match mnemonic {
+        "s_movk_i32" | "s_addk_i32" | "s_mulk_i32" => {
+            let (dst, immediate) = operands.split_once(", ").unwrap();
+            let raw = immediate
+                .strip_prefix("0x")
+                .map(|digits| u32::from_str_radix(digits, 16).unwrap())
+                .unwrap_or_else(|| immediate.parse::<i32>().unwrap() as u32);
+            let signed = raw as u16 as i16 as i32;
+            let source = if (-16..=64).contains(&signed) {
+                signed.to_string()
+            } else {
+                format!("0x{:x}", signed as u32)
+            };
+            match mnemonic {
+                "s_movk_i32" => format!("s_mov_b32 {dst}, {source}"),
+                "s_addk_i32" => format!("s_add_i32 {dst}, {dst}, {source}"),
+                _ => format!("s_mul_i32 {dst}, {dst}, {source}"),
+            }
+        }
         "s_waitcnt_vscnt" if operands == "null, 0x0" => format!("{mnemonic} null, 0"),
         "s_branch" | "s_cbranch_scc0" | "s_cbranch_execz" | "s_cbranch_vccz" => {
             let displacement: usize = operands.parse().unwrap();

@@ -691,3 +691,110 @@ fn translated_scalar_packing_preserves_runtime_scc_and_literal_halves() {
         }
     }
 }
+
+#[test]
+fn translated_scalar_immediates_preserve_flags_and_signed_results() {
+    let gpu = NativeCompute::new().unwrap();
+    let fixtures: [(&[u8], &[(u32, u32, u32, Option<bool>)]); 4] = [
+        (
+            include_bytes!("../../../../fixtures/rdna2/x9-scalar-movk-ps.bin"),
+            &[(0, 0, 0xffff8000, None)],
+        ),
+        (
+            include_bytes!("../../../../fixtures/rdna2/x9-scalar-addk-ps.bin"),
+            &[
+                (0x80000000, 0, 0x7fffffff, Some(true)),
+                (0, 0, 0xffffffff, Some(false)),
+                (1, 0, 0, Some(false)),
+            ],
+        ),
+        (
+            include_bytes!("../../../../fixtures/rdna2/x9-scalar-mulk-ps.bin"),
+            &[
+                (0x80000000, 0, 0x80000000, None),
+                (3, 0, 0xfffffffd, None),
+                (0xffffffff, 0, 1, None),
+            ],
+        ),
+        (
+            include_bytes!("../../../../fixtures/rdna2/x9-scalar-mul-ps.bin"),
+            &[
+                (0x80000000, 3, 0x80000000, None),
+                (0x7fffffff, 3, 0x7ffffffd, None),
+                (0x12345678, 0x10000, 0x56780000, None),
+            ],
+        ),
+    ];
+    for (original, cases) in fixtures {
+        for &(a, b, result, changed_flag) in cases {
+            for constants in [false, true] {
+                let mut ps = original.to_vec();
+                if constants {
+                    let mut prefix: Vec<u8> = [0xbea003ffu32, a, 0xbea103ff, b]
+                        .into_iter()
+                        .flat_map(u32::to_le_bytes)
+                        .collect();
+                    prefix.extend_from_slice(&ps[8..]);
+                    ps = prefix;
+                }
+                let pipeline = compile_graphics_pipeline(Architecture::Gfx1030, VS, &ps).unwrap();
+                for flag in [false, true] {
+                    let outgoing = changed_flag.unwrap_or(flag);
+                    for matches in [true, false] {
+                        let draws = [TriangleDraw {
+                            vertices: &POS,
+                            colors: &COLORS,
+                            viewport: [1, 1],
+                        }];
+                        let states = [TriangleState::default()];
+                        let shaders = [TriangleShader {
+                            source: &pipeline.shader.msl,
+                            entries: ENTRIES,
+                        }];
+                        let uniforms = [DrawUniforms {
+                            required_mask: pipeline.required_uniform_mask,
+                            values: Some([
+                                a,
+                                b,
+                                u32::from(flag),
+                                result ^ u32::from(!matches),
+                                0,
+                                0,
+                                0,
+                                0,
+                            ]),
+                        }];
+                        let pass = TriangleTargetsPass {
+                            draws: &draws,
+                            states: &states,
+                            extent: [1, 1],
+                            clears: &[[7, 11, 13, 255]],
+                            clear_depth: None,
+                        };
+                        let actual = gpu
+                            .submit_view_binding_triangle_targets_with_uniforms_rgba8(
+                                &shaders,
+                                &pass,
+                                &[vec![]],
+                                None,
+                                &[None],
+                                &uniforms,
+                            )
+                            .unwrap()
+                            .wait()
+                            .unwrap();
+                        assert_eq!(
+                            actual,
+                            vec![vec![
+                                if matches { 255 } else { 0 },
+                                if outgoing { 255 } else { 0 },
+                                0,
+                                255
+                            ]]
+                        );
+                    }
+                }
+            }
+        }
+    }
+}

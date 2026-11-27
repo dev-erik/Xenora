@@ -858,6 +858,7 @@ fn lift(
                         | MaxI32
                         | MaxU32
                         | CselectB32
+                        | MulI32
                         | PackLlB32B16
                         | PackLhB32B16
                         | PackHhB32B16
@@ -873,40 +874,42 @@ fn lift(
                 } else {
                     Condition::Constant(false)
                 };
-                let (value, flag) = if matches!(op, PackLlB32B16 | PackLhB32B16 | PackHhB32B16) {
-                    let value = match (left, right) {
-                        (ScalarValue::Constant(a), ScalarValue::Constant(b)) => {
-                            ScalarValue::Constant(op.evaluate(a, b, false).0)
-                        }
-                        _ => ScalarValue::Runtime(
-                            ir.push(Some(offset), Op::ScalarResult(op, left, right, carry)),
-                        ),
+                let (value, flag) =
+                    if matches!(op, MulI32 | PackLlB32B16 | PackLhB32B16 | PackHhB32B16) {
+                        let value = match (left, right) {
+                            (ScalarValue::Constant(a), ScalarValue::Constant(b)) => {
+                                ScalarValue::Constant(op.evaluate(a, b, false).0)
+                            }
+                            _ => ScalarValue::Runtime(
+                                ir.push(Some(offset), Op::ScalarResult(op, left, right, carry)),
+                            ),
+                        };
+                        (value, scc)
+                    } else if op == CselectB32 {
+                        let value = match carry {
+                            Condition::Constant(true) => left,
+                            Condition::Constant(false) => right,
+                            _ if left.same(right) => left,
+                            _ => ScalarValue::Runtime(
+                                ir.push(Some(offset), Op::ScalarResult(op, left, right, carry)),
+                            ),
+                        };
+                        (value, scc)
+                    } else if let (
+                        ScalarValue::Constant(a),
+                        ScalarValue::Constant(b),
+                        Condition::Constant(c),
+                    ) = (left, right, carry)
+                    {
+                        let (bits, flag) = scalar_constant(op, a, b, c);
+                        (ScalarValue::Constant(bits), Some(Condition::Constant(flag)))
+                    } else {
+                        let result =
+                            ir.push(Some(offset), Op::ScalarResult(op, left, right, carry));
+                        let flag =
+                            ir.push(Some(offset), Op::ScalarFlag(op, left, right, carry, result));
+                        (ScalarValue::Runtime(result), Some(Condition::Runtime(flag)))
                     };
-                    (value, scc)
-                } else if op == CselectB32 {
-                    let value = match carry {
-                        Condition::Constant(true) => left,
-                        Condition::Constant(false) => right,
-                        _ if left.same(right) => left,
-                        _ => ScalarValue::Runtime(
-                            ir.push(Some(offset), Op::ScalarResult(op, left, right, carry)),
-                        ),
-                    };
-                    (value, scc)
-                } else if let (
-                    ScalarValue::Constant(a),
-                    ScalarValue::Constant(b),
-                    Condition::Constant(c),
-                ) = (left, right, carry)
-                {
-                    let (bits, flag) = scalar_constant(op, a, b, c);
-                    (ScalarValue::Constant(bits), Some(Condition::Constant(flag)))
-                } else {
-                    let result = ir.push(Some(offset), Op::ScalarResult(op, left, right, carry));
-                    let flag =
-                        ir.push(Some(offset), Op::ScalarFlag(op, left, right, carry, result));
-                    (ScalarValue::Runtime(result), Some(Condition::Runtime(flag)))
-                };
                 scalars[usize::from(dst)] = Some(value);
                 scc = flag;
             }
@@ -1437,6 +1440,7 @@ fn scalar_result_expression(
         AddcU32 => format!("({a} + {b}) + uint({c})"),
         SubbU32 => format!("({a} - {b}) - uint({c})"),
         CselectB32 => format!("{c} ? {a} : {b}"),
+        MulI32 => format!("({a}) * ({b})"),
         PackLlB32B16 => format!("(({a}) & 0xffffu) | (({b}) << 16u)"),
         PackLhB32B16 => format!("(({a}) & 0xffffu) | (({b}) & 0xffff0000u)"),
         PackHhB32B16 => format!("(({a}) >> 16u) | (({b}) & 0xffff0000u)"),

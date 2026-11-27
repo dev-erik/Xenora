@@ -1279,3 +1279,39 @@ gpu = "fixture verified"
 recognized = true
 decoded = true
 llvm = "three-way passed"
+
+[[instruction]]
+form = "s_movk_i32"
+encoding = "SOPK, normal SGPR destination, signed 16-bit immediate"
+representation = "4 B"
+lowering = "resolved compute scalars; constant and runtime graphics operands"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "s_addk_i32"
+encoding = "SOPK, normal SGPR destination, signed 16-bit immediate"
+representation = "4 B"
+lowering = "resolved compute scalars; constant and runtime graphics operands"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "s_mulk_i32"
+encoding = "SOPK, normal SGPR destination, signed 16-bit immediate"
+representation = "4 B"
+lowering = "resolved compute scalars; constant and runtime graphics operands"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"

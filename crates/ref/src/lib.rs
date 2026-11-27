@@ -492,6 +492,21 @@ pub fn decode(code: &[u8]) -> Result<Vec<DecodedInstruction>, ReferenceError> {
                 };
                 (op, left_length.max(right_length))
             }
+            // AMD RDNA 2 ISA guide 12.2, 13.1.2: SOPK uses a signed
+            // 16-bit immediate, no literal dword. ADDK/MULK read old SDST.
+            [lo, hi, dst, encoding @ 0xb0..=0xbf, ..]
+                if dst & 0x7f <= 105 && matches!((encoding & 0xf) << 1 | dst >> 7, 0 | 15 | 16) =>
+            {
+                let opcode = (encoding & 0xf) << 1 | dst >> 7;
+                let dst = dst & 0x7f;
+                let immediate = Source::Immediate(i32::from(i16::from_le_bytes([*lo, *hi])) as u32);
+                let op = match opcode {
+                    0 => Op::ScalarMove(dst, immediate),
+                    15 => Op::Scalar(ScalarAlu::AddSigned, dst, Source::Register(dst), immediate),
+                    _ => Op::Scalar(ScalarAlu::Multiply, dst, Source::Register(dst), immediate),
+                };
+                (op, 4)
+            }
             // SOP2: OP in bits 23-29, SDST in bits 16-22, SSRC1, SSRC0.
             [left, right, low, high @ 0x80..=0xbf, tail @ ..]
                 if (*left, *right) != (255, 255)
@@ -1280,6 +1295,36 @@ mod tests {
     use super::*;
 
     const FIXTURE: &[u8] = include_bytes!("../../../fixtures/rdna2/add.bin");
+
+    #[test]
+    fn decodes_sopk_signed_immediates_and_normal_destinations() {
+        for opcode in [0, 15, 16] {
+            for dst in [0, 105, 106, 127] {
+                for (imm, bits) in [(0x7fff, 0x7fff), (0x8000, 0xffff_8000), (0xffff, u32::MAX)] {
+                    let word = 0xb000_0000u32 | opcode << 23 | dst << 16 | imm;
+                    let mut code = word.to_le_bytes().to_vec();
+                    code.extend(0xbf81_0000u32.to_le_bytes());
+                    let result = decode(&code);
+                    if dst > 105 {
+                        assert!(result.is_err());
+                        continue;
+                    }
+                    let program = result.unwrap();
+                    let dst = dst as u8;
+                    let immediate = Source::Immediate(bits);
+                    let expected = match opcode {
+                        0 => Op::ScalarMove(dst, immediate),
+                        15 => {
+                            Op::Scalar(ScalarAlu::AddSigned, dst, Source::Register(dst), immediate)
+                        }
+                        _ => Op::Scalar(ScalarAlu::Multiply, dst, Source::Register(dst), immediate),
+                    };
+                    assert_eq!(program[0].op, expected);
+                    assert_eq!(program[1].offset, 4);
+                }
+            }
+        }
+    }
 
     #[test]
     fn executes_scalar_pack_and_preserves_scc_including_unset() {

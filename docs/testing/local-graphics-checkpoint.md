@@ -6,6 +6,41 @@ claim of Xbox hardware equivalence. Supporting raw logs, mutation records and
 source manifests remain local and are not distributed with the repository.
 The array-range descriptor increment below was validated on 26 November 2026.
 
+## Stage 3.1 increment: signed scalar immediates
+
+27 November 2026. SOPK MOVK, ADDK and MULK accept signed 16-bit immediates
+with normal SGPR destinations. ADDK sets signed-overflow SCC; MOVK/MULK preserve
+SCC, including unset. Compute uses resolved scalar values; graphics accepts
+constant and runtime operands. Shared graphics multiplication additionally
+accepts SOP2 MUL with two runtime operands. See the
+[scalar contract](../shaders/scalar-alu.md#signed-immediate-scalar-instructions).
+
+The original CPU regression failed at the unsupported opcode before implementation.
+54 literal cases compare both independent CPU references and native compute.
+80 native graphics draws cover constants/runtime operands, matching/nonmatching
+results and both incoming SCC values; runtime multiplication includes nontrivial
+low-word overflow products. Uninitialized destination/SCC and unsupported register
+checks reject. The assembled compute chain has independent literal result 0x8001;
+the additional LLVM oracle checks its ten instructions, byte lengths, normalized
+semantics and original SOPK identities separately from the existing oracle count.
+
+Focused native execution passed under Metal API and shader validation on Apple
+M4 Max, macOS 27.2.1 (26B131). This is synthetic gfx1030 evidence, not AMD/Xbox
+hardware equivalence. Whole S3.1 remains open. Final acceptance evidence for this
+increment is recorded locally under `artifacts/s31-immediate/`.
+
+Both independent reviewers accepted the bounded increment after checking 27 source
+and 18 log hashes. All nine full gates passed (`validation-full.odQkMM`): workspace
+1043 passed/0 failed/149 ignored, GPU script 465 passed/0 failed/1 ignored; these
+aggregate counts overlap. The full optional LLVM suite passed 16 tests. The native
+audit checked 119 ARM64 executables/loadable dependencies. Three isolated mutations
+(zero-extension, addition replacing multiplication, and negation replacing
+multiplication) failed native assertions; sources were restored byte-for-byte and
+the final graphics cases passed. Final lint passed after the review coverage fix.
+The older optional LLVM branch test was corrected to distinguish a valid signed
+backward target from a target before the stream; the compute reference retains its
+explicit acyclic restriction. No runtime branch behavior changed in this increment.
+
 ## Stage 3.1 increment: scalar half-word packing
 
 27 November 2026. Three SOP2 forms now pack selected 16-bit halves: LL, LH and HH.

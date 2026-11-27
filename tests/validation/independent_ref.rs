@@ -1099,6 +1099,27 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
         let (src, len) = scalar_source(code, offset, first as u8)?;
         return Ok((Insn::SMov(dst, src), len));
     }
+    // AMD RDNA 2 ISA guide 12.2 / 13.1.2: SOPK MOVK, ADDK and MULK.
+    // Normalize to independent operations; only ADDK writes SCC (overflow).
+    let sopk_op = (first >> 23) & 31;
+    if first >> 28 == 0xb && matches!(sopk_op, 0 | 15 | 16) {
+        let dst = ((first >> 16) & 127) as u8;
+        if dst > 105 {
+            return Err(fail("unsupported SOPK destination"));
+        }
+        let low = first & 0xffff;
+        let immediate = Src::Imm(if low & 0x8000 != 0 {
+            low | 0xffff_0000
+        } else {
+            low
+        });
+        let insn = match sopk_op {
+            0 => Insn::SMov(dst, immediate),
+            15 => Insn::SAlu(2, dst, Src::Reg(dst), immediate),
+            _ => Insn::SAlu(38, dst, Src::Reg(dst), immediate),
+        };
+        return Ok((insn, 4));
+    }
     // SOP2: ENCODING 0b10 in bits 30-31, OP in bits 23-29, SDST in 16-22.
     if first >> 30 == 0b10
         && matches!(
@@ -1308,6 +1329,59 @@ mod scalar_pack_tests {
                     .unwrap();
                     assert_eq!(sgpr[dst as usize], Some(0));
                     assert_eq!(scc, initial_scc);
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod sopk_tests {
+    use super::*;
+
+    #[test]
+    fn normalizes_sopk_and_preserves_multiply_scc() {
+        for (opcode, old, imm, expected, overflow) in [
+            (15, 0x7fff_ffff, 1, 0x8000_0000, true),
+            (15, 0x8000_0000, 0xffff, 0x7fff_ffff, true),
+            (15, 1, 0xffff, 0, false),
+            (16, 3, 0x8000, 0xfffe_8000, false),
+            (16, 0x8000_0000, 2, 0, false),
+        ] {
+            let word = 0xb008_0000u32 | opcode << 23 | imm;
+            let (insn, length) = decode_one(&word.to_le_bytes(), 0).unwrap();
+            assert_eq!(length, 4);
+            let Insn::SAlu(op, dst, a, b) = insn else {
+                panic!("SOPK arithmetic did not normalize to scalar ALU");
+            };
+            for initial in [None, Some(false), Some(true)] {
+                let mut sgpr = [None; 128];
+                sgpr[8] = Some(old);
+                let mut scc = initial;
+                scalar_alu(&mut sgpr, &mut scc, (op, dst, a, b), 0).unwrap();
+                assert_eq!(sgpr[8], Some(expected));
+                assert_eq!(
+                    scc,
+                    if opcode == 15 {
+                        Some(overflow)
+                    } else {
+                        initial
+                    }
+                );
+            }
+        }
+        for dst in [0, 105, 106, 127] {
+            for opcode in [0, 15, 16] {
+                let word = 0xb000_ffffu32 | opcode << 23 | dst << 16;
+                let result = decode_one(&word.to_le_bytes(), 0);
+                if dst > 105 {
+                    assert!(result.is_err());
+                } else if opcode == 0 {
+                    assert!(
+                        matches!(result.unwrap(), (Insn::SMov(d, Src::Imm(u32::MAX)), 4) if d == dst as u8)
+                    );
+                } else {
+                    assert!(result.is_ok());
                 }
             }
         }

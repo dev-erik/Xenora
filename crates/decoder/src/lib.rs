@@ -42,12 +42,15 @@ const fn concat_forms<const N: usize>() -> [(&'static str, EncodingFamily); N] {
 }
 
 /// Decoded forms not yet described by the semantic registry.
-const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 37] = [
+const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 40] = [
     ("BUFFER_LOAD_DWORD", EncodingFamily::Mubuf),
     ("BUFFER_STORE_DWORD", EncodingFamily::Mubuf),
     ("EXP", EncodingFamily::Exp),
     ("IMAGE_SAMPLE_LZ", EncodingFamily::Mimg),
     ("IMAGE_STORE", EncodingFamily::Mimg),
+    ("S_ADDK_I32", EncodingFamily::Sopk),
+    ("S_MOVK_I32", EncodingFamily::Sopk),
+    ("S_MULK_I32", EncodingFamily::Sopk),
     ("S_BRANCH", EncodingFamily::Sopp),
     ("S_CBRANCH_EXECZ", EncodingFamily::Sopp),
     ("S_CBRANCH_SCC0", EncodingFamily::Sopp),
@@ -413,6 +416,39 @@ fn decode_gfx1030(bytes: &[u8], offset: usize) -> Result<(Instruction, u8), Deco
         let len = V_ADD_NC_U32.byte_len();
         let second = word(bytes, len)?;
         return Ok((add_u32(first, second)?, len));
+    }
+    // Pinned AMD metadata: SOPK ENCODING[31:28] and OP[27:23] form
+    // mask 0xff800000. Match complete opcodes so other scalar families and
+    // S_WAITCNT_VSCNT retain their own decoding and operand checks.
+    let sopk = first & 0xff80_0000;
+    if matches!(sopk, 0xb000_0000 | 0xb780_0000 | 0xb800_0000) {
+        let mnemonic = match sopk {
+            0xb000_0000 => "s_movk_i32",
+            0xb780_0000 => "s_addk_i32",
+            _ => "s_mulk_i32",
+        };
+        let dst = ((first >> 16) & 0x7f) as u8;
+        if dst > 105 {
+            return Err(unsupported(mnemonic, "expected a normal SGPR destination"));
+        }
+        let src = ScalarSource::Immediate(first as i16 as i32 as u32);
+        // RDNA2 section 12.2: ADDK/MULK read the old destination. Existing
+        // AddI32 sets signed-overflow SCC; move and MulI32 preserve SCC.
+        let instruction = if sopk == 0xb000_0000 {
+            Instruction::ScalarMoveB32 { dst, src }
+        } else {
+            Instruction::ScalarAlu {
+                op: if sopk == 0xb780_0000 {
+                    ScalarAluOp::AddI32
+                } else {
+                    ScalarAluOp::MulI32
+                },
+                dst,
+                src0: ScalarSource::Register(dst),
+                src1: src,
+            }
+        };
+        return Ok((instruction, 4));
     }
     if S_MOV_B32.matches(first) {
         let dst = ((first >> 16) & 0x7f) as u8;

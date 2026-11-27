@@ -10,6 +10,8 @@ Guest execution uses original, purpose-built test programs. Commercial Xbox game
 remains unsupported.
 
 ### Changed
+- Updated the optional LLVM branch oracle to accept signed backward targets within
+  the stream and retain rejection of targets before it, matching the decoder contract.
 - Memoized graphics loop-bound inference, including unknown results and remaining
   analysis depth, to bound analysis work on shared MIN expression graphs.
 - Decode signed SOPP branch targets relative to the following instruction, while
@@ -18,6 +20,11 @@ remains unsupported.
 - Extended the read-only RDNA2 planning CLI (`python3 -m qa rdna2`) with family/status filters, compact summaries, Codex-ready manifests under `artifacts/`, active-claim exclusion (family claims exclude those families; path-only claims block overlapping permitted files), coverage reconcile against `semantic_coverage` without inflating counts, and inventory diffs. Covered by `tests/qa/test_rdna2_plan.py`; planning only, no GPU production edits.
 
 ### Added
+- Signed 16-bit immediate scalar move, add and multiply (SOPK) for gfx1030.
+  Both compute references and translation enforce the existing register subset;
+  graphics supports constant and runtime operands, including scalar SOP2 multiply.
+  Literal-result, LLVM encoding and native Metal tests cover signed extension,
+  overflow and preserved condition flags. This is a bounded Stage 3.1 increment.
 - Three gfx1030 scalar half-word packing instructions (LL, LH and HH), including
   compute translation and runtime graphics operands. Packing preserves SCC and
   uses the existing checked scalar operand subset; independent known-answer,

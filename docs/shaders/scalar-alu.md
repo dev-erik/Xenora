@@ -223,3 +223,25 @@ Metal; its 231 rejected programs are checked on the CPU interpreters and the
 compiler. `fixtures/rdna2/scalar-unary.s` (LLVM-assembled, expected input ^
 0x0f0080f5) chains all eleven and shows SCC surviving the forms that do not
 write it.
+
+## Signed immediate scalar instructions
+
+The gfx1030 SOPK subset accepts `s_movk_i32` (0), `s_addk_i32` (15), and
+`s_mulk_i32` (16), each four bytes with a signed 16-bit immediate and normal
+SGPR destination (s0–s105 at decoding; consumers retain protected-register checks).
+ADDK and MULK read the old destination before writing it. MOVK requires no old
+value. ADDK sets SCC on signed overflow; MOVK and MULK preserve SCC, including
+its uninitialized state. Multiplication retains the low 32 bits.
+
+Production decoding normalizes these to existing move/add/multiply operations;
+metadata retains the original SOPK identity. Compute resolves scalar constants;
+graphics supports constants and runtime scalar uniforms/locals. The shared
+graphics multiply operation also accepts existing SOP2 `s_mul_i32`. Unsupported
+special registers and neighboring opcodes still reject explicitly.
+
+The contract comes from the public AMD RDNA2 ISA, section 12.2, and pinned
+`rdna2.jsonl` metadata. `scalar_immediate.rs` uses literal expected words and
+independently implemented references. `compares_sopk_fixture_against_llvm`
+checks instruction bytes, offsets and normalized semantics while explicitly
+checking all three original SOPK identities. Native tests are synthetic Metal
+checks, not evidence of AMD or Xbox hardware equivalence.

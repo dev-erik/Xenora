@@ -116,6 +116,9 @@ The wider LLVM operand matrix exercises decoding only. ABI means application bin
 | `s_pack_ll_b32_b16` | SOP2, normal SGPR destination; normal SGPR, inline integer or one literal source; selected 16-bit halves, SCC unchanged | 4 B or 8 B with literal | yes | yes | three-way passed | resolved scalar packing; runtime graphics integer expressions | implemented | fixture verified | fixture verified |
 | `s_pack_lh_b32_b16` | SOP2, normal SGPR destination; normal SGPR, inline integer or one literal source; selected 16-bit halves, SCC unchanged | 4 B or 8 B with literal | yes | yes | three-way passed | resolved scalar packing; runtime graphics integer expressions | implemented | fixture verified | fixture verified |
 | `s_pack_hh_b32_b16` | SOP2, normal SGPR destination; normal SGPR, inline integer or one literal source; selected 16-bit halves, SCC unchanged | 4 B or 8 B with literal | yes | yes | three-way passed | resolved scalar packing; runtime graphics integer expressions | implemented | fixture verified | fixture verified |
+| `s_movk_i32` | SOPK, normal SGPR destination, signed 16-bit immediate | 4 B | yes | yes | three-way passed | resolved compute scalars; constant and runtime graphics operands | implemented | fixture verified | fixture verified |
+| `s_addk_i32` | SOPK, normal SGPR destination, signed 16-bit immediate | 4 B | yes | yes | three-way passed | resolved compute scalars; constant and runtime graphics operands | implemented | fixture verified | fixture verified |
+| `s_mulk_i32` | SOPK, normal SGPR destination, signed 16-bit immediate | 4 B | yes | yes | three-way passed | resolved compute scalars; constant and runtime graphics operands | implemented | fixture verified | fixture verified |
 <!-- status:instructions:end -->
 
 ## Automated three-way comparison
