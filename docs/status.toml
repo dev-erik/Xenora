@@ -2346,3 +2346,15 @@ gpu = "fixture verified"
 recognized = true
 decoded = true
 llvm = "three-way passed"
+
+[[instruction]]
+form = "v_writelane_b32"
+encoding = "VOP3, ordinary SGPR data and known ordinary SGPR selector, initialized VGPR destination; Wave32 compute only"
+representation = "8 B"
+lowering = "MSL selected-lane merge independent of EXEC, retaining every other destination lane and captured scalar source"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"

@@ -206,6 +206,7 @@ The wider LLVM operand matrix exercises decoding only. ABI means application bin
 | `buffer_load_sshort` | MUBUF idxen, zero offsets; fixed input binding and four-byte stride; full EXEC only; graphics rejected | 8 B | yes | yes | three-way passed | MSL sshort low-subword extension into uint; shared direct/comparison replay expression; explicit load wait | implemented | fixture verified | fixture verified |
 | `v_readfirstlane_b32` | VOP1, ordinary VGPR and SGPR destination 8..105; Wave32 compute, selected lane zero only | 4 B | yes | yes | three-way passed | MSL snapshot replay at logical wave lane zero; runtime scalar result consumed through vector move; other lanes and graphics rejected | implemented | fixture verified | fixture verified |
 | `v_readlane_b32` | VOP3; ordinary VGPR, SGPR destination 8..105 and known SGPR selector with low five bits zero; modifiers excluded | 8 B | yes | yes | three-way passed | MSL snapshot replay at logical wave lane zero independent of EXEC; runtime scalar result consumed through vector move | implemented | fixture verified | fixture verified |
+| `v_writelane_b32` | VOP3, ordinary SGPR data and known ordinary SGPR selector, initialized VGPR destination; Wave32 compute only | 8 B | yes | yes | three-way passed | MSL selected-lane merge independent of EXEC, retaining every other destination lane and captured scalar source | implemented | fixture verified | fixture verified |
 <!-- status:instructions:end -->
 
 ## Automated three-way comparison

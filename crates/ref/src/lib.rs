@@ -39,6 +39,11 @@ pub type ScalarSource = Source;
 /// Operations decoded independently by the reference interpreter.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Op {
+    WriteLane {
+        dst: u8,
+        src: u8,
+        index: u8,
+    },
     /// A VGPR read into an SGPR; None chooses the first EXEC lane (zero when empty).
     ReadLane {
         dst: u8,
@@ -570,6 +575,24 @@ pub fn decode(code: &[u8]) -> Result<Vec<DecodedInstruction>, ReferenceError> {
                         index: None,
                     },
                     4,
+                )
+            }
+            [dst, flags, 0x61, 0xd7, rest @ ..] => {
+                let [a, b, c, d, ..] = rest else {
+                    return Err(error(offset, "truncated writelane"));
+                };
+                let index = (u16::from(*b) >> 1) | (u16::from(*c & 3) << 7);
+                if *flags != 0 || *a > 105 || b & 1 != 0 || index > 105 || c & 0xfc != 0 || *d != 2
+                {
+                    return Err(error(offset, "unsupported writelane operands or modifiers"));
+                }
+                (
+                    Op::WriteLane {
+                        dst: *dst,
+                        src: *a,
+                        index: index as u8,
+                    },
+                    8,
                 )
             }
             [dst, flags, 0x60, 0xd7, rest @ ..] => {
@@ -1529,6 +1552,16 @@ fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32
         // Per-lane results of a vector ALU instruction, applied after all lanes read.
         let mut results: Vec<Option<(u8, u32)>> = vec![None; lanes];
         match op {
+            Op::WriteLane { dst, src, index } => {
+                let selected = read_scalar(Source::Register(index))? & 31;
+                let value = scalars[usize::from(src)]
+                    .or(lane_scalars[usize::from(src)])
+                    .ok_or_else(|| error(offset, "read from uninitialized SGPR"))?;
+                for (lane, result) in results.iter_mut().enumerate() {
+                    let old = read(lane, dst)?;
+                    *result = Some((dst, if lane as u32 == selected { value } else { old }));
+                }
+            }
             Op::ReadLane { dst, src, index } => {
                 if dst < 8 {
                     return Err(error(offset, "lane read writes resource descriptor"));

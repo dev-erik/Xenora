@@ -46,7 +46,8 @@ const fn concat_forms<const N: usize>() -> [(&'static str, EncodingFamily); N] {
 }
 
 /// Decoded forms not yet described by the semantic registry.
-const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 120] = [
+const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 121] = [
+    ("V_WRITELANE_B32", EncodingFamily::Vop3),
     ("V_MBCNT_LO_U32_B32", EncodingFamily::Vop3),
     ("V_MBCNT_HI_U32_B32", EncodingFamily::Vop3),
     ("V_MAD_I32_I24", EncodingFamily::Vop3),
@@ -366,6 +367,25 @@ fn decode_gfx1030(bytes: &[u8], offset: usize) -> Result<(Instruction, u8), Deco
                 src: source as u8,
             },
             4,
+        ));
+    }
+    if first & 0xffff0000 == 0xd7610000 {
+        let second = word(bytes, 8)?;
+        let src = second & 511;
+        let lane = (second >> 9) & 511;
+        if first & 0xff00 != 0 || second >> 18 != 128 || src > 105 || lane > 105 {
+            return Err(unsupported(
+                "v_writelane_b32",
+                "expected unmodified normal SGPR data/index and inline-zero SRC2",
+            ));
+        }
+        return Ok((
+            Instruction::WriteLaneB32 {
+                dst: first as u8,
+                src: src as u8,
+                lane: lane as u8,
+            },
+            8,
         ));
     }
     if first & 0xffff0000 == 0xd7600000 {

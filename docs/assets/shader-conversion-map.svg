@@ -4,15 +4,15 @@
 <rect width="1040" height="1630" fill="#0d1117"/>
 <g font-family="system-ui,sans-serif" fill="#e6edf3">
 <text x="24" y="30" font-size="20">RDNA2 conversion checklist · 1,465 forms</text>
-<text x="24" y="55" font-size="14">196 decoded · 1269 not converted · operand subsets only</text>
+<text x="24" y="55" font-size="14">197 decoded · 1268 not converted · operand subsets only</text>
 <rect x="24" y="68" width="10" height="10" fill="#238636"/>
-<text x="42" y="78" font-size="12">Converted subset; fixture accepted: 109</text>
+<text x="42" y="78" font-size="12">Converted subset; fixture accepted: 110</text>
 <rect x="524" y="68" width="10" height="10" fill="#bf8700"/>
 <text x="542" y="78" font-size="12">Converted subset; acceptance pending: 82</text>
 <rect x="24" y="90" width="10" height="10" fill="#1f6feb"/>
 <text x="42" y="100" font-size="12">Decoded; translation evidence unrecorded: 5</text>
 <rect x="524" y="90" width="10" height="10" fill="#6e7681"/>
-<text x="542" y="100" font-size="12">Not converted: 1269</text>
+<text x="542" y="100" font-size="12">Not converted: 1268</text>
 <text x="24" y="135" font-size="17">S3 workstreams · all stages open</text>
 <text x="24" y="158" font-size="12">Provisional desktop inventory · decoded counts are not completion percentages</text>
 <text x="24" y="184" font-size="13">S3.1 Arithmetic</text>
@@ -22,7 +22,7 @@
 <text x="24" y="236" font-size="13">S3.3 Masks / comparisons</text>
 <text x="330" y="236" font-size="13">12/419 decoded · 407 not decoded</text>
 <text x="24" y="262" font-size="13">S3.4 Wave / lane</text>
-<text x="330" y="262" font-size="13">4/11 decoded · 7 not decoded</text>
+<text x="330" y="262" font-size="13">5/11 decoded · 6 not decoded</text>
 <text x="24" y="288" font-size="13">S3.5 Memory / interfaces</text>
 <text x="330" y="288" font-size="13">14/509 decoded · 495 not decoded</text>
 <text x="24" y="314" font-size="13">State / assignment pending</text>
@@ -1264,7 +1264,7 @@
 <rect x="141" y="1417" width="10" height="10" fill="#6e7681"><title>VOP3 V_MAD_I16 OP 862: Not converted</title></rect>
 <rect x="154" y="1417" width="10" height="10" fill="#6e7681"><title>VOP3 V_DIV_FIXUP_F16 OP 863: Not converted</title></rect>
 <rect x="167" y="1417" width="10" height="10" fill="#238636"><title>VOP3 V_READLANE_B32 OP 864: Converted subset; fixture accepted</title></rect>
-<rect x="180" y="1417" width="10" height="10" fill="#6e7681"><title>VOP3 V_WRITELANE_B32 OP 865: Not converted</title></rect>
+<rect x="180" y="1417" width="10" height="10" fill="#238636"><title>VOP3 V_WRITELANE_B32 OP 865: Converted subset; fixture accepted</title></rect>
 <rect x="193" y="1417" width="10" height="10" fill="#6e7681"><title>VOP3 V_LDEXP_F32 OP 866: Not converted</title></rect>
 <rect x="206" y="1417" width="10" height="10" fill="#238636"><title>VOP3 V_BFM_B32 OP 867: Converted subset; fixture accepted</title></rect>
 <rect x="219" y="1417" width="10" height="10" fill="#238636"><title>VOP3 V_BCNT_U32_B32 OP 868: Converted subset; fixture accepted</title></rect>

@@ -200,3 +200,43 @@ lane state, graphics participation, and the remaining transfer/permute modes.
 Full validation for this increment: all nine gates passed. Workspace: **1,402
 passed, zero failed, 178 ignored**. GPU gate: **517 passed, zero failed, one
 ignored**. Ignored tests are not verification. Logs: `artifacts/validation-full.TsSVQl`.
+
+
+## Selected-lane write continuation
+
+VOP3 WRITELANE now writes an ordinary scalar value to one selected Wave32 lane
+independently of EXEC. Other lanes retain the captured destination version.
+The bounded contract supports constant or previously captured lane-read data,
+a known ordinary SGPR selector, and initialized v1–v255 destinations. Absent
+destination lanes leave present invocations unchanged. Wider operand modes,
+runtime selectors, graphics and runtime-region lane writes remain unsupported.
+
+- Independent native suite: **6 passed, zero ignored**, covering **504 original
+  programs** with Metal API/shader validation enabled. Nine dispatch lengths and
+  eight selector values exercise row/wave boundaries and absent destinations.
+- Coverage includes EXEC zero, partial masks, retained lanes, scalar snapshots,
+  repeated writes, comparison and runtime-join replay, and decoder/readiness errors.
+- Two independent static reviewers found no blocking defect in the bounded slice.
+- Native output checks detected an intentional production mutation that
+  incorrectly intersected the write mask with EXEC. Production was restored
+  exactly; both lane-read and lane-write native suites then passed (**13 tests,
+  zero ignored**, 312 read programs plus 504 write programs).
+- Logs: `artifacts/s34-lane-write/native.log`, `native-restored.log` and
+  `exec-mutation.log`. Expected outputs come from test-local independent
+  calculations; the separate secondary interpreter is not extended here.
+
+```sh
+MTL_DEBUG_LAYER=1 MTL_SHADER_VALIDATION=1 CARGO_BUILD_JOBS=2 cargo test --locked --target aarch64-apple-darwin -p xenora-semantic-review --test lane_write_independent -- --include-ignored --nocapture --test-threads=1
+```
+
+S3.4 is **5/11 decoded forms**, not a completed stage. Six forms plus broader
+lane selection, operand modes, Wave64, dynamic state and graphics participation
+remain. S3.2 remains **8/24**; no control-flow scope was silently dropped.
+
+Focused regression validation for the write increment: **715 passed, zero
+failed, 49 ignored** across decoder/compiler/reference and independent CPU tests.
+The separate LLVM run passed **29 tests**, including **1,274 comparisons across
+177 forms**. Workspace all-targets Clippy, formatting, fixture reassembly, five
+inventory tests, generated-map consistency, claims and dependency audits passed.
+The nine-gate full-suite result above belongs to commit `3465da0`; it is not
+represented as a fresh full-suite result for this subsequent write increment.

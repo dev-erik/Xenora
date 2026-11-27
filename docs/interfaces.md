@@ -1715,3 +1715,11 @@ by `v_mov_b32`; unsupported scalar consumers reject it. Scalar writes invalidate
 old lane-derived values. Lane zero exists for every nonempty partial wave, so
 this contract does not invent values for missing lanes or read outside input.
 See [remaining wave/lane requirements](shaders/control-wave-memory.md).
+
+
+`v_writelane_b32` admits a known ordinary SGPR selector and ordinary SGPR data
+(constant or a captured lane-read result), with an initialized v1–v255
+destination. The write selects `selector & 31`, ignores EXEC, and preserves
+other destination lanes. An absent destination changes none of the present
+invocations. Pending destinations, runtime selectors, modifiers, special/inline
+sources, graphics and lane writes inside runtime branch regions remain rejected.

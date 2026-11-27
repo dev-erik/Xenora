@@ -1136,6 +1136,25 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
         }
         let next = Value(operations.len());
         let (dest, operation) = match instruction.instruction {
+            Instruction::WriteLaneB32 { dst, src, lane } => {
+                let selected = read_scalar(ScalarSource::Register(lane))? & 31;
+                let old = read(dst)?;
+                let value = if let Some(bits) = scalars[usize::from(src)] {
+                    constant(&mut operations, &mut facts, offset, bits)
+                } else {
+                    lane_scalars[usize::from(src)]
+                        .ok_or_else(|| error("scalar source has no known value"))?
+                };
+                registers[usize::from(dst)] = Some(merge_lanes(
+                    &mut operations,
+                    &mut facts,
+                    offset,
+                    1u32 << selected,
+                    value,
+                    Some(old),
+                )?);
+                continue;
+            }
             Instruction::ReadFirstLaneB32 { dst, src }
             | Instruction::ReadLaneB32 { dst, src, .. } => {
                 if dst < 8 {

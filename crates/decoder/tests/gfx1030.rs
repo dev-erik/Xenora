@@ -343,6 +343,11 @@ fn reference_op(instruction: Instruction) -> Op {
             index,
             resource,
         },
+        Instruction::WriteLaneB32 { dst, src, lane } => Op::WriteLane {
+            dst,
+            src,
+            index: lane,
+        },
         Instruction::ReadFirstLaneB32 { dst, src } => Op::ReadLane {
             dst,
             src,
@@ -811,12 +816,13 @@ fn compares_fixture_instructions_against_llvm() {
         include_bytes!("../../../fixtures/rdna2/wait-vmcnt.bin"),
         include_bytes!("../../../fixtures/rdna2/mbcnt.bin"),
         include_bytes!("../../../fixtures/rdna2/lane-read.bin"),
+        include_bytes!("../../../fixtures/rdna2/lane-write.bin"),
         include_bytes!("../../../fixtures/rdna2/mask-nonzero-branch.bin"),
         include_bytes!("../../../fixtures/rdna2/buffer-narrow-load.bin"),
     ] {
         count += compare_against_llvm(fixture, &mut forms);
     }
-    assert_eq!(forms.len(), 176, "forms compared: {forms:?}");
+    assert_eq!(forms.len(), 177, "forms compared: {forms:?}");
     eprintln!(
         "{count} three-way instruction comparisons across {} forms",
         forms.len()
@@ -928,6 +934,7 @@ fn assemble_matrix() -> Vec<u8> {
         s_xor_b32 s7, s7, lit(0x1)
         v_mov_b32_e32 v255, s105
         v_mov_b32_e32 v0, s0
+        v_writelane_b32 v255, s105, s104
         v_mov_b32_e32 v128, vcc_lo
     ",
     );
@@ -2888,4 +2895,32 @@ fn llvm_vop3_mad_sad_sources_match_exact_bytes_and_reference() {
             }
         }
     }
+}
+
+#[test]
+#[ignore = "requires LLVM with the gfx1030 AMDGPU target"]
+fn original_writelane_llvm_encodings_match_both_decoders() {
+    let output = llvm_mc(
+        &[],
+        b"v_writelane_b32 v1, s8, s9\nv_writelane_b32 v255, s105, s104\n",
+    );
+    assert_llvm_success(&output);
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let actual: Vec<Vec<u8>> = stdout
+        .lines()
+        .filter_map(|line| line.split_once("; encoding: ["))
+        .map(|(_, encoding)| encoding_bytes(encoding))
+        .collect();
+    assert_eq!(
+        actual,
+        vec![
+            vec![1, 0, 0x61, 0xd7, 8, 0x12, 0, 2],
+            vec![255, 0, 0x61, 0xd7, 105, 0xd0, 0, 2]
+        ]
+    );
+    let mut forms = std::collections::BTreeSet::new();
+    for bytes in actual {
+        assert_eq!(compare_against_llvm(&bytes, &mut forms), 1);
+    }
+    assert_eq!(forms.len(), 1);
 }

@@ -10,7 +10,7 @@ Implemented increments: SCC1 complements SCC0; Wave32 compute EXECNZ/VCCNZ compl
 
 ## S3.4 wave and lane
 
-Implemented subsets: MBCNT LO/HI and bounded lane-zero reads under an explicit Wave32 compute contract. LO counts selected bits below the guest lane and adds the accumulator; HI adds no bits for lanes below 32. Typed decoding, compute lowering and an independent CPU reference are implemented. Native validation is recorded in the checkpoint; this does not complete wave/lane support.
+Implemented subsets: MBCNT LO/HI, bounded lane-zero reads and selected-lane writes under an explicit Wave32 compute contract. LO counts selected bits below the guest lane and adds the accumulator; HI adds no bits for lanes below 32. Typed decoding, compute lowering and an independent CPU reference are implemented. Native validation is recorded in the checkpoint; this does not complete wave/lane support.
 
 | Family | Form | Decoder present at audit |
 | --- | --- | --- |
@@ -24,7 +24,7 @@ Implemented subsets: MBCNT LO/HI and bounded lane-zero reads under an explicit W
 | VOP3 | `V_PERMLANEX16_B32` | no |
 | VOP3 | `V_READFIRSTLANE_B32` | no |
 | VOP3 | `V_READLANE_B32` | yes; lane-zero compute subset |
-| VOP3 | `V_WRITELANE_B32` | no |
+| VOP3 | `V_WRITELANE_B32` | yes; selected-lane Wave32 compute subset |
 
 The implemented compute contract is Wave32 only, with guest lane `index & 31`:
 
@@ -56,7 +56,7 @@ Waits cannot be blanket no-ops. Resource graphs and local readback tests do not 
 
 ## Evidence and next gates
 
-The [first-increment checkpoint](../testing/stage3-control-memory-opening.md) records SCC1 and VMCNT evidence. S3.4 has bounded masked-bit-count and lane-zero-read increments; seven forms remain undecoded.
+The [first-increment checkpoint](../testing/stage3-control-memory-opening.md) records SCC1 and VMCNT evidence. S3.4 has bounded masked-bit-count and lane-zero-read increments; six forms remain undecoded.
 
 The [opening plan](../superpowers/plans/2026-11-27-stage3-opening.md) tracks the first increments. Require exact encoding checks, independent CPU expectations, applicable native compute/graphics readback and independent review before acceptance. Checkpoint results must identify the tested source version; this document alone records no passing GPU tests.
 
@@ -69,7 +69,7 @@ These are dependency groups, not equal-sized tasks or a complete operand matrix.
 | Stage | Next bounded work | Architectural work still required |
 | --- | --- | --- |
 | S3.2 | Additional proven loop shapes | Compute loops and live-out joins; code addresses and calls/returns; exceptions; dynamic EXEC and reconvergence |
-| S3.4 | Expand lane-read selection and establish contracts for seven remaining forms | Inactive/absent source lanes; cross-lane data movement; graphics/helper lanes; Wave64; DPP/SDWA mode coverage |
+| S3.4 | Expand lane-read selection and establish contracts for six remaining forms | Inactive/absent source lanes; cross-lane data movement; graphics/helper lanes; Wave64; DPP/SDWA mode coverage |
 | S3.5 | More buffer transfer forms with explicit addressing and destination spans | Multiple outstanding transfers; descriptors and address spaces; scalar/private/LDS memory; atomics and rendezvous; image/stage-interface matrices |
 
 Each accepted increment needs exact source and destination modes, negative cases,
@@ -160,3 +160,20 @@ lane-derived state. Graphics and lane-read instructions inside runtime branch
 regions remain rejected. Native evidence is recorded in the
 [checkpoint](../testing/stage3-control-memory-opening.md#lane-zero-read-continuation);
 this increment does not complete S3.4.
+
+
+### Bounded selected-lane writes
+
+VOP3 WRITELANE accepts ordinary SGPR data and a compile-time-known ordinary
+SGPR lane selector. The selected lane is the low five selector bits; the write
+ignores EXEC, including EXEC zero. An initialized v1–v255 destination retains
+its earlier value in every other lane. Pending-load destinations, unknown
+scalar data, runtime lane selectors, modifiers and special/inline source modes
+remain rejected. The data may be a captured lane-read scalar snapshot.
+
+No input lookup is required at the destination lane. When that lane lies outside
+a final partial wave, present invocations keep their previous destination values.
+This is valid only while absent-lane state cannot later be exposed under the
+fixture contract. Source and destination snapshots remain intact during
+comparison and later lane-read replay. Graphics and runtime-branch-region lane
+writes remain rejected. Independent native results are recorded in the [checkpoint](../testing/stage3-control-memory-opening.md#selected-lane-write-continuation); full S3.4 remains open.

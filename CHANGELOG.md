@@ -29,6 +29,9 @@ remains unsupported.
 - Extended the read-only RDNA2 planning CLI (`python3 -m qa rdna2`) with family/status filters, compact summaries, Codex-ready manifests under `artifacts/`, active-claim exclusion (family claims exclude those families; path-only claims block overlapping permitted files), coverage reconcile against `semantic_coverage` without inflating counts, and inventory diffs. Covered by `tests/qa/test_rdna2_plan.py`; planning only, no GPU production edits.
 
 ### Added
+- Added bounded Wave32 selected-lane writes that ignore EXEC, preserve other
+  destination lanes and support captured lane-read scalar data; graphics and
+  unsupported operand modes remain rejected.
 - Added bounded Wave32 lane-zero reads into runtime scalar values, with source
   snapshot replay, vector-move consumption and explicit rejection of unsupported
   lane selections and graphics uses; full wave/lane support remains open.
