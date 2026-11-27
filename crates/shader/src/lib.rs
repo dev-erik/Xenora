@@ -28,12 +28,38 @@ const VCC_HI: usize = 107;
 pub const ENTRY_POINT: &str = "xenora_compute";
 const MAX_CODE_BYTES: usize = 1024;
 
-/// Dispatch population available to guest Wave32 operations.
+/// Dispatch population available to guest wave operations.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Wave32Launch {
+pub enum WaveLaunch {
     #[default]
     PartialAllowed,
     FullWavesRequired,
+}
+
+/// Compatibility re-export, including variant imports.
+pub use WaveLaunch as Wave32Launch;
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum WaveSize {
+    #[default]
+    Wave32,
+    Wave64,
+}
+impl WaveSize {
+    fn lanes(self) -> u32 {
+        if self == Self::Wave64 { 64 } else { 32 }
+    }
+    fn full_mask(self) -> u64 {
+        if self == Self::Wave64 {
+            u64::MAX
+        } else {
+            u32::MAX as u64
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct WaveConfig {
+    pub size: WaveSize,
+    pub launch: WaveLaunch,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -52,7 +78,7 @@ impl std::error::Error for LaunchError {}
 
 #[derive(Debug)]
 pub struct CompiledShader {
-    launch: Wave32Launch,
+    config: WaveConfig,
     pub disassembly: String,
     pub ir: String,
     pub msl: String,
@@ -63,15 +89,25 @@ impl CompiledShader {
         if !(1..=4096).contains(&word_count) {
             return Err(LaunchError("input word count must be in 1..=4096"));
         }
-        if self.launch == Wave32Launch::FullWavesRequired && !word_count.is_multiple_of(32) {
-            return Err(LaunchError(
-                "full Wave32 launch requires a multiple of 32 words",
-            ));
+        if self.config.launch == WaveLaunch::FullWavesRequired
+            && !word_count.is_multiple_of(self.config.size.lanes() as usize)
+        {
+            return Err(LaunchError(if self.config.size == WaveSize::Wave64 {
+                "full Wave64 launch requires a multiple of 64 words"
+            } else {
+                "full Wave32 launch requires a multiple of 32 words"
+            }));
         }
         Ok(())
     }
+    pub fn wave_config(&self) -> WaveConfig {
+        self.config
+    }
+    pub fn launch_policy(&self) -> WaveLaunch {
+        self.config.launch
+    }
     pub fn wave32_launch(&self) -> Wave32Launch {
-        self.launch
+        self.config.launch
     }
 }
 
@@ -156,6 +192,37 @@ impl MaskCondition {
 }
 
 #[derive(Clone, Copy)]
+// hi=None means the Wave32 zero test ignores HI, never an unknown Wave64 half.
+struct MaskValue {
+    lo: Value,
+    hi: Option<Value>,
+}
+impl MaskValue {
+    fn expression(self, name: &dyn Fn(Value) -> String) -> String {
+        match self.hi {
+            Some(hi) => format!("({} | {})", name(self.lo), name(hi)),
+            None => name(self.lo),
+        }
+    }
+}
+impl fmt::Display for MaskValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.expression(&|v| v.to_string()))
+    }
+}
+fn mask_test(mask: u64, lane: &str, wave: WaveSize) -> String {
+    if wave == WaveSize::Wave32 {
+        format!("((0x{mask:08x}u >> {lane}) & 1u) != 0u")
+    } else {
+        format!(
+            "(((({lane}) < 32u ? 0x{:08x}u : 0x{:08x}u) >> (({lane}) & 31u)) & 1u) != 0u",
+            mask as u32,
+            (mask >> 32) as u32
+        )
+    }
+}
+
+#[derive(Clone, Copy)]
 enum GatherSelection {
     Address { value: Value, offset: u16 },
     Table([u8; 32]),
@@ -191,12 +258,12 @@ enum Op {
         address: Value,
         data: Value,
         offset: u16,
-        exec: u32,
+        exec: u64,
     },
     Gather {
         source: Value,
         selection: GatherSelection,
-        exec: u32,
+        exec: u64,
     },
     Load(Option<BufferLoadKind>),
     ReadLane {
@@ -211,7 +278,7 @@ enum Op {
     Ternary(VectorTernaryOp, Value, Value, Value),
     MadSad(VectorMadSadOp, bool, Value, Value, Value),
     MergeLanes {
-        mask: u32,
+        mask: u64,
         active: Value,
         inactive: Value,
     },
@@ -220,24 +287,25 @@ enum Op {
         target: usize,
         taken: bool,
     },
-    /// Wave32 VOPC result: bit n is EXEC[n] & (lane n exists) & test(lane n).
+    /// One 32-bit projection of VOPC: bit n tests guest lane half+n.
     /// The value is wave-uniform; every thread computes it for its own wave.
     LaneMask {
         op: VectorCompareOp,
         src0: Value,
         src1: Value,
-        exec: u32,
+        exec: u64,
+        half: u32,
     },
-    /// Conditional branch on a lane-derived VCC_LO (IR annotation only).
+    /// Conditional branch on the configured-width VCC pair (IR annotation only).
     RuntimeBranch {
         condition: MaskCondition,
-        mask: Value,
+        mask: MaskValue,
         target: usize,
     },
     /// Select fall-through or pre-branch state according to the branch polarity.
     JoinVcc {
         condition: MaskCondition,
-        mask: Value,
+        mask: MaskValue,
         fallthrough: Value,
         taken: Value,
     },
@@ -266,19 +334,28 @@ impl Op {
             } => vec![active, inactive],
             Self::Store(value) => vec![value],
             Self::LaneMask { src0, src1, .. } => vec![src0, src1],
-            Self::RuntimeBranch { mask, .. } => vec![mask],
+            Self::RuntimeBranch { mask, .. } => std::iter::once(mask.lo).chain(mask.hi).collect(),
             Self::JoinVcc {
                 mask,
                 fallthrough,
                 taken,
                 ..
-            } => vec![mask, fallthrough, taken],
+            } => [fallthrough, taken, mask.lo]
+                .into_iter()
+                .chain(mask.hi)
+                .collect(),
         }
     }
 
     /// The MSL expression of a per-thread value, with operand names, the
     /// dispatch index and the lane given by the caller.
-    fn expression(self, name: &dyn Fn(Value) -> String, index: &str, lane: &str) -> String {
+    fn expression(
+        self,
+        name: &dyn Fn(Value) -> String,
+        index: &str,
+        lane: &str,
+        wave: WaveSize,
+    ) -> String {
         match self {
             Self::Load(kind) => {
                 let word = format!("input[{index}]");
@@ -297,7 +374,25 @@ impl Op {
             Self::Constant(value) => format!("0x{value:08x}u"),
             Self::Unary(op, source) => vector_unary_expression(op, &name(source)),
             Self::Product(op, a, b) => vector_product_expression(op, &name(a), &name(b)),
-            Self::BitBinary(op, a, b) => vector_bit_binary_expression(op, &name(a), &name(b), lane),
+            Self::BitBinary(op, a, b) => {
+                let (a, b) = (name(a), name(b));
+                if wave == WaveSize::Wave64 {
+                    match op {
+                        VectorBitBinaryOp::MbcntLoU32B32 => {
+                            return format!(
+                                "popcount(({a}) & (({lane}) >= 32u ? 0xffffffffu : ((1u << (({lane}) & 31u)) - 1u))) + ({b})"
+                            );
+                        }
+                        VectorBitBinaryOp::MbcntHiU32B32 => {
+                            return format!(
+                                "popcount(({a}) & (({lane}) <= 32u ? 0u : ((1u << (({lane}) & 31u)) - 1u))) + ({b})"
+                            );
+                        }
+                        _ => {}
+                    }
+                }
+                vector_bit_binary_expression(op, &a, &b, lane)
+            }
             Self::Ternary(op, a, b, c) => {
                 vector_ternary_expression(op, &name(a), &name(b), &name(c))
             }
@@ -327,7 +422,8 @@ impl Op {
                 active,
                 inactive,
             } => format!(
-                "((0x{mask:08x}u >> {lane}) & 1u) != 0u ? {} : {}",
+                "{} ? {} : {}",
+                mask_test(mask, lane, wave),
                 name(active),
                 name(inactive)
             ),
@@ -338,7 +434,7 @@ impl Op {
                 taken,
             } => format!(
                 "{} {} 0u ? {} : {}",
-                name(mask),
+                mask.expression(name),
                 condition.fallthrough_test(),
                 name(fallthrough),
                 name(taken)
@@ -760,15 +856,47 @@ pub fn compile_with_options(
     bytes: &[u8],
     options: CompileOptions,
 ) -> Result<CompiledShader, CompileError> {
-    let decoded = decode_fixture(architecture, bytes)?;
-    let operations = lift(&decoded, bytes.len(), options.wave32_launch)?;
+    compile_with_wave_config(
+        architecture,
+        bytes,
+        WaveConfig {
+            size: WaveSize::Wave32,
+            launch: options.wave32_launch,
+        },
+    )
+}
 
-    let disassembly = decoded.iter().map(|line| format!("{line}\n")).collect();
+pub fn compile_with_wave_config(
+    architecture: Architecture,
+    bytes: &[u8],
+    config: WaveConfig,
+) -> Result<CompiledShader, CompileError> {
+    if config.size == WaveSize::Wave64 && config.launch != WaveLaunch::FullWavesRequired {
+        return Err(replay_error("Wave64 requires full waves"));
+    }
+    let decoded = decode_fixture(architecture, bytes)?;
+    let operations = lift(&decoded, bytes.len(), config)?;
+    let lane = format!("(index & {}u)", config.size.lanes() - 1);
+
+    let disassembly = decoded
+        .iter()
+        .map(|line| {
+            let text = format!("{line}\n");
+            if config.size == WaveSize::Wave64
+                && matches!(line.instruction, Instruction::VectorCompare { .. })
+            {
+                // Only the comparison destination; source half names remain explicit.
+                text.replacen(" vcc_lo,", " vcc,", 1)
+            } else {
+                text
+            }
+        })
+        .collect();
     let mut ir = String::new();
     let has_mask = operations
         .iter()
         .any(|(_, operation)| matches!(operation, Op::LaneMask { .. }));
-    let grid = if has_mask || options.wave32_launch == Wave32Launch::FullWavesRequired {
+    let grid = if has_mask || config.launch == WaveLaunch::FullWavesRequired {
         ",\n    uint grid [[threads_per_grid]]"
     } else {
         ""
@@ -776,10 +904,13 @@ pub fn compile_with_options(
     let mut msl = format!(
         "#include <metal_stdlib>\nusing namespace metal;\nkernel void {ENTRY_POINT}(\n    device const uint* input [[buffer(0)]],\n    device uint* output [[buffer(1)]],\n    uint index [[thread_position_in_grid]]{grid}) {{\n"
     );
-    if options.wave32_launch == Wave32Launch::FullWavesRequired {
+    if config.launch == WaveLaunch::FullWavesRequired {
         append_msl(
             &mut msl,
-            "    if (grid == 0u || grid > 4096u || (grid & 31u) != 0u) { return; }\n",
+            &format!(
+                "    if (grid == 0u || grid > 4096u || (grid & {}u) != 0u) {{ return; }}\n",
+                config.size.lanes() - 1
+            ),
         )?;
     }
     if operations.iter().any(|(_, operation)| {
@@ -795,6 +926,7 @@ pub fn compile_with_options(
     }
     // Wave-uniform values: identical in every lane of an RDNA wave.
     let mut replay_nodes = ReplayBudget {
+        wave: config.size,
         enforce_work: operations
             .iter()
             .any(|(_, op)| matches!(op, Op::Scatter { .. })),
@@ -829,7 +961,11 @@ pub fn compile_with_options(
             | Op::Gather { .. }
             | Op::Scatter { .. }
             | Op::MergeLanes { .. }
-            | Op::BitBinary(VectorBitBinaryOp::MbcntLoU32B32, _, _) => false,
+            | Op::BitBinary(
+                VectorBitBinaryOp::MbcntLoU32B32 | VectorBitBinaryOp::MbcntHiU32B32,
+                _,
+                _,
+            ) => false,
             _ => operation.operands().iter().all(|value| uniform[value.0]),
         });
         let thread = |value: Value| value.to_string();
@@ -841,7 +977,7 @@ pub fn compile_with_options(
                     &uniform,
                     index,
                     &mut replay_nodes,
-                    "(index & 31u)".into(),
+                    lane.clone(),
                     "index".into(),
                     true,
                 );
@@ -875,39 +1011,57 @@ pub fn compile_with_options(
                 },
                 format!(
                     "uint {dest} = {};",
-                    operation.expression(&thread, "index", "")
+                    operation.expression(&thread, "index", "", config.size)
                 ),
             ),
             Op::Constant(value) => (
                 format!("{dest} = const.u32 0x{value:08x}"),
-                format!("uint {dest} = {};", operation.expression(&thread, "", "")),
+                format!(
+                    "uint {dest} = {};",
+                    operation.expression(&thread, "", "", config.size)
+                ),
             ),
             Op::Binary(operator, left, right) => (
                 format!("{dest} = {} {left}, {right}", operator.operator().0),
-                format!("uint {dest} = {};", operation.expression(&thread, "", "")),
+                format!(
+                    "uint {dest} = {};",
+                    operation.expression(&thread, "", "", config.size)
+                ),
             ),
             Op::Unary(op, source) => (
                 format!("{dest} = {} {source}", op.mnemonic()),
-                format!("uint {dest} = {};", operation.expression(&thread, "", "")),
+                format!(
+                    "uint {dest} = {};",
+                    operation.expression(&thread, "", "", config.size)
+                ),
             ),
             Op::Product(op, a, b) => (
                 format!("{dest} = {} {a}, {b}", op.mnemonic()),
-                format!("uint {dest} = {};", operation.expression(&thread, "", "")),
+                format!(
+                    "uint {dest} = {};",
+                    operation.expression(&thread, "", "", config.size)
+                ),
             ),
             Op::BitBinary(op, a, b) => (
                 format!("{dest} = {} {a}, {b}", op.mnemonic()),
                 format!(
                     "uint {dest} = {};",
-                    operation.expression(&thread, "", "(index & 31u)")
+                    operation.expression(&thread, "", &lane, config.size)
                 ),
             ),
             Op::Ternary(op, a, b, c) => (
                 format!("{dest} = {} {a}, {b}, {c}", op.mnemonic()),
-                format!("uint {dest} = {};", operation.expression(&thread, "", "")),
+                format!(
+                    "uint {dest} = {};",
+                    operation.expression(&thread, "", "", config.size)
+                ),
             ),
             Op::MadSad(op, clamp, a, b, c) => (
                 format!("{dest} = {} clamp={clamp} {a}, {b}, {c}", op.mnemonic()),
-                format!("uint {dest} = {};", operation.expression(&thread, "", "")),
+                format!(
+                    "uint {dest} = {};",
+                    operation.expression(&thread, "", "", config.size)
+                ),
             ),
             Op::ScalarBranch { target, taken } => {
                 let _ = writeln!(
@@ -933,7 +1087,7 @@ pub fn compile_with_options(
                 format!("{dest} = merge.lanes mask=0x{mask:08x}, {active}, {inactive}"),
                 format!(
                     "uint {dest} = {};",
-                    operation.expression(&thread, "", "(index & 31u)")
+                    operation.expression(&thread, "", &lane, config.size)
                 ),
             ),
             Op::JoinVcc {
@@ -946,13 +1100,17 @@ pub fn compile_with_options(
                     "{dest} = join.{} {mask}, {fallthrough}, {taken}",
                     condition.suffix()
                 ),
-                format!("uint {dest} = {};", operation.expression(&thread, "", "")),
+                format!(
+                    "uint {dest} = {};",
+                    operation.expression(&thread, "", "", config.size)
+                ),
             ),
             Op::LaneMask {
                 op,
                 src0,
                 src1,
                 exec,
+                half,
             } => {
                 let _ = writeln!(
                     ir,
@@ -968,6 +1126,7 @@ pub fn compile_with_options(
                     src0,
                     src1,
                     exec,
+                    half,
                     &mut replay_nodes,
                 )?;
                 continue;
@@ -983,7 +1142,7 @@ pub fn compile_with_options(
     }
     append_msl(&mut msl, "}\n")?;
     Ok(CompiledShader {
-        launch: options.wave32_launch,
+        config,
         disassembly,
         ir,
         msl,
@@ -998,6 +1157,7 @@ struct ReplayBudget {
     nodes: usize,
     work: usize,
     enforce_work: bool,
+    wave: WaveSize,
 }
 impl Default for ReplayBudget {
     fn default() -> Self {
@@ -1005,6 +1165,7 @@ impl Default for ReplayBudget {
             nodes: 0,
             work: 0,
             enforce_work: true,
+            wave: WaveSize::Wave32,
         }
     }
 }
@@ -1095,6 +1256,8 @@ impl<'a> Replay<'a> {
         self.budget.nodes += 1;
         let (lane, index) = self.contexts[context].clone();
         let operation = self.operations[value.0].1;
+        let wave = self.budget.wave;
+        let base_mask = wave.lanes() - 1;
         if depth >= MAX_REPLAY_DEPTH && matches!(operation, Op::Gather { .. } | Op::Scatter { .. })
         {
             return Err(replay_error("replay depth exceeds 64"));
@@ -1125,14 +1288,19 @@ impl<'a> Replay<'a> {
             )?;
             // A new lexical scope owns the writer's memoized expressions. No loop-local
             // temporary can escape, and both address/data paths carry the scatter depth.
+            let writer_lane = if wave == WaveSize::Wave64 {
+                format!("(({lane} & 32u) | {writer})")
+            } else {
+                writer.clone()
+            };
             let mut body = Replay::new(
                 self.msl,
                 self.operations,
                 self.uniform,
                 self.root,
                 self.budget,
-                writer.clone(),
-                format!("((index & ~31u) + {writer})"),
+                writer_lane.clone(),
+                format!("((index & ~{base_mask}u) + {writer_lane})"),
                 false,
             );
             body.scope = format!("{}_s{}_{}", self.scope, value.0, context);
@@ -1140,10 +1308,16 @@ impl<'a> Replay<'a> {
             body.scatter_depth = self.scatter_depth + 1;
             let address = body.value(address, 0, depth + 1)?;
             let data = body.value(data, 0, depth + 1)?;
+            let active = mask_test(exec, &writer_lane, wave);
+            let destination = if wave == WaveSize::Wave64 {
+                format!("({lane} & 31u)")
+            } else {
+                lane.clone()
+            };
             append_msl(
                 body.msl,
                 &format!(
-                    "        if (((0x{exec:08x}u >> {writer}) & 1u) != 0u && ((({address} + {offset}u) >> 2u) & 31u) == ({lane})) {{ {name} = {data}; }}\n    }}\n"
+                    "        if ({active} && ((({address} + {offset}u) >> 2u) & 31u) == ({destination})) {{ {name} = {data}; }}\n    }}\n"
                 ),
             )?;
             self.memo.insert((value.0, context), name.clone());
@@ -1163,7 +1337,18 @@ impl<'a> Replay<'a> {
                     let address = self.value(address, context, depth)?;
                     format!("(({address} + {offset}u) >> 2u) & 31u")
                 }
-                GatherSelection::Table(_) => format!("gather_{}[{lane}]", value.0),
+                GatherSelection::Table(_) => {
+                    if wave == WaveSize::Wave64 {
+                        format!("gather_{}[({lane}) & 31u]", value.0)
+                    } else {
+                        format!("gather_{}[{lane}]", value.0)
+                    }
+                }
+            };
+            let selected = if wave == WaveSize::Wave64 {
+                format!("(({lane} & 32u) | ({selected}))")
+            } else {
+                selected
             };
             self.budget.charge(4, self.multiplier)?;
             let child = if let Some(&i) = self.context_keys.get(&selected) {
@@ -1174,18 +1359,18 @@ impl<'a> Replay<'a> {
                 append_msl(self.msl, &format!("    uint {name} = {selected};\n"))?;
                 self.context_keys.insert(selected, id);
                 self.contexts
-                    .push((name.clone(), format!("((index & ~31u) + {name})")));
+                    .push((name.clone(), format!("((index & ~{base_mask}u) + {name})")));
                 id
             };
             let fetched = self.value(source, child, depth + 1)?;
             let selected_lane = &self.contexts[child].0;
-            format!("((0x{exec:08x}u >> {selected_lane}) & 1u) != 0u ? {fetched} : 0u")
+            format!("{} ? {fetched} : 0u", mask_test(exec, selected_lane, wave))
         } else {
             let mut names = std::collections::BTreeMap::new();
             for operand in operation.operands() {
                 names.insert(operand.0, self.value(operand, context, depth)?);
             }
-            operation.expression(&|v| names[&v.0].clone(), &index, &lane)
+            operation.expression(&|v| names[&v.0].clone(), &index, &lane, self.budget.wave)
         };
         let name = if context == 0 && lane == "lane" {
             format!("l{}", value.0)
@@ -1213,16 +1398,17 @@ fn emit_selected_lane(
     selector: Value,
     nodes: &mut ReplayBudget,
 ) -> Result<(), CompileError> {
+    let mask = nodes.wave.lanes() - 1;
     let zero = matches!(operations[selector.0].1, Op::Constant(0));
     let lane = if zero {
         "0u".into()
     } else {
-        format!("({selector} & 31u)")
+        format!("({selector} & {mask}u)")
     };
     let source_index = if zero {
-        "(index & ~31u)".into()
+        format!("(index & ~{mask}u)")
     } else {
-        format!("((index & ~31u) + {lane})")
+        format!("((index & ~{mask}u) + {lane})")
     };
     let mut replay = Replay::new(
         msl,
@@ -1250,15 +1436,19 @@ fn emit_lane_mask(
     op: VectorCompareOp,
     src0: Value,
     src1: Value,
-    exec: u32,
+    exec: u64,
+    half: u32,
     nodes: &mut ReplayBudget,
 ) -> Result<(), CompileError> {
+    let wave = nodes.wave;
+    let base_mask = wave.lanes() - 1;
+    let end = half + 32;
     nodes.charge(4, 32)?;
     let dest = Value(index);
     append_msl(
         msl,
         &format!(
-            "    uint {dest} = 0u;\n    for (uint lane = 0u; lane < 32u; ++lane) {{\n        uint lane_index = (index & ~31u) + lane;\n        if (lane_index >= grid) {{ break; }}\n"
+            "    uint {dest} = 0u;\n    for (uint lane = {half}u; lane < {end}u; ++lane) {{\n        uint lane_index = (index & ~{base_mask}u) + lane;\n        if (lane_index >= grid) {{ break; }}\n"
         ),
     )?;
     let mut replay = Replay::new(
@@ -1274,10 +1464,18 @@ fn emit_lane_mask(
     replay.multiplier = 32;
     let a = replay.value(src0, 0, 0)?;
     let b = replay.value(src1, 0, 0)?;
+    let accumulation = if wave == WaveSize::Wave32 {
+        format!("((0x{exec:08x}u >> lane) & pass) << lane")
+    } else {
+        format!(
+            "((0x{:08x}u >> (lane & 31u)) & pass) << (lane & 31u)",
+            (exec >> half) as u32
+        )
+    };
     append_msl(
         replay.msl,
         &format!(
-            "        uint pass = ({}) ? 1u : 0u;\n        {dest} |= ((0x{exec:08x}u >> lane) & pass) << lane;\n    }}\n",
+            "        uint pass = ({}) ? 1u : 0u;\n        {dest} |= {accumulation};\n    }}\n",
             compare_expression(op, &a, &b)
         ),
     )
@@ -1296,8 +1494,11 @@ fn decode_fixture(
 fn lift(
     decoded: &[DecodedInstruction],
     code_len: usize,
-    launch: Wave32Launch,
+    config: WaveConfig,
 ) -> Result<Vec<(usize, Op)>, CompileError> {
+    let launch = config.launch;
+    let wave = config.size;
+    let lane_mask = wave.lanes() - 1;
     let mut operations = Vec::new();
     let mut registers = [None::<Value>; 256];
     let mut facts = Vec::<KnownBits>::new();
@@ -1306,21 +1507,35 @@ fn lift(
     let mut stored = false;
     let mut store_pending = false;
     let mut scalars = [None; 128];
-    let mut lane_scalars = [None::<Value>; 106];
-    let mut exec = u32::MAX; // The fixture starts with full Wave32 EXEC.
-    scalars[126] = Some(exec);
+    // Each half retains independent provenance: known in scalars, runtime here,
+    // or unknown in both. A half write invalidates only that runtime slot.
+    let mut lane_scalars = [None::<Value>; 128];
+    scalars[126] = Some(u32::MAX);
+    // Wave32 high EXEC has no established initial numeric value in this ABI.
+    if wave == WaveSize::Wave64 {
+        scalars[127] = Some(u32::MAX);
+    }
     let mut scc = None;
     let mut skip_before = 0;
-    // Set while VCC_LO holds a lane-derived compare mask (scalars[VCC_LO] is then None).
-    let mut lane_vcc: Option<Value> = None;
     // Open runtime VCC region: end, mask, polarity and pre-branch VGPRs.
-    let mut region: Option<(usize, Value, MaskCondition, [Option<Value>; 256])> = None;
+    let mut region: Option<(usize, MaskValue, MaskCondition, [Option<Value>; 256])> = None;
 
     // Every decoded instruction must satisfy the fixture layout and binding
     // contract, even when a known branch skips it.
     for (index, instruction) in decoded.iter().enumerate() {
         let offset = instruction.offset;
         let reason = match instruction.instruction {
+            Instruction::ReadLaneB32 { dst, lane, .. }
+                if wave == WaveSize::Wave64 && dst == lane =>
+            {
+                "Wave64 READLANE scalar source/destination overlap"
+            }
+            Instruction::VectorCompare {
+                src0: VectorSource::Scalar(106 | 107),
+                ..
+            } if wave == WaveSize::Wave64 => {
+                "Wave64 comparison explicit VCC source/destination overlap"
+            }
             Instruction::DsSwizzleB32 {
                 offset: immediate, ..
             } if (0xc000..0xe000).contains(&immediate) && immediate & 31 != 0 => {
@@ -1472,6 +1687,10 @@ fn lift(
         if offset < skip_before {
             continue;
         }
+        let mut exec = u64::from(scalars[126].expect("static EXEC low"));
+        if wave == WaveSize::Wave64 {
+            exec |= u64::from(scalars[127].expect("static EXEC high")) << 32;
+        }
         // Constant scalar writes invalidate any older lane-derived value. Untaken
         // conditional writes preserve both pieces of scalar state.
         let scalar_write = match instruction.instruction {
@@ -1487,10 +1706,16 @@ fn lift(
             }
             _ => None,
         };
+        let scalar_sources = lane_scalars;
         if let Some(dst) = scalar_write.and_then(|dst| lane_scalars.get_mut(usize::from(dst))) {
             *dst = None;
         }
         let read_scalar = |source| match source {
+            ScalarSource::Register(register) if scalar_sources[usize::from(register)].is_some() => {
+                Err(error(
+                    "scalar source has no known value; runtime scalar ALU unsupported",
+                ))
+            }
             ScalarSource::Immediate(value) => Ok(value),
             ScalarSource::Register(register) => scalars
                 .get(usize::from(register))
@@ -1523,7 +1748,7 @@ fn lift(
                 _ => {}
             }
         }
-        if exec != u32::MAX
+        if exec != wave.full_mask()
             && matches!(
                 instruction.instruction,
                 Instruction::BufferLoadDword { .. }
@@ -1531,7 +1756,11 @@ fn lift(
                     | Instruction::BufferStoreDword { .. }
             )
         {
-            return Err(error("vector memory requires full Wave32 EXEC"));
+            return Err(error(if wave == WaveSize::Wave64 {
+                "vector memory requires full Wave64 EXEC"
+            } else {
+                "vector memory requires full Wave32 EXEC"
+            }));
         }
         let next = Value(operations.len());
         let (dest, operation) = match instruction.instruction {
@@ -1561,7 +1790,8 @@ fn lift(
                     },
                 ));
                 facts.push(KnownBits::UNKNOWN);
-                let value = merge_lanes(&mut operations, &mut facts, offset, exec, next, old)?;
+                let value =
+                    merge_lanes(&mut operations, &mut facts, offset, exec, next, old, wave)?;
                 registers[slot] = None;
                 pending_ds = Some((slot, value));
                 continue;
@@ -1591,7 +1821,7 @@ fn lift(
                         },
                     ),
                     Instruction::DsSwizzleB32 { src, offset, .. } => {
-                        if exec != u32::MAX {
+                        if exec != wave.full_mask() {
                             return Err(error("swizzle requires full EXEC"));
                         }
                         (read(src)?, GatherSelection::Table(swizzle_table(offset)))
@@ -1603,7 +1833,7 @@ fn lift(
                         cross_row,
                         ..
                     } => {
-                        if exec != u32::MAX {
+                        if exec != wave.full_mask() {
                             return Err(error("permlane requires full EXEC"));
                         }
                         let lo = read_scalar(ScalarSource::Register(select_lo))?;
@@ -1626,7 +1856,8 @@ fn lift(
                     },
                 ));
                 facts.push(KnownBits::UNKNOWN);
-                let value = merge_lanes(&mut operations, &mut facts, offset, exec, next, old)?;
+                let value =
+                    merge_lanes(&mut operations, &mut facts, offset, exec, next, old, wave)?;
                 if is_ds {
                     registers[slot] = None;
                     pending_ds = Some((slot, value));
@@ -1642,7 +1873,7 @@ fn lift(
                 continue;
             }
             Instruction::WriteLaneB32 { dst, src, lane } => {
-                let selected = read_scalar(ScalarSource::Register(lane))? & 31;
+                let selected = read_scalar(ScalarSource::Register(lane))? & lane_mask;
                 let old = read(dst)?;
                 let value = if let Some(bits) = scalars[usize::from(src)] {
                     constant(&mut operations, &mut facts, offset, bits)
@@ -1654,9 +1885,10 @@ fn lift(
                     &mut operations,
                     &mut facts,
                     offset,
-                    1u32 << selected,
+                    1u64 << selected,
                     value,
                     Some(old),
+                    wave,
                 )?);
                 continue;
             }
@@ -1678,12 +1910,12 @@ fn lift(
                     }
                     Instruction::ReadLaneB32 { lane, .. } => {
                         if let Some(bits) = scalars[usize::from(lane)] {
-                            if bits & 31 != 0 && launch == Wave32Launch::PartialAllowed {
+                            if bits & lane_mask != 0 && launch == Wave32Launch::PartialAllowed {
                                 return Err(error(
                                     "lane read requires selected lane zero for partial-wave safety",
                                 ));
                             }
-                            constant(&mut operations, &mut facts, offset, bits & 31)
+                            constant(&mut operations, &mut facts, offset, bits & lane_mask)
                         } else if launch == Wave32Launch::FullWavesRequired {
                             lane_scalars[usize::from(lane)]
                                 .ok_or_else(|| error("scalar source has no known value"))?
@@ -1758,6 +1990,7 @@ fn lift(
                     exec,
                     value,
                     registers[slot],
+                    wave,
                 )?);
                 continue;
             }
@@ -1768,8 +2001,8 @@ fn lift(
             Instruction::MoveB32 {
                 dst,
                 src: VectorSource::Scalar(register),
-            } if usize::from(register) == VCC_LO
-                && let Some(mask) = lane_vcc =>
+            } if matches!(register, 106 | 107)
+                && let Some(mask) = lane_scalars[usize::from(register)] =>
             {
                 let slot = usize::from(dst);
                 if dst == 0
@@ -1787,6 +2020,7 @@ fn lift(
                     exec,
                     mask,
                     registers[slot],
+                    wave,
                 )?);
                 continue;
             }
@@ -1813,6 +2047,7 @@ fn lift(
                     exec,
                     value,
                     registers[slot],
+                    wave,
                 )?);
                 continue;
             }
@@ -1835,8 +2070,11 @@ fn lift(
             | Instruction::VectorXorB32 { dst, src0, src1 } => {
                 let left = match src0 {
                     VectorSource::Register(register) => read(register)?,
-                    VectorSource::Scalar(register) if usize::from(register) == VCC_LO => {
-                        match (lane_vcc, scalars[VCC_LO]) {
+                    VectorSource::Scalar(register) if matches!(register, 106 | 107) => {
+                        match (
+                            lane_scalars[usize::from(register)],
+                            scalars[usize::from(register)],
+                        ) {
                             (Some(mask), _) => mask,
                             (None, Some(bits)) => {
                                 constant(&mut operations, &mut facts, offset, bits)
@@ -1871,12 +2109,6 @@ fn lift(
                 let value = read_scalar(src)?;
                 if dst < 8 {
                     return Err(error("scalar move would modify a resource descriptor"));
-                }
-                if dst == 126 {
-                    exec = value;
-                }
-                if usize::from(dst) == VCC_LO {
-                    lane_vcc = None;
                 }
                 let slot = scalars
                     .get_mut(usize::from(dst))
@@ -1973,7 +2205,11 @@ fn lift(
                 if exec == 0 {
                     scalars[VCC_HI] = None;
                     scalars[VCC_LO] = Some(0);
-                    lane_vcc = None;
+                    lane_scalars[VCC_LO] = None;
+                    lane_scalars[VCC_HI] = None;
+                    if wave == WaveSize::Wave64 {
+                        scalars[VCC_HI] = Some(0);
+                    }
                     continue;
                 }
                 let constant =
@@ -1985,8 +2221,11 @@ fn lift(
                     };
                 let src0 = match src0 {
                     VectorSource::Register(register) => read(register)?,
-                    VectorSource::Scalar(register) if usize::from(register) == VCC_LO => {
-                        match (lane_vcc, scalars[VCC_LO]) {
+                    VectorSource::Scalar(register) if matches!(register, 106 | 107) => {
+                        match (
+                            lane_scalars[usize::from(register)],
+                            scalars[usize::from(register)],
+                        ) {
                             (Some(mask), _) => mask,
                             (None, Some(bits)) => constant(&mut operations, &mut facts, bits),
                             (None, None) => {
@@ -2009,17 +2248,59 @@ fn lift(
                         src0,
                         src1,
                         exec,
+                        half: 0,
                     },
                 ));
                 facts.push(KnownBits::UNKNOWN);
+                let high = if wave == WaveSize::Wave64 {
+                    let high = Value(operations.len());
+                    operations.push((
+                        offset,
+                        Op::LaneMask {
+                            op,
+                            src0,
+                            src1,
+                            exec,
+                            half: 32,
+                        },
+                    ));
+                    facts.push(KnownBits::UNKNOWN);
+                    Some(high)
+                } else {
+                    None
+                };
                 scalars[VCC_LO] = None;
                 scalars[VCC_HI] = None;
-                lane_vcc = Some(mask);
+                lane_scalars[VCC_LO] = Some(mask);
+                lane_scalars[VCC_HI] = high;
                 continue;
             }
             Instruction::BranchVccZero { target } | Instruction::BranchVccNonZero { target }
-                if let Some(mask) = lane_vcc =>
+                if lane_scalars[VCC_LO].is_some()
+                    || (wave == WaveSize::Wave64 && lane_scalars[VCC_HI].is_some()) =>
             {
+                let mut projection = |slot: usize| -> Result<Value, CompileError> {
+                    if let Some(value) = lane_scalars[slot] {
+                        Ok(value)
+                    } else {
+                        Ok(constant(
+                            &mut operations,
+                            &mut facts,
+                            offset,
+                            scalars[slot].ok_or_else(|| {
+                                error("conditional branch reads uninitialized VCC half")
+                            })?,
+                        ))
+                    }
+                };
+                let mask = MaskValue {
+                    lo: projection(VCC_LO)?,
+                    hi: if wave == WaveSize::Wave64 {
+                        Some(projection(VCC_HI)?)
+                    } else {
+                        None
+                    },
+                };
                 let condition =
                     if matches!(instruction.instruction, Instruction::BranchVccZero { .. }) {
                         MaskCondition::Zero
@@ -2056,15 +2337,23 @@ fn lift(
                     Instruction::BranchSccOne { .. } => {
                         scc.ok_or_else(|| error("conditional branch reads uninitialized SCC"))?
                     }
-                    Instruction::BranchVccZero { .. } => {
-                        scalars[106]
-                            .ok_or_else(|| error("conditional branch reads uninitialized VCC_LO"))?
-                            == 0
-                    }
-                    Instruction::BranchVccNonZero { .. } => {
-                        scalars[VCC_LO]
-                            .ok_or_else(|| error("conditional branch reads uninitialized VCC_LO"))?
-                            != 0
+                    Instruction::BranchVccZero { .. } | Instruction::BranchVccNonZero { .. } => {
+                        let lo = scalars[VCC_LO].ok_or_else(|| {
+                            error("conditional branch reads uninitialized VCC_LO")
+                        })?;
+                        let hi = if wave == WaveSize::Wave64 {
+                            scalars[VCC_HI].ok_or_else(|| {
+                                error("conditional branch reads uninitialized VCC_HI")
+                            })?
+                        } else {
+                            0
+                        };
+                        let zero = (lo | hi) == 0;
+                        if matches!(instruction.instruction, Instruction::BranchVccZero { .. }) {
+                            zero
+                        } else {
+                            !zero
+                        }
                     }
                     Instruction::BranchExecNonZero { .. } => exec != 0,
                     _ => exec == 0,
@@ -2094,8 +2383,11 @@ fn lift(
                 for (slot, src) in values.iter_mut().zip([src0, src1]) {
                     *slot = match src {
                         VectorSource::Register(register) => read(register)?,
-                        VectorSource::Scalar(register) if usize::from(register) == VCC_LO => {
-                            match (lane_vcc, scalars[VCC_LO]) {
+                        VectorSource::Scalar(register) if matches!(register, 106 | 107) => {
+                            match (
+                                lane_scalars[usize::from(register)],
+                                scalars[usize::from(register)],
+                            ) {
                                 (Some(mask), _) => mask,
                                 (None, Some(bits)) => {
                                     constant(&mut operations, &mut facts, offset, bits)
@@ -2126,8 +2418,11 @@ fn lift(
                 for (slot, src) in values.iter_mut().zip([src0, src1]) {
                     *slot = match src {
                         VectorSource::Register(register) => read(register)?,
-                        VectorSource::Scalar(register) if usize::from(register) == VCC_LO => {
-                            match (lane_vcc, scalars[VCC_LO]) {
+                        VectorSource::Scalar(register) if matches!(register, 106 | 107) => {
+                            match (
+                                lane_scalars[usize::from(register)],
+                                scalars[usize::from(register)],
+                            ) {
                                 (Some(mask), _) => mask,
                                 (None, Some(bits)) => {
                                     constant(&mut operations, &mut facts, offset, bits)
@@ -2161,8 +2456,11 @@ fn lift(
                 for (slot, src) in values.iter_mut().zip([src0, src1]) {
                     *slot = match src {
                         VectorSource::Register(register) => read(register)?,
-                        VectorSource::Scalar(register) if usize::from(register) == VCC_LO => {
-                            match (lane_vcc, scalars[VCC_LO]) {
+                        VectorSource::Scalar(register) if matches!(register, 106 | 107) => {
+                            match (
+                                lane_scalars[usize::from(register)],
+                                scalars[usize::from(register)],
+                            ) {
                                 (Some(mask), _) => mask,
                                 (None, Some(bits)) => {
                                     constant(&mut operations, &mut facts, offset, bits)
@@ -2199,8 +2497,11 @@ fn lift(
                 for (slot, src) in values.iter_mut().zip([src0, src1]) {
                     *slot = match src {
                         VectorSource::Register(register) => read(register)?,
-                        VectorSource::Scalar(register) if usize::from(register) == VCC_LO => {
-                            match (lane_vcc, scalars[VCC_LO]) {
+                        VectorSource::Scalar(register) if matches!(register, 106 | 107) => {
+                            match (
+                                lane_scalars[usize::from(register)],
+                                scalars[usize::from(register)],
+                            ) {
                                 (Some(mask), _) => mask,
                                 (None, Some(bits)) => {
                                     constant(&mut operations, &mut facts, offset, bits)
@@ -2232,8 +2533,11 @@ fn lift(
                 for (slot, src) in values.iter_mut().zip([src0, src1, src2]) {
                     *slot = match src {
                         VectorSource::Register(register) => read(register)?,
-                        VectorSource::Scalar(register) if usize::from(register) == VCC_LO => {
-                            match (lane_vcc, scalars[VCC_LO]) {
+                        VectorSource::Scalar(register) if matches!(register, 106 | 107) => {
+                            match (
+                                lane_scalars[usize::from(register)],
+                                scalars[usize::from(register)],
+                            ) {
                                 (Some(mask), _) => mask,
                                 (None, Some(bits)) => {
                                     constant(&mut operations, &mut facts, offset, bits)
@@ -2266,8 +2570,11 @@ fn lift(
                 for (slot, src) in values.iter_mut().zip([src0, src1, src2]) {
                     *slot = match src {
                         VectorSource::Register(register) => read(register)?,
-                        VectorSource::Scalar(register) if usize::from(register) == VCC_LO => {
-                            match (lane_vcc, scalars[VCC_LO]) {
+                        VectorSource::Scalar(register) if matches!(register, 106 | 107) => {
+                            match (
+                                lane_scalars[usize::from(register)],
+                                scalars[usize::from(register)],
+                            ) {
                                 (Some(mask), _) => mask,
                                 (None, Some(bits)) => {
                                     constant(&mut operations, &mut facts, offset, bits)
@@ -2295,8 +2602,11 @@ fn lift(
             | Instruction::VectorUnaryE64 { op, dst, src } => {
                 let source = match src {
                     VectorSource::Register(register) => read(register)?,
-                    VectorSource::Scalar(register) if usize::from(register) == VCC_LO => {
-                        match (lane_vcc, scalars[VCC_LO]) {
+                    VectorSource::Scalar(register) if matches!(register, 106 | 107) => {
+                        match (
+                            lane_scalars[usize::from(register)],
+                            scalars[usize::from(register)],
+                        ) {
                             (Some(mask), _) => mask,
                             (None, Some(bits)) => {
                                 constant(&mut operations, &mut facts, offset, bits)
@@ -2324,8 +2634,11 @@ fn lift(
             } => {
                 let src0 = match src0 {
                     VectorSource::Register(register) => read(register)?,
-                    VectorSource::Scalar(register) if usize::from(register) == VCC_LO => {
-                        match (lane_vcc, scalars[VCC_LO]) {
+                    VectorSource::Scalar(register) if matches!(register, 106 | 107) => {
+                        match (
+                            lane_scalars[usize::from(register)],
+                            scalars[usize::from(register)],
+                        ) {
                             (Some(mask), _) => mask,
                             (None, Some(bits)) => {
                                 constant(&mut operations, &mut facts, offset, bits)
@@ -2419,6 +2732,7 @@ fn lift(
                 exec,
                 produced,
                 registers[slot],
+                wave,
             )?);
         }
     }
@@ -2446,11 +2760,12 @@ fn merge_lanes(
     operations: &mut Vec<(usize, Op)>,
     facts: &mut Vec<KnownBits>,
     offset: usize,
-    mask: u32,
+    mask: u64,
     active: Value,
     inactive: Option<Value>,
+    wave: WaveSize,
 ) -> Result<Value, CompileError> {
-    if mask == u32::MAX {
+    if mask == wave.full_mask() {
         return Ok(active);
     }
     let inactive = inactive.ok_or(CompileError::Verify {

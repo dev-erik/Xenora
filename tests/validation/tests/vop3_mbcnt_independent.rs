@@ -247,7 +247,7 @@ fn rejects_unsupported_modifiers_special_sources_and_uninitialized_sources() {
             words[1] |= 1 << bit;
             reject(&words, true);
         }
-        for source in [107, 124, 125, 126, 127, 209, 239, 249, 250, 254] {
+        for source in [108, 109, 110, 124, 125, 209, 239, 249, 250, 254] {
             reject(&insn(op, 2, source, 128), true);
             reject(&insn(op, 2, 128, source), true);
         }

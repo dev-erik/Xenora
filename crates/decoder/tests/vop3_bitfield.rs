@@ -24,7 +24,7 @@ fn code(op: u32, dst: u8, raw: [u32; 3], literal: u32) -> Vec<u8> {
 }
 fn source(raw: u32, literal: u32) -> Option<VectorSource> {
     Some(match raw {
-        0..=106 => VectorSource::Scalar(raw as u8),
+        0..=107 | 126..=127 => VectorSource::Scalar(raw as u8),
         128..=192 => VectorSource::Immediate(raw - 128),
         193..=208 => VectorSource::Immediate((192i32 - raw as i32) as u32),
         240..=248 => VectorSource::Immediate(FLOAT[(raw - 240) as usize]),
@@ -130,13 +130,13 @@ fn canonical_padding_and_each_modifier_bit() {
 fn distinct_scalar_identity_budget_precedes_immediate_collapse() {
     // Exhaust all triples over two normal SGPRs, VCC, literal, inline and VGPR.
     for op in [328, 334, 882, 376] {
-        for a in [0, 105, 106, 255, 129, 248, 511] {
-            for b in [0, 105, 106, 255, 129, 248, 511] {
-                for c in [0, 105, 106, 255, 129, 248, 511] {
+        for a in [0, 105, 106, 107, 126, 127, 255, 129, 248, 511] {
+            for b in [0, 105, 106, 107, 126, 127, 255, 129, 248, 511] {
+                for c in [0, 105, 106, 107, 126, 127, 255, 129, 248, 511] {
                     let raw = [a, b, c];
                     let mut keys = std::collections::BTreeSet::new();
                     for value in raw {
-                        if value <= 106 || value == 255 {
+                        if matches!(value, 0..=107 | 126..=127 | 255) {
                             keys.insert(value);
                         }
                     }

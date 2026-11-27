@@ -1857,6 +1857,33 @@ mod review {
         verify(&code, &[1], Some(&[0x4080_0000]));
     }
 
+    fn initialized_exec_lo_compare() -> Vec<u8> {
+        let mut code = compare_program(129, 5, false);
+        code[0x14..0x18].copy_from_slice(&vopc(129, 126, 3).to_le_bytes());
+        code
+    }
+
+    #[test]
+    fn compares_accept_initialized_exec_lo() {
+        // ABI initializes EXEC_LO to all ones: signed -1 < 5 is true.
+        // Only present lanes contribute, so the final one-lane wave has mask1.
+        // The legacy third reference does not cover this newly admitted operand;
+        // keep its existing three-way rejection checks unchanged below.
+        let code = initialized_exec_lo_compare();
+        compile(Architecture::Gfx1030, &code).unwrap();
+        for expected in [
+            vec![1],
+            vec![0x7fff_ffff; 31],
+            vec![u32::MAX; 32],
+            [vec![u32::MAX; 32], vec![1]].concat(),
+        ] {
+            assert_eq!(
+                xenora_ref::execute(&code, &vec![0; expected.len()]).unwrap(),
+                expected
+            );
+        }
+    }
+
     #[test]
     fn compares_and_runtime_branches_reject_outside_the_contract() {
         let base = compare_program(129, 5, false);
@@ -1867,7 +1894,7 @@ mod review {
             code[0x14..0x18].copy_from_slice(&word.to_le_bytes());
             code
         };
-        for selector in [107, 124, 125, 126, 127, 233, 249, 250, 251, 253, 254] {
+        for selector in [107, 124, 125, 127, 233, 249, 250, 251, 253, 254] {
             rejected_at(&with_src0(selector), 0x14);
         }
         rejected_at(&with_src0(20), 0x14); // s20 has no known value
@@ -1926,6 +1953,11 @@ mod review {
                 .unwrap()
         };
         let mut programs = 0;
+        assert_eq!(
+            run(&initialized_exec_lo_compare(), &[0; 33]),
+            [vec![u32::MAX; 32], vec![1]].concat()
+        );
+        programs += 1;
         let input = compare_fixture_input();
         assert_eq!(
             run(COMPARE_FIXTURE, &input),

@@ -73,7 +73,7 @@ fn repeated_context_key_reuses_selected_lane_temporary() {
             Op::Gather {
                 source: Value(0),
                 selection,
-                exec: u32::MAX,
+                exec: u64::from(u32::MAX),
             },
         ),
         (
@@ -81,7 +81,7 @@ fn repeated_context_key_reuses_selected_lane_temporary() {
             Op::Gather {
                 source: Value(0),
                 selection,
-                exec: u32::MAX,
+                exec: u64::from(u32::MAX),
             },
         ),
     ];
@@ -110,7 +110,7 @@ fn context_depth_is_bounded_independently_of_source_size() {
             Op::Gather {
                 source: Value(i),
                 selection: GatherSelection::Table([0; 32]),
-                exec: u32::MAX,
+                exec: u64::from(u32::MAX),
             },
         ));
     }
@@ -158,7 +158,7 @@ fn comparison_scatter_multiplies_body_work_and_memoizes_shared_source() {
                 address: Value(0),
                 data: Value(0),
                 offset: 0,
-                exec: u32::MAX,
+                exec: u64::from(u32::MAX),
             },
         ),
     ];
@@ -192,7 +192,7 @@ fn scatter_work_rejects_before_loop_growth() {
                 address: Value(0),
                 data: Value(0),
                 offset: 0,
-                exec: u32::MAX,
+                exec: u64::from(u32::MAX),
             },
         ),
     ];
@@ -220,4 +220,87 @@ fn scatter_work_rejects_before_loop_growth() {
             .contains("weighted work")
     );
     assert!(source.is_empty());
+}
+
+#[test]
+fn wave64_comparison_halves_have_separate_memos_and_additive_work() {
+    let ops = [(0, Op::Load(None))];
+    let mut source = String::new();
+    let mut budget = ReplayBudget {
+        wave: WaveSize::Wave64,
+        ..ReplayBudget::default()
+    };
+    let op = VectorCompareOp {
+        relation: xenora_decoder::CompareRelation::Equal,
+        signed: false,
+    };
+    for half in [0, 32] {
+        emit_lane_mask(
+            &mut source,
+            &ops,
+            &[false],
+            1,
+            op,
+            Value(0),
+            Value(0),
+            u64::MAX,
+            half,
+            &mut budget,
+        )
+        .unwrap();
+    }
+    // Each fixed 32-lane loop charges four control operations plus one memoized load.
+    assert_eq!(budget.work, 2 * 32 * 5);
+    assert_eq!(budget.nodes, 2);
+    assert_eq!(source.matches("uint l0 = input[lane_index]").count(), 2);
+    assert!(source.contains("lane = 32u; lane < 64u"));
+}
+
+#[test]
+fn wave64_same_local_lane_in_opposite_halves_keeps_distinct_contexts() {
+    let ops = [
+        (0, Op::Load(None)),
+        (
+            0,
+            Op::Gather {
+                source: Value(0),
+                selection: GatherSelection::Table(std::array::from_fn(|i| i as u8)),
+                exec: u64::MAX,
+            },
+        ),
+    ];
+    let mut source = String::new();
+    let mut budget = ReplayBudget {
+        wave: WaveSize::Wave64,
+        ..ReplayBudget::default()
+    };
+    let mut replay = Replay::new(
+        &mut source,
+        &ops,
+        &[false; 2],
+        2,
+        &mut budget,
+        "0u".into(),
+        "(index & ~63u)".into(),
+        false,
+    );
+    replay
+        .contexts
+        .push(("32u".into(), "((index & ~63u) + 32u)".into()));
+    let lower = replay.value(Value(1), 0, 0).unwrap();
+    let upper = replay.value(Value(1), 1, 0).unwrap();
+    assert_ne!(lower, upper);
+    assert_eq!(replay.context_keys.len(), 2);
+    assert!(
+        replay
+            .context_keys
+            .keys()
+            .any(|key| key.contains("(0u & 32u)"))
+    );
+    assert!(
+        replay
+            .context_keys
+            .keys()
+            .any(|key| key.contains("(32u & 32u)"))
+    );
 }

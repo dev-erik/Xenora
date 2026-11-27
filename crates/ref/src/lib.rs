@@ -508,10 +508,30 @@ impl VectorInteger {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Wave32Launch {
+pub enum WaveLaunch {
     #[default]
     PartialAllowed,
     FullWavesRequired,
+}
+pub use WaveLaunch as Wave32Launch;
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum WaveSize {
+    #[default]
+    Wave32,
+    Wave64,
+}
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct WaveConfig {
+    pub size: WaveSize,
+    pub launch: WaveLaunch,
+}
+impl WaveSize {
+    fn lanes(self) -> usize {
+        match self {
+            Self::Wave32 => 32,
+            Self::Wave64 => 64,
+        }
+    }
 }
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ExecuteOptions {
@@ -531,13 +551,31 @@ pub fn execute_with_options(
     input: &[u32],
     options: ExecuteOptions,
 ) -> Result<Vec<u32>, ReferenceError> {
-    if options.wave32_launch == Wave32Launch::FullWavesRequired && !input.len().is_multiple_of(32) {
+    execute_with_wave_config(
+        code,
+        input,
+        WaveConfig {
+            size: WaveSize::Wave32,
+            launch: options.wave32_launch,
+        },
+    )
+}
+
+pub fn execute_with_wave_config(
+    code: &[u8],
+    input: &[u32],
+    config: WaveConfig,
+) -> Result<Vec<u32>, ReferenceError> {
+    let width = config.size.lanes();
+    if config.size == WaveSize::Wave64 && config.launch != WaveLaunch::FullWavesRequired {
+        return Err(error(0, "Wave64 requires full waves"));
+    }
+    if config.launch == WaveLaunch::FullWavesRequired && !input.len().is_multiple_of(width) {
         return Err(error(
             0,
-            "full Wave32 input must contain a multiple of 32 words",
+            "full wave input must contain a multiple of the wave size",
         ));
     }
-
     if input.is_empty() || input.len() > MAX_INPUT_WORDS {
         return Err(error(0, "input word count outside reference limits"));
     }
@@ -546,6 +584,27 @@ pub fn execute_with_options(
     }
     let program = decode(code)?;
     for instruction in &program {
+        if config.size == WaveSize::Wave64 {
+            match instruction.op {
+                Op::ReadLane {
+                    dst,
+                    index: Some(index),
+                    ..
+                } if dst == index => {
+                    return Err(error(
+                        instruction.offset,
+                        "Wave64 READLANE scalar source/destination overlap",
+                    ));
+                }
+                Op::Compare(_, CompareSource::Scalar(106 | 107), _) => {
+                    return Err(error(
+                        instruction.offset,
+                        "Wave64 compare scalar source overlaps VCC destination",
+                    ));
+                }
+                _ => {}
+            }
+        }
         match instruction.op {
             Op::DsSwizzleB32 {
                 offset: immediate, ..
@@ -559,7 +618,7 @@ pub fn execute_with_options(
             | Op::DsBpermuteB32 { .. }
             | Op::DsSwizzleB32 { .. }
             | Op::Permlane16B32 { .. }
-                if options.wave32_launch != Wave32Launch::FullWavesRequired =>
+                if config.launch != WaveLaunch::FullWavesRequired =>
             {
                 return Err(error(
                     instruction.offset,
@@ -600,11 +659,11 @@ pub fn execute_with_options(
     {
         return Err(error(code.len(), "missing s_endpgm"));
     }
-    // Waves are consecutive groups of 32 dispatch indices; a final partial
-    // wave has absent lanes, which contribute 0 to compare masks.
+    // Waves are consecutive groups of the configured width. Only Wave32
+    // permits absent final lanes, which contribute zero to compare masks.
     let mut output = Vec::with_capacity(input.len());
-    for wave in input.chunks(32) {
-        output.extend(execute_wave(&program, wave, options.wave32_launch)?);
+    for wave in input.chunks(width) {
+        output.extend(execute_wave(&program, wave, config)?);
     }
     Ok(output)
 }
@@ -1148,8 +1207,8 @@ pub fn decode(code: &[u8]) -> Result<Vec<DecodedInstruction>, ReferenceError> {
             {
                 let dst = (upper >> 1) | ((tag & 1) << 7);
                 let selector = u16::from(*lo) | (u16::from(packed & 1) << 8);
-                if selector <= 106 {
-                    // VOP1 SRC0 0-105 selects a normal SGPR, 106 vcc_lo.
+                if matches!(selector, 0..=107 | 126..=127) {
+                    // Normal SGPRs and independently tracked VCC/EXEC halves.
                     program.push(DecodedInstruction {
                         offset,
                         byte_len: 4,
@@ -1219,7 +1278,7 @@ fn decode_scalar(
     offset: usize,
 ) -> Result<(Source, usize), ReferenceError> {
     match selector {
-        0..=105 => Ok((Source::Register(selector), 4)),
+        0..=107 | 126..=127 => Ok((Source::Register(selector), 4)),
         128..=192 => Ok((Source::Immediate(u32::from(selector - 128)), 4)),
         193..=208 => Ok((
             Source::Immediate(0u32.wrapping_sub(u32::from(selector - 192))),
@@ -1311,10 +1370,10 @@ fn decode_vop3_integer(bytes: &[u8], offset: usize) -> Result<(Op, usize), Refer
     }];
     let mut keys = std::collections::BTreeSet::new();
     for &src in active {
-        if !matches!(src, 0..=106 | 128..=208 | 240..=248 | 255..=511) {
+        if !matches!(src, 0..=107 | 126..=208 | 240..=248 | 255..=511) {
             return Err(error(offset, "unsupported VOP3 source"));
         }
-        if src <= 106 || src == 255 {
+        if src <= 107 || matches!(src, 126 | 127 | 255) {
             keys.insert(src);
         }
     }
@@ -1538,7 +1597,7 @@ fn decode_vector_source(
 ) -> Result<(CompareSource, usize), ReferenceError> {
     let selector = u16::from(lo) | (u16::from(packed & 1) << 8);
     Ok(match selector {
-        0..=106 => (CompareSource::Scalar(lo), 4),
+        0..=107 | 126..=127 => (CompareSource::Scalar(lo), 4),
         128..=192 => (CompareSource::Immediate(u32::from(selector - 128)), 4),
         193..=208 => (
             CompareSource::Immediate(0_u32.wrapping_sub(u32::from(selector - 192))),
@@ -1618,17 +1677,26 @@ const EXEC_LO: usize = 126;
 fn execute_wave(
     program: &[DecodedInstruction],
     input: &[u32],
-    launch: Wave32Launch,
+    config: WaveConfig,
 ) -> Result<Vec<u32>, ReferenceError> {
+    let launch = config.launch;
+    let width = config.size.lanes();
+    let full_exec = if width == 64 {
+        u64::MAX
+    } else {
+        u64::from(u32::MAX)
+    };
     let lanes = input.len();
     let mut registers = vec![[None::<u32>; 256]; lanes];
     let mut scalars = [None; 128];
     let mut lane_scalars = [None::<u32>; 106];
-    let mut exec = u32::MAX;
-    scalars[EXEC_LO] = Some(exec);
+    let mut exec = full_exec;
+    scalars[EXEC_LO] = Some(exec as u32);
+    // Wave32 does not establish an initial high-half value.
+    scalars[127] = if width == 64 { Some(u32::MAX) } else { None };
     let mut scc = None;
-    // Whether VCC_LO was last written by a compare with nonzero EXEC.
-    let mut lane_derived_vcc = false;
+    // Per-half provenance survives writes to the other half.
+    let mut lane_derived_vcc = [false; 2];
     let mut target = 0;
     let mut pending_read = None;
     let mut pending_ds: Option<(u8, Vec<u32>)> = None;
@@ -1655,6 +1723,14 @@ fn execute_wave(
             *dst = None;
         }
         let read_scalar = |source| match source {
+            Source::Register(reg @ (106 | 107)) if lane_derived_vcc[usize::from(reg - 106)] => {
+                Err(error(offset, "runtime mask scalar ALU source unsupported"))
+            }
+            Source::Register(reg) => scalars[usize::from(reg)]
+                .ok_or_else(|| error(offset, "read from uninitialized SGPR")),
+            Source::Immediate(value) => Ok(value),
+        };
+        let read_vector_scalar = |source| match source {
             Source::Register(reg) => scalars[usize::from(reg)]
                 .ok_or_else(|| error(offset, "read from uninitialized SGPR")),
             Source::Immediate(value) => Ok(value),
@@ -1673,7 +1749,7 @@ fn execute_wave(
         };
         // Lanes that execute a vector ALU instruction under the current EXEC.
         let executes = |lane: usize| exec & (1 << lane) != 0;
-        if exec != u32::MAX {
+        if exec != full_exec {
             match op {
                 Op::Move(dst, _)
                 | Op::MoveScalar(dst, _)
@@ -1738,8 +1814,8 @@ fn execute_wave(
                     let address = read(writer, addr)?;
                     let value = read(writer, data)?;
                     if exec & (1 << writer) != 0 {
-                        let destination =
-                            (address.wrapping_add(u32::from(immediate)) % 128 / 4) as usize;
+                        let destination = (writer / 32) * 32
+                            + (address.wrapping_add(u32::from(immediate)) % 128 / 4) as usize;
                         scattered[destination] = value;
                     }
                 }
@@ -1764,7 +1840,7 @@ fn execute_wave(
                         "invalid gather destination or outstanding DS",
                     ));
                 }
-                if !matches!(op, Op::DsBpermuteB32 { .. }) && exec != u32::MAX {
+                if !matches!(op, Op::DsBpermuteB32 { .. }) && exec != full_exec {
                     return Err(error(offset, "swizzle/permlane requires full EXEC"));
                 }
                 let selectors = if let Op::Permlane16B32 {
@@ -1793,7 +1869,9 @@ fn execute_wave(
                             // Independently model byte addressing modulo the 128-byte Wave32 bank.
                             (
                                 data,
-                                (address.wrapping_add(u32::from(immediate)) % 128 / 4) as usize,
+                                (lane / 32) * 32
+                                    + (address.wrapping_add(u32::from(immediate)) % 128 / 4)
+                                        as usize,
                             )
                         }
                         Op::DsSwizzleB32 {
@@ -1821,7 +1899,7 @@ fn execute_wave(
                                 0x8000.. => (lane / 4) * 4 + ((o >> (2 * (lane % 4))) & 3),
                                 _ => ((lane & mask) | ((o / 32) % 32)) ^ ((o / 1024) % 32),
                             };
-                            (src, target % 32)
+                            (src, (lane / 32) * 32 + target % 32)
                         }
                         Op::Permlane16B32 { src, cross_row, .. } => {
                             let within = lane % 16;
@@ -1851,7 +1929,7 @@ fn execute_wave(
                 }
             }
             Op::WriteLane { dst, src, index } => {
-                let selected = read_scalar(Source::Register(index))? & 31;
+                let selected = read_scalar(Source::Register(index))? & (width as u32 - 1);
                 let value = scalars[usize::from(src)]
                     .or(lane_scalars[usize::from(src)])
                     .ok_or_else(|| error(offset, "read from uninitialized SGPR"))?;
@@ -1872,9 +1950,9 @@ fn execute_wave(
                     } else {
                         read_scalar(Source::Register(index))?
                     };
-                    value & 31
+                    (value & (width as u32 - 1)) as usize
                 } else {
-                    (0..32).find(|bit| exec & (1 << bit) != 0).unwrap_or(0)
+                    (0..width).find(|bit| exec & (1 << bit) != 0).unwrap_or(0)
                 };
                 if lane != 0 && launch == Wave32Launch::PartialAllowed {
                     return Err(error(
@@ -1882,7 +1960,7 @@ fn execute_wave(
                         "lane read requires selected lane zero for partial-wave safety",
                     ));
                 }
-                let value = read(lane as usize, src)?;
+                let value = read(lane, src)?;
                 scalars[usize::from(dst)] = None;
                 lane_scalars[usize::from(dst)] = Some(value);
             }
@@ -1975,13 +2053,13 @@ fn execute_wave(
                         read(lane, rhs)?;
                     }
                     if let CompareSource::Scalar(reg) = lhs {
-                        read_scalar(Source::Register(reg))?;
+                        read_vector_scalar(Source::Register(reg))?;
                     }
                 }
                 for lane in (0..lanes).filter(|&lane| executes(lane)) {
                     let left = match lhs {
                         CompareSource::Vector(reg) => read(lane, reg)?,
-                        CompareSource::Scalar(reg) => read_scalar(Source::Register(reg))?,
+                        CompareSource::Scalar(reg) => read_vector_scalar(Source::Register(reg))?,
                         CompareSource::Immediate(bits) => bits,
                     };
                     let value = vector_alu(operator, left, read(lane, rhs)?, offset)?;
@@ -1997,7 +2075,7 @@ fn execute_wave(
                             }
                         }
                         CompareSource::Scalar(reg) => {
-                            read_scalar(Source::Register(reg))?;
+                            read_vector_scalar(Source::Register(reg))?;
                         }
                         CompareSource::Immediate(_) => {}
                     }
@@ -2005,7 +2083,7 @@ fn execute_wave(
                 for lane in (0..lanes).filter(|&lane| executes(lane)) {
                     let value = match src {
                         CompareSource::Vector(reg) => read(lane, reg)?,
-                        CompareSource::Scalar(reg) => read_scalar(Source::Register(reg))?,
+                        CompareSource::Scalar(reg) => read_vector_scalar(Source::Register(reg))?,
                         CompareSource::Immediate(bits) => bits,
                     };
                     results[lane] = Some((dst, kind.apply(value)));
@@ -2023,7 +2101,7 @@ fn execute_wave(
                 };
                 let source = |lane, src| match src {
                     CompareSource::Vector(reg) => read(lane, reg),
-                    CompareSource::Scalar(reg) => read_scalar(Source::Register(reg)),
+                    CompareSource::Scalar(reg) => read_vector_scalar(Source::Register(reg)),
                     CompareSource::Immediate(bits) => Ok(bits),
                 };
                 if exec != 0 {
@@ -2118,12 +2196,17 @@ fn execute_wave(
                             a.count_ones().wrapping_add(b)
                         }
                         Op::BitBinary(BitBinary::MaskedCountLow, ..) => {
-                            // AMD RDNA2 §12.12: only positions below this Wave32 lane.
+                            // AMD RDNA2 §12.12: low-word positions below the logical lane.
                             // Count positions directly, independently of the MSL mask expression.
-                            let count = (0..lane).filter(|bit| (a >> bit) & 1 != 0).count();
+                            let count = (0..lane.min(32)).filter(|bit| (a >> bit) & 1 != 0).count();
                             b.wrapping_add(count as u32)
                         }
-                        Op::BitBinary(BitBinary::MaskedCountHigh, ..) => b,
+                        Op::BitBinary(BitBinary::MaskedCountHigh, ..) => {
+                            let count = (0..lane.saturating_sub(32))
+                                .filter(|bit| (a >> bit) & 1 != 0)
+                                .count();
+                            b.wrapping_add(count as u32)
+                        }
                         Op::VectorTernary(VectorTernary::MinimumSigned, ..)
                         | Op::VectorTernary(VectorTernary::MaximumSigned, ..)
                         | Op::VectorTernary(VectorTernary::MedianSigned, ..) => {
@@ -2192,7 +2275,7 @@ fn execute_wave(
                     match src0 {
                         CompareSource::Vector(register) => check(register)?,
                         CompareSource::Scalar(register) => {
-                            read_scalar(Source::Register(register))?;
+                            read_vector_scalar(Source::Register(register))?;
                         }
                         CompareSource::Immediate(_) => {}
                     }
@@ -2201,7 +2284,9 @@ fn execute_wave(
                 for lane in (0..lanes).filter(|&lane| executes(lane)) {
                     let s0 = match src0 {
                         CompareSource::Vector(register) => read(lane, register)?,
-                        CompareSource::Scalar(register) => read_scalar(Source::Register(register))?,
+                        CompareSource::Scalar(register) => {
+                            read_vector_scalar(Source::Register(register))?
+                        }
                         CompareSource::Immediate(bits) => bits,
                     };
                     results[lane] = Some((dst, kind.apply(s0, read(lane, src1)?)));
@@ -2213,10 +2298,13 @@ fn execute_wave(
                 }
                 let value = read_scalar(src)?;
                 if usize::from(dst) == EXEC_LO {
-                    exec = value;
+                    exec = (exec & !u64::from(u32::MAX)) | u64::from(value);
                 }
-                if usize::from(dst) == VCC_LO {
-                    lane_derived_vcc = false;
+                if dst == 127 && width == 64 {
+                    exec = (exec & u64::from(u32::MAX)) | (u64::from(value) << 32);
+                }
+                if matches!(dst, 106 | 107) {
+                    lane_derived_vcc[usize::from(dst - 106)] = false;
                 }
                 scalars[usize::from(dst)] = Some(value);
             }
@@ -2432,7 +2520,7 @@ fn execute_wave(
             }
             // RDNA 2 ISA section 3.9: VCC[n] = EXEC[n] & test(n), fully written.
             Op::Compare(comparison, src0, src1) => {
-                let mut mask = 0u32;
+                let mut mask = 0u64;
                 if exec != 0 {
                     // Sources are checked once for the wave, even if no present lane is active.
                     let check = |register: u8| {
@@ -2441,7 +2529,7 @@ fn execute_wave(
                     match src0 {
                         CompareSource::Vector(register) => check(register)?,
                         CompareSource::Scalar(register) => {
-                            read_scalar(Source::Register(register))?;
+                            read_vector_scalar(Source::Register(register))?;
                         }
                         CompareSource::Immediate(_) => {}
                     }
@@ -2450,7 +2538,7 @@ fn execute_wave(
                         let s0 = match src0 {
                             CompareSource::Vector(register) => read(lane, register)?,
                             CompareSource::Scalar(register) => {
-                                read_scalar(Source::Register(register))?
+                                read_vector_scalar(Source::Register(register))?
                             }
                             CompareSource::Immediate(bits) => bits,
                         };
@@ -2459,9 +2547,14 @@ fn execute_wave(
                         }
                     }
                 }
-                scalars[VCC_LO] = Some(mask);
-                scalars[VCC_HI] = None;
-                lane_derived_vcc = exec != 0;
+                // Publish both halves only after every lane has evaluated its inputs.
+                scalars[VCC_LO] = Some(mask as u32);
+                scalars[VCC_HI] = if width == 64 {
+                    Some((mask >> 32) as u32)
+                } else {
+                    None
+                };
+                lane_derived_vcc = [exec != 0, width == 64 && exec != 0];
             }
             Op::Branch {
                 target: destination,
@@ -2470,14 +2563,14 @@ fn execute_wave(
                 if matches!(
                     condition,
                     BranchCondition::VccZero | BranchCondition::VccNonZero
-                ) && scalars[VCC_LO].is_none()
+                ) && (scalars[VCC_LO].is_none() || (width == 64 && scalars[VCC_HI].is_none()))
                 {
                     return Err(error(offset, "branch with uninitialized VCC_LO"));
                 }
                 if matches!(
                     condition,
                     BranchCondition::VccZero | BranchCondition::VccNonZero
-                ) && lane_derived_vcc
+                ) && (lane_derived_vcc[0] || (width == 64 && lane_derived_vcc[1]))
                 {
                     let mut region_scalars = scalars;
                     for (slot, value) in lane_scalars.iter().copied().enumerate() {
@@ -2503,8 +2596,12 @@ fn execute_wave(
                     BranchCondition::SccOne => {
                         scc.ok_or_else(|| error(offset, "branch with uninitialized SCC"))?
                     }
-                    BranchCondition::VccZero => scalars[VCC_LO] == Some(0),
-                    BranchCondition::VccNonZero => scalars[VCC_LO] != Some(0),
+                    BranchCondition::VccZero => {
+                        scalars[VCC_LO] == Some(0) && (width == 32 || scalars[VCC_HI] == Some(0))
+                    }
+                    BranchCondition::VccNonZero => {
+                        scalars[VCC_LO] != Some(0) || (width == 64 && scalars[VCC_HI] != Some(0))
+                    }
                     BranchCondition::ExecZero => exec == 0,
                     BranchCondition::ExecNonZero => exec != 0,
                 };
@@ -2551,7 +2648,7 @@ fn check_runtime_region(
     end: usize,
     registers: &[[Option<u32>; 256]],
     scalars: &[Option<u32>; 128],
-    exec: u32,
+    exec: u64,
     load_pending: bool,
     branch: usize,
 ) -> Result<(), ReferenceError> {
@@ -2719,7 +2816,7 @@ mod tests {
                 assert_eq!(decode(&code).unwrap()[0].byte_len, 8);
                 assert!(decode(&bytes(&[word(8, a, b)])).is_err());
             }
-            for (dst, a, b) in [(106, 8, 9), (8, 106, 9), (8, 8, 106), (8, 255, 255)] {
+            for (dst, a, b) in [(106, 8, 9), (8, 108, 9), (8, 8, 108), (8, 255, 255)] {
                 assert!(decode(&bytes(&[word(dst, a, b), 0xbf81_0000])).is_err());
             }
         }

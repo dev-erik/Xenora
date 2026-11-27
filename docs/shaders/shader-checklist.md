@@ -23,7 +23,7 @@ The evidence columns reproduce `docs/status.toml` without turning local readback
 
 ## Stage 3 planning map
 
-**All S3 stages remain open.** See the [latest validated checkpoint](../testing/stage3-control-memory-opening.md) for bounded scalar/mask branches, compute loads and waits, and Wave32 masked bit counts, validated full-wave lane reads, selected-lane writes and bounded gathers/scatters/swizzles. Other wave/lane operations remain open.
+**All S3 stages remain open.** See the [latest validated checkpoint](../testing/stage3-control-memory-opening.md) for bounded scalar/mask branches, compute loads and waits, and configured Wave32/complete-wave Wave64 masked bit counts, lane reads, selected-lane writes and bounded gathers/scatters/swizzles. Broader operands, inactive modes and graphics/helper-lane integration remain open.
 
 The partition below includes SOPP control flow and memory families alongside arithmetic. It is provisional, not a claim that a stage is complete or that forms outside arithmetic are optional. S3.6 numerical correctness applies across floating-point operations and is not counted as a disjoint opcode bucket. State assignments remain explicit gaps; scalar comparisons retain their historical arithmetic assignment pending a separate ownership audit. Counts exclude operand-mode debt such as DPP/SDWA, wave sizes, masks and ordering. The earlier 7/8/12 totals for S3.2/S3.4/S3.5 excluded whole families and were not stage completion denominators.
 
@@ -130,7 +130,7 @@ Update the implementation and its evidence in `docs/status.toml`, then regenerat
 | 50 | `DS_MIN_RTN_F32` | Not converted | — | — | — |
 | 51 | `DS_MAX_RTN_F32` | Not converted | — | — | — |
 | 52 | `DS_WRAP_RTN_B32` | Not converted | — | — | — |
-| 53 | `DS_SWIZZLE_B32` | Converted subset; fixture accepted | MSL context-aware swizzle replay with source snapshots and separate LGKM readiness | fixture verified | fixture verified |
+| 53 | `DS_SWIZZLE_B32` | Converted subset; fixture accepted | MSL context-aware swizzle replay preserving the configured wave's 32-lane half, with source snapshots and separate LGKM readiness | fixture verified | fixture verified |
 | 54 | `DS_READ_B32` | Not converted | — | — | — |
 | 55 | `DS_READ2_B32` | Not converted | — | — | — |
 | 56 | `DS_READ2ST64_B32` | Not converted | — | — | — |
@@ -196,8 +196,8 @@ Update the implementation and its evidence in `docs/status.toml`, then regenerat
 | 167 | `DS_READ_U16_D16_HI` | Not converted | — | — | — |
 | 176 | `DS_WRITE_ADDTID_B32` | Not converted | — | — | — |
 | 177 | `DS_READ_ADDTID_B32` | Not converted | — | — | — |
-| 178 | `DS_PERMUTE_B32` | Converted subset; fixture accepted | MSL bounded captured scatter with a permitted highest-active-writer policy, unwritten zero, inactive retention and separate LGKM completion | fixture verified | fixture verified |
-| 179 | `DS_BPERMUTE_B32` | Converted subset; fixture accepted | MSL captured address gather with inactive-source zero, retained inactive destination and separate LGKM readiness | fixture verified | fixture verified |
+| 178 | `DS_PERMUTE_B32` | Converted subset; fixture accepted | MSL bounded captured scatter within each 32-lane half of the configured wave, with a permitted highest-active-writer policy, unwritten zero, inactive retention and separate LGKM completion | fixture verified | fixture verified |
+| 179 | `DS_BPERMUTE_B32` | Converted subset; fixture accepted | MSL captured address gather within each 32-lane half of the configured wave, with inactive-source zero, retained inactive destination and separate LGKM readiness | fixture verified | fixture verified |
 | 222 | `DS_WRITE_B96` | Not converted | — | — | — |
 | 223 | `DS_WRITE_B128` | Not converted | — | — | — |
 | 254 | `DS_READ_B96` | Not converted | — | — | — |
@@ -803,10 +803,10 @@ Update the implementation and its evidence in `docs/status.toml`, then regenerat
 | 3 | `S_WAKEUP` | Not converted | — | — | — |
 | 4 | `S_CBRANCH_SCC0` | Converted subset; fixture accepted | resolved conditional branch | fixture verified | fixture verified |
 | 5 | `S_CBRANCH_SCC1` | Converted subset; fixture accepted | resolved compute conditional branch; graphics SCC complement with preserved condition state | fixture verified | fixture verified |
-| 6 | `S_CBRANCH_VCCZ` | Converted subset; acceptance pending | resolved Wave32 VCC_LO zero check, or a wave-uniform join select after a vector compare | local known-answer test passed | local Apple M5 readback passed; acceptance pending |
-| 7 | `S_CBRANCH_VCCNZ` | Converted subset; fixture accepted | resolved or bounded runtime nonzero VCC_LO branch with polarity-aware joins; existing runtime-region whitelist retained | fixture verified | fixture verified |
-| 8 | `S_CBRANCH_EXECZ` | Converted subset; acceptance pending | resolved Wave32 EXEC_LO zero check | local known-answer test passed | local Apple M5 readback passed; acceptance pending |
-| 9 | `S_CBRANCH_EXECNZ` | Converted subset; fixture accepted | resolved nonzero EXEC_LO branch; existing runtime-region whitelist retained | fixture verified | fixture verified |
+| 6 | `S_CBRANCH_VCCZ` | Converted subset; acceptance pending | resolved configured-wave VCC zero check (low half for Wave32, both halves for Wave64), or a wave-uniform join select after a vector compare | local known-answer test passed | local Apple M5 readback passed; acceptance pending |
+| 7 | `S_CBRANCH_VCCNZ` | Converted subset; fixture accepted | resolved or bounded runtime nonzero configured-wave VCC branch with polarity-aware joins; existing runtime-region whitelist retained | fixture verified | fixture verified |
+| 8 | `S_CBRANCH_EXECZ` | Converted subset; acceptance pending | resolved configured-wave EXEC zero check (low half for Wave32, both halves for Wave64) | local known-answer test passed | local Apple M5 readback passed; acceptance pending |
+| 9 | `S_CBRANCH_EXECNZ` | Converted subset; fixture accepted | resolved nonzero configured-wave EXEC branch; existing runtime-region whitelist retained | fixture verified | fixture verified |
 | 10 | `S_BARRIER` | Not converted | — | — | — |
 | 11 | `S_SETKILL` | Not converted | — | — | — |
 | 12 | `S_WAITCNT` | Converted subset; fixture accepted | verified separate buffer-load and DS-result completion; neither wait releases the other counter | fixture verified | fixture verified |
@@ -848,7 +848,7 @@ Update the implementation and its evidence in `docs/status.toml`, then regenerat
 | ---: | --- | --- | --- | --- | --- |
 | 0 | `V_NOP` | Not converted | — | — | — |
 | 1 | `V_MOV_B32` | Converted subset; fixture accepted | constant or register value | fixture verified | fixture verified |
-| 2 | `V_READFIRSTLANE_B32` | Converted subset; fixture accepted | MSL selected-lane snapshot replay under validated Wave32 launch; captured scalar results; graphics rejected | fixture verified | fixture verified |
+| 2 | `V_READFIRSTLANE_B32` | Converted subset; fixture accepted | MSL selected-lane snapshot replay under validated Wave32 or complete-wave Wave64 launch; captured scalar results; graphics rejected | fixture verified | fixture verified |
 | 3 | `V_CVT_I32_F64` | Not converted | — | — | — |
 | 4 | `V_CVT_F64_I32` | Not converted | — | — | — |
 | 5 | `V_CVT_F32_I32` | Not converted | — | — | — |
@@ -1384,8 +1384,8 @@ Update the implementation and its evidence in `docs/status.toml`, then regenerat
 | 866 | `V_LDEXP_F32` | Not converted | — | — | — |
 | 867 | `V_BFM_B32` | Converted subset; fixture accepted | MSL uint masked width and offset mask creation; compute and graphics | fixture verified | fixture verified |
 | 868 | `V_BCNT_U32_B32` | Converted subset; fixture accepted | MSL uint population count plus wrapping accumulator; compute and graphics | fixture verified | fixture verified |
-| 869 | `V_MBCNT_LO_U32_B32` | Converted subset; fixture accepted | MSL count SRC0 bits below the logical Wave32 lane and add SRC1 with uint wrapping; lane-aware comparison recomputation | fixture verified | fixture verified |
-| 870 | `V_MBCNT_HI_U32_B32` | Converted subset; fixture accepted | MSL copy SRC1 under Wave32; checked sources and EXEC destination retention; lane-aware comparison recomputation | fixture verified | fixture verified |
+| 869 | `V_MBCNT_LO_U32_B32` | Converted subset; fixture accepted | MSL count low-half SRC0 bits below the configured guest lane and add SRC1 with uint wrapping; lane-aware comparison recomputation | fixture verified | fixture verified |
+| 870 | `V_MBCNT_HI_U32_B32` | Converted subset; fixture accepted | MSL copy SRC1 under Wave32 or add high-half prefix count under Wave64; EXEC destination retention and lane-aware replay | fixture verified | fixture verified |
 | 872 | `V_CVT_PKNORM_I16_F32` | Not converted | — | — | — |
 | 873 | `V_CVT_PKNORM_U16_F32` | Not converted | — | — | — |
 | 874 | `V_CVT_PK_U16_U32` | Not converted | — | — | — |
@@ -1398,7 +1398,7 @@ Update the implementation and its evidence in `docs/status.toml`, then regenerat
 | 885 | `V_MAD_I32_I16` | Not converted | — | — | — |
 | 886 | `V_SUB_NC_I32` | Not converted | — | — | — |
 | 887 | `V_PERMLANE16_B32` | Converted subset; fixture accepted | MSL nibble-selected same-row gather with captured source and selector versions | fixture verified | fixture verified |
-| 888 | `V_PERMLANEX16_B32` | Converted subset; fixture accepted | MSL nibble-selected opposite-row gather with captured source and selector versions | fixture verified | fixture verified |
+| 888 | `V_PERMLANEX16_B32` | Converted subset; fixture accepted | MSL nibble-selected paired-row gather (0/1 and 2/3) with captured source and selector versions | fixture verified | fixture verified |
 | 895 | `V_ADD_NC_I32` | Not converted | — | — | — |
 
 ## VOP3P

@@ -418,8 +418,8 @@ fn rejections() -> Vec<(String, Vec<u8>, usize)> {
             let code = program(&init, Some(false), &[sop2(op, dst, 8, 9)], 10);
             all.push((format!("{name} destination {dst}"), code, ALU_OFFSET));
         }
-        // VCC_LO, VCC_HI, M0, EXEC_LO, EXEC_HI and SCC in either slot.
-        for src in [106, 107, 124, 126, 127, 253] {
+        // Reserved selectors, M0 and SCC in either slot.
+        for src in [108, 109, 124, 110, 111, 253] {
             for (src0, src1, slot) in [(src, 9, 0), (8, src, 1)] {
                 let code = program(&init, Some(false), &[sop2(op, 10, src0, src1)], 10);
                 all.push((format!("{name} src{slot} {src}"), code, ALU_OFFSET));
@@ -586,4 +586,25 @@ fn sop2_arith_forms_match_the_guide_on_native_metal() {
         "sop2_arith: {} Metal cases in {programs} programs",
         cases.len()
     );
+}
+
+#[test]
+fn mask_sources_require_initialization_and_accept_initial_exec_lo() {
+    for src in [106, 107, 127] {
+        let code = program(&[(8, 1), (9, 2)], Some(false), &[sop2(6, 10, src, 9)], 10);
+        assert!(
+            matches!(xenora_shader::compile(Architecture::Gfx1030, &code),
+            Err(xenora_shader::CompileError::Verify { offset, .. }) if offset == ALU_OFFSET)
+        );
+        assert_eq!(
+            xenora_ref::execute(&code, &INPUT).unwrap_err().offset,
+            ALU_OFFSET
+        );
+    }
+    // Fixed answers: initial EXEC_LO is all ones. The legacy third reader
+    // does not support these newly admitted mask operands.
+    let src = 126;
+    let code = program(&[(8, 1), (9, 2)], Some(false), &[sop2(6, 10, src, 9)], 10);
+    compile(Architecture::Gfx1030, &code).unwrap();
+    assert_eq!(xenora_ref::execute(&code, &INPUT).unwrap(), [u32::MAX, 0]);
 }

@@ -302,14 +302,45 @@ fn zero_exec_skips_unknown_sources_nonzero_checks_sources_and_old_destination() 
 
 #[test]
 fn reserved_selectors_modifiers_and_fp_domains_reject_while_e64_aliases_execute() {
-    for opcode in OPS {
-        for src in (107..=127).chain(209..=239).chain(249..=254) {
+    for (index, opcode) in OPS.into_iter().enumerate() {
+        for src in (108..=125).chain(209..=239).chain(249..=254) {
             reject(&program(&[op(opcode, 2, src, 1)], 2), &[0], 12, true);
             reject(
                 &program(&[0xbefe0380, op(opcode, 2, src, 1), 0xbefe03c1], 1),
                 &[0],
                 16,
                 true,
+            );
+        }
+        // Admitted high mask halves still require initialization under full EXEC.
+        for src in [107, 127] {
+            reject(&program(&[op(opcode, 2, src, 1)], 2), &[0], 12, false);
+        }
+        // New mask operands are outside the legacy third reference's domain.
+        // Fixed answers check compiler admission and the primary byte interpreter;
+        // every other existing three-way check remains intact.
+        let positive_mask = |code: Vec<u8>, expected: u32| {
+            xenora_shader::compile(xenora_shader::Architecture::Gfx1030, &code).unwrap();
+            assert_eq!(
+                xenora_ref::execute(&code, &[0x80000001]).unwrap(),
+                [expected]
+            );
+        };
+        let exec_answers = [
+            1, 0xffffffff, 0x80000000, 0x80000001, 0xffffffff, 0x7ffffffe,
+        ];
+        positive_mask(program(&[op(opcode, 2, 126, 1)], 2), exec_answers[index]);
+        let one_answers = [0x40000000, 0xc0000000, 2, 1, 0x80000001, 0x80000000];
+        for src in [107, 127] {
+            positive_mask(
+                program(&[0xbe800381 | src << 16, op(opcode, 2, src, 1)], 2),
+                one_answers[index],
+            );
+        }
+        for src in [107, 126, 127] {
+            positive_mask(
+                program(&[0xbefe0380, op(opcode, 2, src, 1), 0xbefe03c1], 1),
+                0x80000001,
             );
         }
         for src in [233, 234, 249, 250] {

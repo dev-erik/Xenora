@@ -274,7 +274,7 @@ fn active_sources_literals_inline_words_and_masks() {
 fn decode_rejections_padding_modifiers_truncations() {
     for op in OPS {
         for pos in 0..arity(op) {
-            for bad in (107..=127).chain(209..=239).chain(249..=254) {
+            for bad in (108..=125).chain(209..=239).chain(249..=254) {
                 let mut src = [129, 129, 128];
                 src[pos] = bad;
                 reject(&program(&insn(op, 2, src), 2), 12, true, "");

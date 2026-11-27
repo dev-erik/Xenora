@@ -27,7 +27,7 @@ fn every_selector_has_exact_class_value_and_length() {
     for op in OPS {
         for selector in 0..512u32 {
             let expected = match selector {
-                0..=106 => Some(VectorSource::Scalar(selector as u8)),
+                0..=107 | 126..=127 => Some(VectorSource::Scalar(selector as u8)),
                 128..=192 => Some(VectorSource::Immediate(selector - 128)),
                 193..=208 => Some(VectorSource::Immediate((192i32 - selector as i32) as u32)),
                 240..=248 => Some(VectorSource::Immediate(

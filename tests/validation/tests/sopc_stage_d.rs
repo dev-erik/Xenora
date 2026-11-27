@@ -271,8 +271,8 @@ fn rejections() -> Vec<(String, Vec<u8>, usize)> {
         let op = form as u32;
         let code = program(&[], false, &[sopc(op, LITERAL, LITERAL), 1], 10);
         all.push((format!("{name} two literals"), code, 0));
-        // VCC_LO, VCC_HI, M0, EXEC_LO and EXEC_HI remain excluded.
-        for selector in [106, 107, 124, 126, 127] {
+        // Reserved selectors and M0 remain excluded.
+        for selector in [108, 109, 124, 110, 111] {
             for slot in 0..2 {
                 let alu = if slot == 0 {
                     sopc(op, selector, 8)
@@ -392,5 +392,29 @@ fn stage_d_compares_match_the_guide_on_native_metal() {
     eprintln!(
         "sopc_stage_d: {} Metal cases in {programs} programs",
         cases.len()
+    );
+}
+
+#[test]
+fn mask_sources_require_initialization_and_accept_initial_exec_lo() {
+    for src in [106, 107, 127] {
+        let code = program(&[(8, 1)], false, &[sopc(0, src, 8)], 10);
+        assert!(
+            matches!(xenora_shader::compile(Architecture::Gfx1030, &code),
+            Err(xenora_shader::CompileError::Verify { offset, .. }) if offset == alu_offset(1))
+        );
+        assert_eq!(
+            xenora_ref::execute(&code, &INPUT).unwrap_err().offset,
+            alu_offset(1)
+        );
+    }
+    // Fixed answers: initial EXEC_LO is all ones. The legacy third reader
+    // does not support these newly admitted mask operands.
+    let src = 126;
+    let code = program(&[(8, 1)], false, &[sopc(0, src, 8)], 10);
+    compile(Architecture::Gfx1030, &code).unwrap();
+    assert_eq!(
+        xenora_ref::execute(&code, &INPUT).unwrap(),
+        [MARKER, MARKER]
     );
 }

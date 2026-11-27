@@ -23,7 +23,7 @@ fn vector_unary_all_nine_bit_source_fields_have_exact_domains_and_words() {
                 .flat_map(u32::to_le_bytes)
                 .collect();
             let expected = match selector {
-                0..=106 => Some(VectorSource::Scalar(selector as u8)),
+                0..=107 | 126..=127 => Some(VectorSource::Scalar(selector as u8)),
                 128..=192 => Some(VectorSource::Immediate(selector - 128)),
                 193..=208 => Some(VectorSource::Immediate(0u32.wrapping_sub(selector - 192))),
                 240..=248 => Some(VectorSource::Immediate(FLOATS[(selector - 240) as usize])),

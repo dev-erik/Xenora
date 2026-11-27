@@ -1825,3 +1825,43 @@ the earlier node, context-depth and source-size limits.
 A fresh scatter-loop scope uses unique names for every generated temporary,
 so replaying a gather through a scatter cannot shadow the destination lane
 selected by an outer gather.
+
+## Explicit complete-wave Wave64 compute configuration
+
+`compile_with_wave_config(Architecture, bytes, WaveConfig)` selects the synthetic
+guest wave size explicitly. `WaveConfig` contains `WaveSize::{Wave32, Wave64}`
+and `WaveLaunch::{PartialAllowed, FullWavesRequired}`. Existing `compile` and
+`compile_with_options` remain Wave32 entry points. `Wave32Launch` re-exports the
+launch-policy enum, preserving variant imports. `wave_config()` reports size and
+policy; `launch_policy()` and the legacy `wave32_launch()` getter report policy
+only. The independent reference declares its own equivalent configuration and
+`execute_with_wave_config` API.
+
+Wave64 requires full waves: 1..=4096 input words, divisible by64. Typed native
+submission validates this before compilation/dispatch; generated MSL also guards
+invalid grids before input loads. Guest wave size does not constrain Metal SIMD
+width or require a64-thread threadgroup. Each consecutive64-word group has its
+own scalar state and register snapshots.
+
+Wave64 starts with all64 EXEC bits set. Supported scalar half writes preserve
+the other half; comparisons replace both VCC halves, and mask branches test
+both. Runtime mask halves remain runtime values when the opposite half receives
+a constant. General runtime scalar ALU and dynamic EXEC remain outside this
+contract. Wave32 mask branches inspect only the low half; initial EXEC_HI and
+post-comparison VCC_HI are unknown until explicitly initialized. No numeric high
+value is inferred from the primary guide's statement that Wave32 ignores it.
+
+READLANE/WRITELANE selectors use six low bits in Wave64; READFIRST searches the
+full EXEC value and selects lane0 when empty. MBCNT LO/HI count the corresponding
+32-bit source ranges. DS gather/scatter remain in two independent32-lane halves;
+SWIZZLE retains the current replay context's half, and PERMLANEX pairs rows0/1
+and2/3. The separate DS completion slot and existing replay/size limits remain.
+
+Wave64 VALU scalar source/destination overlap is rejected before path skipping:
+READLANE cannot overwrite its selector SGPR, and comparisons cannot explicitly
+source either VCC half while replacing VCC. Mask operands remain unavailable in
+graphics, including newly decoded operands in skipped code. Existing unresolved
+masked rotation, inactive PERMLANE modes, shared VGPRs and graphics/helper-lane
+semantics remain rejected. Configuration is an original synthetic ABI, not an
+Xbox launch descriptor. Actual acceptance evidence belongs in the
+[shader checkpoint](testing/stage3-control-memory-opening.md).

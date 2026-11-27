@@ -6,7 +6,7 @@ fn bytes(words: &[u32]) -> Vec<u8> {
 }
 fn source(selector: u32) -> Option<ScalarSource> {
     Some(match selector {
-        0..=105 => ScalarSource::Register(selector as u8),
+        0..=107 | 126..=127 => ScalarSource::Register(selector as u8),
         128..=192 => ScalarSource::Immediate(selector - 128),
         193..=208 => ScalarSource::Immediate((192i32 - selector as i32) as u32),
         240..=248 => ScalarSource::Immediate(

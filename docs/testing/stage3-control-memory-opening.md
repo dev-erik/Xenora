@@ -354,3 +354,60 @@ the 338 completed tests before guest graphics in `gpu-from-native.log`, and
 the 139 tests from guest graphics onward in `remaining-gpu.log`. Partial and
 duplicate runs are excluded. Source hashes are in
 `artifacts/s34-scatter/verified-source.json`.
+
+## Explicit complete-wave Wave64 continuation
+
+The configured compute increment adds Wave64 while retaining legacy Wave32
+entry points, mask-half provenance and rejection of undefined high-half reads.
+It does not complete S3.4, establish Xbox launch metadata or add graphics waves.
+The plan is [recorded separately](../superpowers/plans/2026-11-27-wave64-compute.md).
+
+On Apple M4 Max, independent Metal validation passed **7 tests, zero ignored**:
+**106 Wave64 programs, six Wave32 regressions and 126 GPU dispatches**, including
+varied threadgroup widths and invalid-grid guards (`artifacts/s34-wave64/native.log`).
+The corpus distinguishes lane31/32/63, both mask halves, runtime-half writes,
+source snapshots, DS half boundaries, scalar overlap rejection and unknown
+Wave32 high halves. Expected outputs are independent of production lowering.
+
+A controlled mutation removed the DS half-wave bit from source selection. The
+native test failed on the upper-half result of `DS scatterfalse address0 offset0`.
+The harness confirmed the expected output assertion and restored production
+source byte-for-byte (`half-routing-mutation.log`). The restored combined suite
+then passed **44 tests, zero ignored**, covering **1,315 native dispatches** across
+new Wave64 and existing Wave32 lane/gather/scatter cases (`native-restored.log`).
+
+Independent reference: **74 CPU tests passed**, including 14 Wave64 tests.
+Shader: **309 CPU tests passed**, including 14 Wave64 tests. Decoder: **111
+passed, 17 LLVM opt-ins ignored in the ordinary run**; those **17 LLVM checks
+subsequently passed**, including 1,322 three-way comparisons across 182 forms
+and 28 exact mask-half encoding/reference rows. READFIRST e64 remains
+spec-derived and excluded from LLVM claims. Separate LLVM Wave64 probes verify
+whole-VCC comparison spelling and mask-half operands; they are not hardware
+execution evidence. Both independent static reviewers approved the bounded
+compiler/reference/decoder changes. Logs are in `artifacts/s34-wave64/`.
+
+Regression follow-up: the workspace outside the independent semantic validation
+package passed **1,195 tests, zero failures, 148 ignored**
+(`workspace-other-final.log`). The initial GPU wrapper stopped at its unchanged
+60-second `native_compute` timeout. A supplemental run of the same cases with
+longer limits passed that suite (279 tests in 86.45 seconds) and the application
+suites, then stopped on an obsolete decode-rejection expectation in `sop1_unary`
+before its native dispatch. The independent test audit corrected obsolete decode-only expectations while
+retaining uninitialized-mask rejection and reserved-selector coverage.
+No checked-in gate was relaxed.
+
+Final regression acceptance for this bounded increment: the entire independent
+validation package passed **374 tests, zero failures, zero ignored**, including
+native Metal checks, with API and shader validation enabled
+(`semantic-integrated-final.log`). All **485 rendering/application tests** before
+that package passed in the supplemental GPU run, with one unrelated ignored
+test. These results complete the cases in the GPU script, but do not constitute
+a passing run within its original timeout limits. The separate workspace run
+and integrated semantic run cover every workspace package; their counts are
+reported separately to avoid mixing ordinary CPU runs and native opt-ins.
+
+Workspace all-target Clippy, final semantic-package all-target Clippy, formatting,
+fixture-byte checks, generated status/coverage/map checks, claims and dependency
+checks passed. Independent review approved the corrected test expectations.
+Final changed-source hashes are recorded in
+`artifacts/s34-wave64/verified-source.json`. Full S3.4 and S3.2 remain open.

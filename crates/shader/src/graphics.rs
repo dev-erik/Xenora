@@ -699,7 +699,7 @@ fn compile_graphics_core(
         types,
         storage,
         shader: CompiledShader {
-            launch: crate::Wave32Launch::PartialAllowed,
+            config: crate::WaveConfig::default(),
             disassembly,
             ir,
             msl,
@@ -722,6 +722,51 @@ fn lift(
     extended: bool,
 ) -> Result<StageIr, CompileError> {
     for decoded in decoded {
+        // Mask halves belong to the compute wave contract, including skipped code.
+        let special = |source| matches!(source, ScalarSource::Register(106 | 107 | 126 | 127));
+        let mask_source = match decoded.instruction {
+            Instruction::ScalarMoveB32 { src, .. }
+            | Instruction::ScalarConditionalMoveB32 { src, .. }
+            | Instruction::ScalarUnary { src, .. } => special(src),
+            Instruction::ScalarAlu { src0, src1, .. }
+            | Instruction::ScalarCompare { src0, src1, .. } => special(src0) || special(src1),
+            Instruction::ScalarBitSetB32 { index, .. } => special(index),
+            Instruction::ScalarBitCompareB32 { src, index, .. } => special(src) || special(index),
+            _ => false,
+        };
+        let special_vector = |source| matches!(source, VectorSource::Scalar(107 | 126 | 127));
+        let vector_mask_source = match decoded.instruction {
+            Instruction::MoveB32 { src, .. }
+            | Instruction::VectorUnary { src, .. }
+            | Instruction::VectorUnaryE64 { src, .. } => special_vector(src),
+            Instruction::VectorLshlrevB32 { src0, .. }
+            | Instruction::VectorLshrrevB32 { src0, .. }
+            | Instruction::VectorAshrrevI32 { src0, .. }
+            | Instruction::VectorAndB32 { src0, .. }
+            | Instruction::VectorOrB32 { src0, .. }
+            | Instruction::VectorXorB32 { src0, .. }
+            | Instruction::VectorAlu { src0, .. }
+            | Instruction::VectorCompare { src0, .. } => special_vector(src0),
+            Instruction::VectorProduct { src0, src1, .. }
+            | Instruction::VectorClampedE64 { src0, src1, .. }
+            | Instruction::VectorBinaryE64 { src0, src1, .. }
+            | Instruction::VectorBitBinary { src0, src1, .. } => {
+                special_vector(src0) || special_vector(src1)
+            }
+            Instruction::VectorMadSad {
+                src0, src1, src2, ..
+            }
+            | Instruction::VectorTernary {
+                src0, src1, src2, ..
+            } => special_vector(src0) || special_vector(src1) || special_vector(src2),
+            _ => false,
+        };
+        if mask_source || vector_mask_source {
+            return Err(CompileError::Verify {
+                offset: decoded.offset,
+                reason: "graphics scalar source expected a normal SGPR; mask halves require compute",
+            });
+        }
         if matches!(
             decoded.instruction,
             Instruction::DsPermuteB32 { .. }

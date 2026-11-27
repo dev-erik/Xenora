@@ -29,6 +29,11 @@ remains unsupported.
 - Extended the read-only RDNA2 planning CLI (`python3 -m qa rdna2`) with family/status filters, compact summaries, Codex-ready manifests under `artifacts/`, active-claim exclusion (family claims exclude those families; path-only claims block overlapping permitted files), coverage reconcile against `semantic_coverage` without inflating counts, and inventory diffs. Covered by `tests/qa/test_rdna2_plan.py`; planning only, no GPU production edits.
 
 ### Added
+- Added explicit complete-wave Wave64 compute configuration, independent 64-lane
+  reference execution, mask-half preservation and half-local DS routing. Legacy
+  entry points retain Wave32 behavior; unsupported Wave64 scalar overlaps and
+  graphics mask operands are rejected. Verification and remaining limits are
+  recorded in the shader checkpoint; this does not close S3.4 or Xbox compatibility.
 - Added full-wave DS_PERMUTE scatter with a documented permitted collision
   policy, independent LGKM completion, bounded replay work and isolated loop
   temporaries. All eleven inventoried wave/lane forms now have bounded Wave32

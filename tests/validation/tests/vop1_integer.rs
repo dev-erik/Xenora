@@ -307,7 +307,7 @@ fn unary_preserves_scc_including_unset_and_vcc_including_lane_masks() {
 #[test]
 fn invalid_sources_pending_loads_destinations_and_runtime_regions_stay_rejected() {
     for op in OPS {
-        for src in (107..=127).chain(209..=239).chain(249..=254) {
+        for src in (108..=125).chain(209..=239).chain(249..=254) {
             reject(&program(&[unary(op, 2, src)], 2), &[0]);
             // Empty execution never bypasses malformed instruction decoding.
             reject(

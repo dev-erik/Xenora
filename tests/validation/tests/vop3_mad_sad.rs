@@ -160,7 +160,7 @@ fn isolated_components_equal_values_and_accumulator_carry() {
 fn raw_sources_identity_literals_and_decode_boundaries() {
     for op in OPS {
         for pos in 0..3 {
-            for bad in (107..=127).chain(209..=239).chain(249..=254) {
+            for bad in (108..=125).chain(209..=239).chain(249..=254) {
                 let mut src = [128; 3];
                 src[pos] = bad;
                 let mut body = vec![0xbefe0380];

@@ -24,7 +24,7 @@ fn code(op: u32, dst: u8, raw: [u32; 3], literal: u32) -> Vec<u8> {
 }
 fn source(raw: u32, literal: u32) -> Option<VectorSource> {
     Some(match raw {
-        0..=106 => VectorSource::Scalar(raw as u8),
+        0..=107 | 126..=127 => VectorSource::Scalar(raw as u8),
         128..=192 => VectorSource::Immediate(raw - 128),
         193..=208 => VectorSource::Immediate((192i32 - raw as i32) as u32),
         240..=248 => VectorSource::Immediate(FLOAT[(raw - 240) as usize]),
@@ -132,8 +132,8 @@ fn all_unused_fields_require_inline_zero() {
 #[test]
 fn two_scalar_keys_and_shared_literal_are_accepted() {
     for op in OPS {
-        for a in [0, 105, 106, 255, 129, 248, 511] {
-            for b in [0, 105, 106, 255, 129, 248, 511] {
+        for a in [0, 105, 106, 107, 126, 127, 255, 129, 248, 511] {
+            for b in [0, 105, 106, 107, 126, 127, 255, 129, 248, 511] {
                 let raw = [a, if arity(op) == 1 { 128 } else { b }, 128];
                 let actual = decode_at(Gfx1030, &code(op, 255, raw, 1), 0).unwrap();
                 assert_eq!(

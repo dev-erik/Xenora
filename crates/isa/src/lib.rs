@@ -57,7 +57,7 @@ impl Opcode {
 pub enum VectorSource {
     /// VGPR index.
     Register(u8),
-    /// Normal SGPR index (s0-s105) or `vcc_lo` (106), read as a wave-uniform value.
+    /// Normal SGPR index (s0-s105) or VCC/EXEC half (106/107/126/127).
     Scalar(u8),
     /// Inline integer or literal word, represented by its bits.
     Immediate(u32),
@@ -68,6 +68,9 @@ impl fmt::Display for VectorSource {
         match self {
             Self::Register(register) => write!(formatter, "v{register}"),
             Self::Scalar(VCC_LO) => formatter.write_str("vcc_lo"),
+            Self::Scalar(107) => formatter.write_str("vcc_hi"),
+            Self::Scalar(126) => formatter.write_str("exec_lo"),
+            Self::Scalar(127) => formatter.write_str("exec_hi"),
             Self::Scalar(register) => write!(formatter, "s{register}"),
             Self::Immediate(value) => write!(formatter, "0x{value:x}"),
         }
@@ -288,7 +291,7 @@ impl VectorTernaryOp {
 /// A scalar 32-bit source.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ScalarSource {
-    /// A normal SGPR index.
+    /// A normal SGPR index or VCC/EXEC half (106/107/126/127).
     Register(u8),
     /// Inline integer or literal word, represented by its bits.
     Immediate(u32),
@@ -297,6 +300,10 @@ pub enum ScalarSource {
 impl fmt::Display for ScalarSource {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
+            Self::Register(106) => formatter.write_str("vcc_lo"),
+            Self::Register(107) => formatter.write_str("vcc_hi"),
+            Self::Register(126) => formatter.write_str("exec_lo"),
+            Self::Register(127) => formatter.write_str("exec_hi"),
             Self::Register(register) => write!(formatter, "s{register}"),
             Self::Immediate(value) => match value as i32 {
                 integer @ -16..=64 => write!(formatter, "{integer}"),

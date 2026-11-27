@@ -117,8 +117,8 @@ def generate():
         'Missing CPU/GPU records mean unrecorded, not a test failure.', '',
         '## Stage 3 planning map', '',
         '**All S3 stages remain open.** See the [latest validated checkpoint](../testing/stage3-control-memory-opening.md) '
-        'for bounded scalar/mask branches, compute loads and waits, and Wave32 masked bit counts, validated full-wave lane reads, selected-lane writes and bounded gathers/scatters/swizzles. '
-        'Other wave/lane operations remain open.', '',
+        'for bounded scalar/mask branches, compute loads and waits, and configured Wave32/complete-wave Wave64 masked bit counts, lane reads, selected-lane writes and bounded gathers/scatters/swizzles. '
+        'Broader operands, inactive modes and graphics/helper-lane integration remain open.', '',
         'The partition below includes SOPP control flow and memory families alongside arithmetic. It is provisional, '
         'not a claim that a stage is complete or that forms outside arithmetic are optional. '
         'S3.6 numerical correctness applies across floating-point operations and is not counted as a disjoint opcode bucket. '

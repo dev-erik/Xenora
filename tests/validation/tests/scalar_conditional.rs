@@ -287,7 +287,7 @@ fn invalid_reads_destinations_and_encodings_do_not_hide_behind_false_or_zero_exe
         }
     }
     for op in [5, 27, 29] {
-        for src in (106..=127).chain(209..=239).chain(249..=254) {
+        for src in (108..=125).chain(209..=239).chain(249..=254) {
             reject(&program(&[flag(false), sop1(op, 8, src)], 128), 4, "", true);
         }
         for dst in [106, 107, 126, 127] {
@@ -408,7 +408,7 @@ fn all_forms_preserve_vcc_exec_and_inline_word_bits() {
         }
     }
     for op in [12, 13] {
-        for bad in (106..=127).chain(209..=239).chain(249..=254) {
+        for bad in (108..=125).chain(209..=239).chain(249..=254) {
             for (a, b) in [(bad, 128), (128, bad)] {
                 reject(&program(&[sopc(op, a, b)], 128), 0, "", true);
             }
@@ -445,5 +445,39 @@ fn truncated_scalar_literals_are_attributed_to_the_owning_instruction() {
                 "0x4: truncated scalar literal"
             );
         }
+    }
+}
+
+#[test]
+fn mask_sources_keep_initialization_and_conditional_read_rules() {
+    for src in [106, 107, 127] {
+        for op in [5, 27, 29] {
+            reject(
+                &program(&[0xbe880380, flag(true), sop1(op, 8, src)], 128),
+                8,
+                "no known value",
+                false,
+            );
+        }
+        for op in [12, 13] {
+            for (a, b) in [(src, 128), (128, src)] {
+                reject(&program(&[sopc(op, a, b)], 128), 0, "no known value", false);
+            }
+        }
+    }
+    // These new mask operands are outside the legacy third reader's coverage.
+    // False CMOV does not read its unknown source; EXEC_LO starts at all ones.
+    for (body, expected) in [
+        (vec![0xbe880387, flag(false), sop1(5, 8, 106)], 7),
+        (vec![flag(true), sop1(5, 8, 126)], 0xffffffff),
+        (vec![0xbe8803c1, sop1(27, 8, 126)], 0x7fffffff),
+        (vec![0xbe880380, sop1(29, 8, 126)], 0x80000000),
+    ] {
+        let code = program(&body, 8);
+        xenora_shader::compile(xenora_shader::Architecture::Gfx1030, &code).unwrap();
+        assert_eq!(
+            xenora_ref::execute(&code, &[0; 32]).unwrap(),
+            [expected; 32]
+        );
     }
 }

@@ -219,7 +219,7 @@ fn each_position_admits_source_classes_and_raw_inline_words() {
 fn decode_exclusions_lengths_and_padding_are_checked_before_exec() {
     for op in OPS {
         for pos in 0..if binary(op) { 2 } else { 3 } {
-            for bad in (107..=127).chain(209..=239).chain(249..=254) {
+            for bad in (108..=125).chain(209..=239).chain(249..=254) {
                 let mut raw = [128; 3];
                 raw[pos] = bad;
                 let mut body = vec![0xbefe0380];

@@ -606,10 +606,9 @@ fn rejections() -> Vec<(String, Vec<u8>, usize)> {
         code.extend(setup);
         code.push(vop2(op, 2, LITERAL, 1));
         all.push((format!("{name} missing literal"), words(&code), offset));
-        // VCC_HI,
-        // M0, NULL, EXEC_LO, EXEC_HI, VCCZ, EXECZ and SCC (outside the
-        // supported SRC0 subset), and the reserved selectors 209-232.
-        let special = [107, 124, 125, 126, 127, 251, 252, 253];
+        // Reserved selectors 108-110, M0, NULL, VCCZ, EXECZ and SCC
+        // (outside the supported SRC0 subset), and reserved selectors 209-232.
+        let special = [108, 109, 110, 124, 125, 251, 252, 253];
         for src0 in special.into_iter().chain(209..=232) {
             let code = program(&setup, &[vop2(op, 2, src0, 1)], &[], 2);
             all.push((format!("{name} src0 {src0}"), code, offset));

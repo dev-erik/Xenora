@@ -102,9 +102,9 @@ fn rejects_other_opcodes_and_noncanonical_operands() {
         (&[0xe070_2000, 0x801b_0100], "buffer_store_dword"),
         (&[0xbf8c_3f71], "s_waitcnt"),
         (&[0xbbfd_0001], "s_waitcnt_vscnt"),
-        (&[0x7e04_026b], "v_mov_b32_e32"), // VCC_HI is outside the source subset.
-        (&[0x7d02_046b], "v_cmp_lt_i32_e32"), // VCC_HI source.
-        (&[0x7d02_047e], "v_cmp_lt_i32_e32"), // EXEC_LO source.
+        (&[0x7e04_026c], "v_mov_b32_e32"), // Reserved scalar selector108.
+        (&[0x7d02_046c], "v_cmp_lt_i32_e32"), // Reserved scalar selector108.
+        (&[0x7d02_047c], "v_cmp_lt_i32_e32"), // M0 remains outside the subset.
         (&[0x7d02_04f9], "v_cmp_lt_i32_e32"), // Unsupported SDWA source.
         (&[0x7d84_04f9, 0x0606_0601], "v_cmp_eq_u32_e32"), // SDWA.
         (&[0x7d84_04fa, 0], "v_cmp_eq_u32_e32"), // DPP16.
@@ -1132,7 +1132,7 @@ fn distinguishes_llvm_invalid_encodings_from_xenora_subset_rejections() {
         &[0xd516_0001],
     ];
     let outside_subset: &[&[u32]] = &[
-        &[0x7e04_026b],                                        // VOP1 VCC_HI source
+        &[0x7e04_027c],                                        // VOP1 M0 remains unsupported
         &[0x7da2_0501],                                        // v_cmpx_eq_u32_e32
         &[0x7d00_0501],                                        // v_cmp_f_i32_e32
         &[0x7d0e_0501],                                        // v_cmp_t_i32_e32
@@ -1142,7 +1142,7 @@ fn distinguishes_llvm_invalid_encodings_from_xenora_subset_rejections() {
         &[0x806c_0908],                                        // SOP2 TTMP destination
         &[0x807e_0908],                                        // SOP2 EXEC_LO destination
         &[0x806a_0908],                                        // SOP2 VCC_LO destination
-        &[0x8008_096a],                                        // SOP2 VCC_LO source
+        &[0x8008_097c],                                        // SOP2 M0 remains unsupported
         &[0x3803_fefa, 0xff00_e401],                           // OR DPP
         &[0x3803_fef9, 0x0606_0601],                           // OR SDWA
         &[0xd503_0001, 0x0202_0501],                           // FP ADD e64 remains unsupported
@@ -3009,4 +3009,69 @@ fn legacy_integer_vop2_normalization_preserves_exact_source_bits() {
             );
         }
     }
+}
+
+#[test]
+#[ignore = "requires LLVM with the gfx1030 AMDGPU target"]
+fn llvm_mask_half_sources_match_exact_words_and_reference() {
+    let mut rows = Vec::new();
+    for (selector, name) in [
+        (106u32, "vcc_lo"),
+        (107, "vcc_hi"),
+        (126, "exec_lo"),
+        (127, "exec_hi"),
+    ] {
+        rows.push((format!("s_mov_b32 s8, {name}"), vec![0xbe880300 | selector]));
+        rows.push((
+            format!("s_mov_b32 {name}, 1"),
+            vec![0xbe800381 | selector << 16],
+        ));
+        rows.push((
+            format!("s_add_u32 s8, {name}, s9"),
+            vec![0x80080900 | selector],
+        ));
+        rows.push((
+            format!("v_mov_b32_e32 v3, {name}"),
+            vec![0x7e060200 | selector],
+        ));
+        rows.push((
+            format!("v_xor_b32_e32 v3, {name}, v2"),
+            vec![0x3a060400 | selector],
+        ));
+        rows.push((
+            format!("v_cmp_eq_u32_e32 vcc_lo, {name}, v2"),
+            vec![0x7d840400 | selector],
+        ));
+        rows.push((
+            format!("v_add3_u32 v3, {name}, s9, v2"),
+            vec![0xd76d0003, selector | 9 << 9 | 258 << 18],
+        ));
+    }
+    let assembly = rows
+        .iter()
+        .map(|(line, _)| format!("{line}\n"))
+        .collect::<String>();
+    let output = llvm_mc(&[], assembly.as_bytes());
+    assert_llvm_success(&output);
+    let text = String::from_utf8(output.stdout).unwrap();
+    let encoded: Vec<_> = text
+        .lines()
+        .filter_map(|line| line.split_once("; encoding: ["))
+        .map(|(_, encoding)| encoding_bytes(encoding))
+        .collect();
+    assert_eq!(encoded.len(), 28);
+    for (actual, (line, words)) in encoded.iter().zip(rows) {
+        let expected: Vec<_> = words.into_iter().flat_map(u32::to_le_bytes).collect();
+        assert_eq!(*actual, expected, "{line}");
+        let decoded = decode(Architecture::Gfx1030, actual).unwrap();
+        let reference = xenora_ref::decode(actual).unwrap();
+        assert_eq!(decoded.len(), 1);
+        assert_eq!(reference.len(), 1);
+        assert_eq!(
+            reference[0].op,
+            reference_op(decoded[0].instruction),
+            "{line}"
+        );
+    }
+    eprintln!("28 exact mask-half encoding/reference comparisons; no new forms");
 }

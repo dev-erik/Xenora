@@ -16,7 +16,7 @@ use xenora_isa::{
     V_AND_B32, V_ASHRREV_I32, V_CMP_EQ_I32, V_CMP_EQ_U32, V_CMP_GE_I32, V_CMP_GE_U32, V_CMP_GT_I32,
     V_CMP_GT_U32, V_CMP_LE_I32, V_CMP_LE_U32, V_CMP_LT_I32, V_CMP_LT_U32, V_CMP_NE_I32,
     V_CMP_NE_U32, V_INTERP_P1_F32, V_INTERP_P2_F32, V_LSHLREV_B32, V_LSHRREV_B32, V_MOV_B32,
-    V_MUL_F32, V_OR_B32, V_XOR_B32, VCC_LO,
+    V_MUL_F32, V_OR_B32, V_XOR_B32,
 };
 
 use xenora_isa::meta::EncodingFamily;
@@ -1080,14 +1080,14 @@ fn scalar_source(
 ) -> Result<(ScalarSource, u8), DecodeErrorKind> {
     let value = u32::from(bits);
     match bits {
-        0..=105 => Ok((ScalarSource::Register(bits), 4)),
+        0..=107 | 126..=127 => Ok((ScalarSource::Register(bits), 4)),
         128..=192 => Ok((ScalarSource::Immediate(value - 128), 4)),
         193..=208 => Ok((ScalarSource::Immediate(192u32.wrapping_sub(value)), 4)),
         240..=248 => Ok((ScalarSource::Immediate(inline_float_bits(value)), 4)),
         255 => Ok((ScalarSource::Immediate(word(bytes, 8)?), 8)),
         _ => Err(unsupported(
             mnemonic,
-            "expected a normal SGPR, inline integer, inline float bits or literal",
+            "expected a normal SGPR, VCC/EXEC half, inline integer, inline float bits or literal",
         )),
     }
 }
@@ -1228,8 +1228,9 @@ fn buffer_operands(
 }
 
 /// VOPC: SRC0 in bits 0-8, VSRC1 in bits 9-16 (RDNA 2 ISA section 12.9). The
-/// destination is implicitly `vcc_lo`. SRC0 excludes `vcc_hi`, EXEC, M0, TTMPs
-/// and the condition selectors (SDWA 249, DPP 250/233).
+/// destination is implicitly VCC (width selected by the consumer's wave mode).
+/// Wave64 comparisons reading VCC are rejected by configured consumers under
+/// AMD section 6.2.4; decoding remains wave-size independent.
 fn vector_compare(
     op: VectorCompareOp,
     first: u32,
@@ -1240,7 +1241,7 @@ fn vector_compare(
     Ok((Instruction::VectorCompare { op, src0, src1 }, len))
 }
 
-/// The 9-bit SRC0 of a VOPC or VOP2 word: a VGPR, `s0-s105`, `vcc_lo`, an
+/// The 9-bit SRC0 of a VOPC or VOP2 word: a VGPR, `s0-s105`, a VCC/EXEC half, an
 /// inline integer -16..64, inline float bits (240..248), or a literal word;
 /// everything else is unsupported.
 fn vector_src0(
@@ -1251,7 +1252,7 @@ fn vector_src0(
     let source = first & 0x1ff;
     let base_len = 4;
     Ok(match source {
-        0..=106 => (VectorSource::Scalar(source as u8), base_len),
+        0..=107 | 126..=127 => (VectorSource::Scalar(source as u8), base_len),
         128..=192 => (VectorSource::Immediate(source - 128), base_len),
         193..=208 => (
             VectorSource::Immediate(192u32.wrapping_sub(source)),
@@ -1266,7 +1267,7 @@ fn vector_src0(
         _ => {
             return Err(unsupported(
                 mnemonic,
-                "expected a VGPR, normal SGPR, vcc_lo, inline integer, inline float bits or literal",
+                "expected a VGPR, normal SGPR, VCC/EXEC half, inline integer, inline float bits or literal",
             ));
         }
     })
@@ -1277,9 +1278,7 @@ fn move_b32(first: u32, bytes: &[u8]) -> Result<(Instruction, u8), DecodeErrorKi
     let source = first & 0x1ff;
     let base_len = V_MOV_B32.byte_len();
     let (src, len) = match source {
-        0..=105 => (VectorSource::Scalar(source as u8), base_len),
-        // vcc_lo, which may hold a lane-derived compare mask (docs/shaders/vector-compare.md).
-        106 => (VectorSource::Scalar(VCC_LO), base_len),
+        0..=107 | 126..=127 => (VectorSource::Scalar(source as u8), base_len),
         128..=192 => (VectorSource::Immediate(source - 128), base_len),
         193..=208 => (
             VectorSource::Immediate(192u32.wrapping_sub(source)),
@@ -1294,7 +1293,7 @@ fn move_b32(first: u32, bytes: &[u8]) -> Result<(Instruction, u8), DecodeErrorKi
         _ => {
             return Err(unsupported(
                 "v_mov_b32_e32",
-                "expected a VGPR, normal SGPR, vcc_lo, inline integer, inline float bits or literal",
+                "expected a VGPR, normal SGPR, VCC/EXEC half, inline integer, inline float bits or literal",
             ));
         }
     };
@@ -1449,7 +1448,7 @@ fn vector_integer_vop3(
     // still consumes one scalar-bus slot. All literal positions share one key.
     let mut scalar_keys = [u32::MAX; 2];
     for &selector in active {
-        if (selector <= 106 || selector == 255) && !scalar_keys.contains(&selector) {
+        if matches!(selector, 0..=107 | 126..=127 | 255) && !scalar_keys.contains(&selector) {
             if let Some(slot) = scalar_keys.iter_mut().find(|key| **key == u32::MAX) {
                 *slot = selector;
             } else {
