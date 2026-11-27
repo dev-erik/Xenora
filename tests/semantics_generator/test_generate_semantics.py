@@ -921,6 +921,55 @@ class Render(unittest.TestCase):
         self.assertEqual(text, gen.RUST.read_text(encoding="utf-8"))
 
 
+class VectorUnaryRegistry(unittest.TestCase):
+    def setUp(self):
+        self.registry = gen.load_registry()
+        self.snapshot = gen.load_snapshot()
+        self.forms = [f for f in self.registry["form"] if f["operands"] == "vop1_vgpr"]
+
+    def test_five_value_only_forms(self):
+        self.assertEqual(gen.validate(self.registry, self.snapshot), [])
+        self.assertEqual([(f["variant"], f["opcode"]) for f in self.forms], [
+            ("NotB32", 55), ("BfrevB32", 56), ("FfbhU32", 57),
+            ("FfblB32", 58), ("FfbhI32", 59),
+        ])
+
+    def test_invalid_semantics(self):
+        for key, value in [
+            ("scc", "nonzero"), ("carry_in", "scc"), ("vcc", "nonzero"),
+            ("exec", "nonzero"), ("width", 64), ("source_order", "reversed"),
+            ("operation", "bcnt1"), ("signedness", "signed"),
+            ("family", "VOP2"), ("opcode", 54), ("wave", "wave32"),
+        ]:
+            with self.subTest(key=key):
+                registry = copy.deepcopy(self.registry)
+                form = next(f for f in registry["form"] if f["name"] == "V_NOT_B32")
+                form[key] = value
+                self.assertTrue(gen.validate(registry, self.snapshot))
+
+    def test_source_shape_and_exclusions(self):
+        for change in ("missing", "extra", "destination", "exclusions"):
+            with self.subTest(change=change):
+                registry = copy.deepcopy(self.registry)
+                rule = registry["operand_rules"]["vop1_vgpr"]
+                if change == "missing":
+                    rule["src"] = []
+                elif change == "extra":
+                    rule["src"].append({"field": "VSRC1", "class": "vgpr"})
+                elif change == "destination":
+                    rule["dst"]["max"] = 256
+                else:
+                    rule["unsupported"].remove("src_exec")
+                self.assertTrue(gen.validate(registry, self.snapshot))
+
+    def test_xml_implicit_flag_rejected(self):
+        snapshot = copy.deepcopy(self.snapshot)
+        snapshot["variants"][("V_NOT_B32", "ENC_VOP1")]["operands"].append(
+            ["", "FMT_NUM_B1", "OPR_SSRC_SPECIAL_SCC", 1, False, True, True, True]
+        )
+        self.assertTrue(gen.validate(self.registry, snapshot))
+
+
 class CommandLine(unittest.TestCase):
     def run_cli(self, *arguments):
         return subprocess.run(

@@ -210,6 +210,15 @@ VECTOR_PRIMITIVES = {
     ("mul_hi24", "unsigned"): "MulHi24Unsigned",
 }
 
+# Value-only vector unary expressions; scalar NOT's SCC is deliberately discarded.
+VECTOR_UNARY_PRIMITIVES = {
+    ("not", "bitwise"): "primitive::not_nonzero_b32(src).0",
+    ("brev", "bitwise"): "primitive::brev_b32(src)",
+    ("flbit", "unsigned"): "primitive::flbit_b32(src)",
+    ("ff1", "bitwise"): "primitive::ff1_b32(src)",
+    ("flbit", "signed"): "primitive::flbit_i32(src)",
+}
+
 # Operand rules the decoder implements, each exactly once. A registry rule must
 # match one of these shapes; anything else is an unimplemented rule.
 UNSUPPORTED_COMBOS = {
@@ -264,6 +273,21 @@ OPERAND_RULES = {
         # One source, so two literals cannot occur; the rest are rejected.
         "unsupported": {combo for combo in UNSUPPORTED_COMBOS if combo != "two_literals"},
         "kind": "unary",
+    },
+    "vop1_vgpr": {
+        "rust": "Vop1Vgpr",
+        "enum": "VectorUnaryOp",
+        "shape": {
+            "family": "VOP1",
+            "dst": {"field": "VDST", "class": "vgpr", "min": 0, "max": 255},
+            "src": [{"field": "SRC0", "class": "vector_source"}],
+            "max_literals": 1,
+        },
+        "unsupported": {
+            "src_vcc_hi", "src_exec", "src_m0", "src_ttmp", "src_null",
+            "src_special",
+        },
+        "kind": "vector_unary",
     },
     "vop2_vgpr": {
         "rust": "Vop2Vgpr",
@@ -548,6 +572,11 @@ def validate(registry, snapshot):
             if form["carry_in"] != "none":
                 errors.append(f"{label}: carry_in {form['carry_in']} contradicts compare")
             primitive = ("relation", None, False)
+        elif _rule_kind(form) == "vector_unary":
+            if RELATION_KEY in form:
+                errors.append(f"{label}: {RELATION_KEY} on a non-compare operation")
+            value = VECTOR_UNARY_PRIMITIVES.get((form["operation"], form["signedness"]))
+            primitive = None if value is None else ("unchanged", value, False)
         elif _rule_kind(form) == "vector":
             if RELATION_KEY in form:
                 errors.append(f"{label}: {RELATION_KEY} on a non-compare operation")
@@ -575,6 +604,7 @@ def validate(registry, snapshot):
             errors.append(f"{label}: operand rule {form['operands']} is for {rule.get('family')}")
         elif form["operands"] in OPERAND_RULES and OPERAND_RULES[form["operands"]]["kind"] != (
             "compare" if form["operation"] == "compare"
+            else "vector_unary" if _rule_kind(form) == "vector_unary" and form["operation"] in UNARY
             else "unary" if form["operation"] in UNARY
             else "vector" if _rule_kind(form) == "vector" and form["operation"] not in UNARY
             else "alu"
@@ -813,6 +843,27 @@ def _render_enum(rule_name, forms, snapshot, positions):
                     "                (value, Some(scc))",
                     "            }",
                 ]
+        out += ["        }", "    }", "}"]
+        return out
+    if kind == "vector_unary":
+        out += [
+            "",
+            "    /// Assembler name of the 32-bit VOP1 encoding.",
+            "    pub const fn assembly_name(self) -> &'static str {",
+            "        match self {",
+        ]
+        out += [f"            Self::{form['variant']} => \"{form['name'].lower()}_e32\"," for form in forms]
+        out += [
+            "        }", "    }", "",
+            "    /// The per-lane result; SCC, VCC and EXEC are unchanged.",
+            "    pub const fn evaluate(self, src: u32) -> u32 {",
+            "        match self {",
+        ]
+        out += [
+            f"            Self::{form['variant']} => "
+            f"{VECTOR_UNARY_PRIMITIVES[(form['operation'], form['signedness'])]},"
+            for form in forms
+        ]
         out += ["        }", "    }", "}"]
         return out
     if kind == "vector":

@@ -6,7 +6,7 @@ mod cfg;
 
 use xenora_decoder::{
     DecodedInstruction, ExportTarget, Instruction, InterpolationPhase, ScalarAluOp,
-    ScalarCompareOp, ScalarSource, ScalarUnaryOp, VectorSource,
+    ScalarCompareOp, ScalarSource, ScalarUnaryOp, VectorSource, VectorUnaryOp,
 };
 
 use super::{Architecture, Binary, CompileError, CompiledShader, Value, decode_fixture};
@@ -58,6 +58,7 @@ enum Op {
     Interpolate(u8),
     Binary(Binary, Value, Value),
     IntegerBinary(Binary, Value, Value),
+    IntegerUnary(VectorUnaryOp, Value),
     ScalarBits(ScalarValue),
     SampleLodZero {
         u: Value,
@@ -747,6 +748,7 @@ fn lift(
                     Instruction::ScalarMoveB32 { dst, src }
                 }
                 Instruction::VectorAlu { dst, .. }
+                | Instruction::VectorUnary { dst, .. }
                 | Instruction::AddNoCarryU32 { dst, .. }
                 | Instruction::VectorAndB32 { dst, .. }
                 | Instruction::VectorOrB32 { dst, .. }
@@ -1031,6 +1033,28 @@ fn lift(
                         ));
                     }
                 };
+                registers[usize::from(dst)] = Some(value);
+            }
+            Instruction::VectorUnary { op, dst, src } if !exporting => {
+                if stage == Stage::Pixel && dst < 2 {
+                    return Err(error("pixel VGPRs 0 and 1 are reserved for interpolation"));
+                }
+                let source = match src {
+                    VectorSource::Register(register) => read(register)?,
+                    VectorSource::Immediate(bits) => {
+                        ir.push(Some(offset), Op::ScalarBits(ScalarValue::Constant(bits)))
+                    }
+                    VectorSource::Scalar(register) => {
+                        let source = read_scalar(
+                            ScalarSource::Register(register),
+                            &scalars,
+                            &mut ir.uniform_mask,
+                            offset,
+                        )?;
+                        ir.push(Some(offset), Op::ScalarBits(source))
+                    }
+                };
+                let value = ir.push(Some(offset), Op::IntegerUnary(op, source));
                 registers[usize::from(dst)] = Some(value);
             }
             Instruction::VectorAlu {
@@ -1705,7 +1729,12 @@ fn validate_vertex_integer_bits(vertex: &StageIr) -> Result<(), CompileError> {
     let mut bits: Vec<_> = vertex
         .values
         .iter()
-        .map(|(_, op)| matches!(op, Op::IntegerBinary(..) | Op::ScalarBits(_)))
+        .map(|(_, op)| {
+            matches!(
+                op,
+                Op::IntegerBinary(..) | Op::IntegerUnary(..) | Op::ScalarBits(_)
+            )
+        })
         .collect();
     propagate_vgpr_bits(vertex, &mut bits);
     for (offset, op) in &vertex.values {
@@ -1807,8 +1836,10 @@ fn validate_resource_types(
         .values
         .iter()
         .map(|(_, op)| {
-            matches!(op, Op::IntegerBinary(..) | Op::ScalarBits(_))
-                || matches!(op, Op::SampleLodZero { texture_index, .. }
+            matches!(
+                op,
+                Op::IntegerBinary(..) | Op::IntegerUnary(..) | Op::ScalarBits(_)
+            ) || matches!(op, Op::SampleLodZero { texture_index, .. }
                 if matches!(types.textures[binding_slot(*texture_index)],
                     GraphicsSampleType::Uint | GraphicsSampleType::UintArray))
         })
@@ -1859,6 +1890,7 @@ fn validate_resource_types(
             Op::Binary(_, a, b) | Op::IntegerBinary(_, a, b) => {
                 pixel_coordinates[a.0] || pixel_coordinates[b.0]
             }
+            Op::IntegerUnary(_, source) => pixel_coordinates[source.0],
             Op::SampleLodZero { u, v, layer, .. } => {
                 pixel_coordinates[u.0]
                     || pixel_coordinates[v.0]
@@ -1921,6 +1953,7 @@ fn validate_resource_types(
             Op::Binary(_, a, b) | Op::IntegerBinary(_, a, b) => {
                 uniform_floats[a.0] || uniform_floats[b.0]
             }
+            Op::IntegerUnary(_, source) => uniform_floats[source.0],
             Op::Store2D { data, .. } => data.iter().flatten().any(|v| uniform_floats[v.0]),
             _ => false,
         };
@@ -2239,6 +2272,14 @@ fn emit_range(
                 (
                     format!("scalar.bits {source}"),
                     format!("as_type<float>({source})"),
+                )
+            }
+            Op::IntegerUnary(op, source) => {
+                let expression =
+                    super::vector_unary_expression(op, &format!("as_type<uint>({source})"));
+                (
+                    format!("{}.bits {source}", op.mnemonic()),
+                    format!("as_type<float>({expression})"),
                 )
             }
             Op::IntegerBinary(operator, left, right) => {

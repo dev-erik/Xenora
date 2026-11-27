@@ -4,12 +4,13 @@ use std::process::{Command, Stdio};
 
 use xenora_decoder::{
     Architecture, CompareRelation, DecodeError, DecodeErrorKind, DecodedInstruction, Instruction,
-    ScalarAluOp, ScalarSource, ScalarUnaryOp, VectorAluOp, VectorSource, decode, decode_at,
+    ScalarAluOp, ScalarSource, ScalarUnaryOp, VectorAluOp, VectorSource, VectorUnaryOp, decode,
+    decode_at,
 };
 use xenora_isa::semantics::Signedness;
 use xenora_ref::{
     BranchCondition, CompareSource, Comparison, Op, ScalarAlu, ScalarUnary, Source, VectorAlu,
-    VectorInteger,
+    VectorInteger, VectorUnary,
 };
 
 const FIXTURE: &[u8] = include_bytes!("../../../fixtures/rdna2/add.bin");
@@ -484,6 +485,21 @@ fn reference_op(instruction: Instruction) -> Op {
             },
             src1,
         ),
+        Instruction::VectorUnary { op, dst, src } => Op::VectorUnary(
+            match op {
+                VectorUnaryOp::NotB32 => VectorUnary::Not,
+                VectorUnaryOp::BfrevB32 => VectorUnary::Reverse,
+                VectorUnaryOp::FfbhU32 => VectorUnary::FirstHighUnsigned,
+                VectorUnaryOp::FfblB32 => VectorUnary::FirstLow,
+                VectorUnaryOp::FfbhI32 => VectorUnary::FirstHighSigned,
+            },
+            dst,
+            match src {
+                VectorSource::Register(reg) => CompareSource::Vector(reg),
+                VectorSource::Scalar(reg) => CompareSource::Scalar(reg),
+                VectorSource::Immediate(bits) => CompareSource::Immediate(bits),
+            },
+        ),
         Instruction::VectorAlu {
             op,
             dst,
@@ -539,13 +555,14 @@ fn compares_fixture_instructions_against_llvm() {
         include_bytes!("../../../fixtures/rdna2/scalar-arith.bin"),
         include_bytes!("../../../fixtures/rdna2/scalar-pack.bin"),
         include_bytes!("../../../fixtures/rdna2/vector-integer.bin"),
+        include_bytes!("../../../fixtures/rdna2/vector-unary.bin"),
         include_bytes!("../../../fixtures/rdna2/vector-compare.bin"),
         high_registers,
         &matrix,
     ] {
         count += compare_against_llvm(fixture, &mut forms);
     }
-    assert_eq!(forms.len(), 103, "forms compared: {forms:?}");
+    assert_eq!(forms.len(), 108, "forms compared: {forms:?}");
     eprintln!(
         "{count} three-way instruction comparisons across {} forms",
         forms.len()
@@ -1263,4 +1280,98 @@ fn llvm_inline_float_selector_matrix_has_exact_fields_and_lengths() {
             4
         );
     }
+}
+
+#[test]
+#[ignore = "requires LLVM with the gfx1030 AMDGPU target"]
+fn llvm_vector_integer_unary_source_matrix_matches_exact_bytes() {
+    // Independent raw OP numbers and selector fields, not generated encoders.
+    let operations = [
+        ("v_not_b32_e32", 55u32, VectorUnaryOp::NotB32),
+        ("v_bfrev_b32_e32", 56, VectorUnaryOp::BfrevB32),
+        ("v_ffbh_u32_e32", 57, VectorUnaryOp::FfbhU32),
+        ("v_ffbl_b32_e32", 58, VectorUnaryOp::FfblB32),
+        ("v_ffbh_i32_e32", 59, VectorUnaryOp::FfbhI32),
+    ];
+    // (assembly spelling, nine-bit selector, decoded source, literal payload).
+    let sources = [
+        ("v0", 256u32, VectorSource::Register(0), None),
+        ("v255", 511, VectorSource::Register(255), None),
+        ("v240", 496, VectorSource::Register(240), None),
+        ("v248", 504, VectorSource::Register(248), None),
+        ("s0", 0, VectorSource::Scalar(0), None),
+        ("s105", 105, VectorSource::Scalar(105), None),
+        ("vcc_lo", 106, VectorSource::Scalar(106), None),
+        ("0", 128, VectorSource::Immediate(0), None),
+        ("64", 192, VectorSource::Immediate(64), None),
+        ("-1", 193, VectorSource::Immediate(0xffffffff), None),
+        ("-16", 208, VectorSource::Immediate(0xfffffff0), None),
+        ("0x3f000000", 240, VectorSource::Immediate(0x3f000000), None),
+        ("0xbf000000", 241, VectorSource::Immediate(0xbf000000), None),
+        ("0x3f800000", 242, VectorSource::Immediate(0x3f800000), None),
+        ("0xbf800000", 243, VectorSource::Immediate(0xbf800000), None),
+        ("0x40000000", 244, VectorSource::Immediate(0x40000000), None),
+        ("0xc0000000", 245, VectorSource::Immediate(0xc0000000), None),
+        ("0x40800000", 246, VectorSource::Immediate(0x40800000), None),
+        ("0xc0800000", 247, VectorSource::Immediate(0xc0800000), None),
+        ("0x3e22f983", 248, VectorSource::Immediate(0x3e22f983), None),
+        (
+            "0x12345678",
+            255,
+            VectorSource::Immediate(0x12345678),
+            Some(0x12345678u32),
+        ),
+    ];
+    let mut assembly = String::new();
+    let mut rows = Vec::new();
+    for (mnemonic, opcode, op) in operations {
+        for dst in [0u8, 5, 255] {
+            for (spelling, selector, src, literal) in sources {
+                let line = format!("{mnemonic} v{dst}, {spelling}");
+                assembly.push_str(&line);
+                assembly.push('\n');
+                let word = 0x7e000000 | u32::from(dst) << 17 | opcode << 9 | selector;
+                let mut expected = word.to_le_bytes().to_vec();
+                if let Some(payload) = literal {
+                    expected.extend(payload.to_le_bytes());
+                }
+                rows.push((line, expected, Instruction::VectorUnary { op, dst, src }));
+            }
+        }
+    }
+    // One LLVM invocation for all 315 rows, using the existing gfx1030/Wave32 helper.
+    assert_eq!(rows.len(), 315);
+    let output = llvm_mc(&[], assembly.as_bytes());
+    assert_llvm_success(&output);
+    let text = String::from_utf8(output.stdout).unwrap();
+    let encodings: Vec<_> = text
+        .lines()
+        .filter_map(|line| line.split_once("; encoding: ["))
+        .map(|(_, encoding)| encoding_bytes(encoding))
+        .collect();
+    assert_eq!(
+        encodings.len(),
+        rows.len(),
+        "LLVM must encode every source row"
+    );
+    for (actual, (line, expected, instruction)) in encodings.iter().zip(&rows) {
+        assert_eq!(actual, expected, "exact LLVM bytes: {line}");
+        let decoded = decode_at(Architecture::Gfx1030, actual, 0).unwrap();
+        assert_eq!(usize::from(decoded.byte_len), expected.len(), "{line}");
+        assert_eq!(&decoded.instruction, instruction, "{line}");
+        let reference = xenora_ref::decode(actual).unwrap();
+        assert_eq!(reference.len(), 1, "{line}");
+        assert_eq!(reference[0].byte_len, expected.len(), "{line}");
+    }
+    // Mixed four/eight-byte rows must stay aligned when decoded as one stream.
+    let stream: Vec<u8> = encodings.into_iter().flatten().collect();
+    let decoded = decode(Architecture::Gfx1030, &stream).unwrap();
+    assert_eq!(decoded.len(), rows.len());
+    let mut offset = 0;
+    for (decoded, (line, expected, instruction)) in decoded.iter().zip(&rows) {
+        assert_eq!(decoded.offset, offset, "{line}");
+        assert_eq!(&decoded.instruction, instruction, "{line}");
+        offset += expected.len();
+    }
+    assert_eq!(offset, stream.len());
 }

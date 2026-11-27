@@ -6,6 +6,32 @@ claim of Xbox hardware equivalence. Supporting raw logs, mutation records and
 source manifests remain local and are not distributed with the repository.
 The array-range descriptor increment below was validated on 26 November 2026.
 
+## Stage 3.1 increment: integer vector unary operations
+
+27 November 2026. Five new ordinary VOP1 encodings implement complement, bit
+reversal and signed/unsigned high/low bit searches. The [operand and execution
+contract](../shaders/vector-unary.md) preserves flags, inactive lanes and exact
+integer payloads. Both independent reviewers accepted this bounded increment;
+full S3.1 remains open.
+
+Final stable-source validation passed 303 CPU tests (nine ignored), 115 generator
+tests, 19 LLVM tests including 901 three-way instruction comparisons over 108
+forms and 315 new encoding/source rows, and 13 compute validation tests including
+one native test. Its 31 dispatches cover 75-word operation/mask batches and the
+original combined fixture. Two native graphics tests cover 276 draws including
+aliases and loops. Dispatch/draw counts are derived from test loops. Native
+readback ran on Apple M4 Max with Metal API/shader validation; this is synthetic
+Apple GPU evidence, not AMD or Xbox hardware validation.
+
+Four assertion-killed mutations cover signed count, numeric carrier conversion,
+array-layer metadata escape and empty-EXEC source reads; source hashes matched
+after restoration. Final clippy/format and the 125-executable ARM64 audit passed.
+All nine repository gates passed in `artifacts/validation-full.cKa5Gn` (workspace
+1114 passed/0 failed/154 ignored; GPU 481 passed/0 failed/1 ignored, overlapping
+suites). Final focused runs cover the later compiler-test additions and citation
+correction. Logs, source hashes and both reviews are retained locally under
+`artifacts/s31-vector-unary/` and adjacent review files.
+
 ## Stage 3.1 increment: integer vector graphics operations
 
 27 November 2026. Graphics lowering now accepts 19 previously decoded integer

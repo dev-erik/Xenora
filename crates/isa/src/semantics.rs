@@ -197,6 +197,8 @@ pub enum OperandRule {
     /// integer -16..64, inline float bits (240..248), or a literal word; VSRC1 is
     /// a VGPR. Everything else is rejected as unsupported.
     Vop2Vgpr,
+    /// VOP1: VDST is v0-v255; SRC0 uses the same source domain as VOP2.
+    Vop1Vgpr,
 }
 
 /// Evidence a form needs before it counts as verified.

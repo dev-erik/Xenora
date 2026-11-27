@@ -496,3 +496,6 @@ mod resource_graph_acceptance;
 
 #[path = "native/inline_float_sources.rs"]
 mod inline_float_sources;
+
+#[path = "native/vector_unary_graphics.rs"]
+mod vector_unary_graphics;

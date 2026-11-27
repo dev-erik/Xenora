@@ -1462,3 +1462,95 @@ wave = "any"
 operands = "sop2_sgpr"
 spec = [{ document = "guide", section = "12.1", page = 106 }]
 verify = ["reference", "independent", "metal", "llvm_encoding"]
+
+[operand_rules.vop1_vgpr]
+family = "VOP1"
+dst = { field = "VDST", class = "vgpr", min = 0, max = 255 }
+src = [{ field = "SRC0", class = "vector_source" }]
+max_literals = 1
+unsupported = ["src_vcc_hi", "src_exec", "src_m0", "src_ttmp", "src_null", "src_special"]
+
+[[form]]
+name = "V_NOT_B32"
+family = "VOP1"
+opcode = 55
+variant = "NotB32"
+operation = "not"
+signedness = "bitwise"
+carry_in = "none"
+width = 32
+scc = "unchanged"
+vcc = "unchanged"
+exec = "unchanged"
+wave = "any"
+operands = "vop1_vgpr"
+spec = [{ document = "guide", section = "12.8", page = 143 }]
+verify = ["reference", "independent", "metal", "llvm_encoding"]
+
+[[form]]
+name = "V_BFREV_B32"
+family = "VOP1"
+opcode = 56
+variant = "BfrevB32"
+operation = "brev"
+signedness = "bitwise"
+carry_in = "none"
+width = 32
+scc = "unchanged"
+vcc = "unchanged"
+exec = "unchanged"
+wave = "any"
+operands = "vop1_vgpr"
+spec = [{ document = "guide", section = "12.8", page = 143 }]
+verify = ["reference", "independent", "metal", "llvm_encoding"]
+
+[[form]]
+name = "V_FFBH_U32"
+family = "VOP1"
+opcode = 57
+variant = "FfbhU32"
+operation = "flbit"
+signedness = "unsigned"
+carry_in = "none"
+width = 32
+scc = "unchanged"
+vcc = "unchanged"
+exec = "unchanged"
+wave = "any"
+operands = "vop1_vgpr"
+spec = [{ document = "guide", section = "12.8", page = 143 }]
+verify = ["reference", "independent", "metal", "llvm_encoding"]
+
+[[form]]
+name = "V_FFBL_B32"
+family = "VOP1"
+opcode = 58
+variant = "FfblB32"
+operation = "ff1"
+signedness = "bitwise"
+carry_in = "none"
+width = 32
+scc = "unchanged"
+vcc = "unchanged"
+exec = "unchanged"
+wave = "any"
+operands = "vop1_vgpr"
+spec = [{ document = "guide", section = "12.8", page = 143 }]
+verify = ["reference", "independent", "metal", "llvm_encoding"]
+
+[[form]]
+name = "V_FFBH_I32"
+family = "VOP1"
+opcode = 59
+variant = "FfbhI32"
+operation = "flbit"
+signedness = "signed"
+carry_in = "none"
+width = 32
+scc = "unchanged"
+vcc = "unchanged"
+exec = "unchanged"
+wave = "any"
+operands = "vop1_vgpr"
+spec = [{ document = "guide", section = "12.8", page = 144 }]
+verify = ["reference", "independent", "metal", "llvm_encoding"]

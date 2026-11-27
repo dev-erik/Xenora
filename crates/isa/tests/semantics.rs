@@ -2,7 +2,7 @@
 
 use xenora_isa::meta::{EncodingFamily, FORMS as META_FORMS};
 use xenora_isa::semantics::{CarryIn, FORM_IDS, FORMS, GENERATED_SCHEMA, SCHEMA, SccEffect};
-use xenora_isa::{ScalarAluOp, ScalarCompareOp, ScalarUnaryOp, VectorAluOp};
+use xenora_isa::{ScalarAluOp, ScalarCompareOp, ScalarUnaryOp, VectorAluOp, VectorUnaryOp};
 
 #[test]
 fn generated_tables_match_the_schema_and_the_metadata_forms() {
@@ -121,4 +121,38 @@ fn scalar_pack_halfwords_and_scc() {
             assert_eq!(op.evaluate(u32::MAX, u32::MAX, scc), (u32::MAX, None));
         }
     }
+}
+
+#[test]
+fn vector_unary_dispatch_and_value_contract() {
+    assert_eq!(VectorUnaryOp::ALL.len(), 5);
+    for op in VectorUnaryOp::ALL {
+        let row = op.semantics();
+        assert_eq!(row.family, EncodingFamily::Vop1);
+        assert_eq!(row.name.to_ascii_lowercase(), op.mnemonic());
+        assert_eq!(op.assembly_name(), format!("{}_e32", op.mnemonic()));
+        assert_eq!(row.scc, SccEffect::Unchanged);
+        assert_eq!(row.carry_in, CarryIn::None);
+    }
+    dispatch_selects_exactly(EncodingFamily::Vop1, |word| {
+        VectorUnaryOp::from_word(word).map(|op| op.semantics().name)
+    });
+    use VectorUnaryOp::*;
+    for (input, expected) in [
+        (0, [0xffff_ffff, 0, 0xffff_ffff, 0xffff_ffff, 0xffff_ffff]),
+        (0xffff_ffff, [0, 0xffff_ffff, 0, 0, 0xffff_ffff]),
+        (1, [0xffff_fffe, 0x8000_0000, 31, 0, 31]),
+        (0x8000_0000, [0x7fff_ffff, 1, 0, 31, 1]),
+        (0x4000_0000, [0xbfff_ffff, 2, 1, 30, 1]),
+        (0xffff_fffe, [1, 0x7fff_ffff, 0, 1, 31]),
+        (0xffff_0000, [0x0000_ffff, 0x0000_ffff, 0, 16, 16]),
+    ] {
+        for (op, value) in [NotB32, BfrevB32, FfbhU32, FfblB32, FfbhI32]
+            .into_iter()
+            .zip(expected)
+        {
+            assert_eq!(op.evaluate(input), value, "{op:?}({input:08x})");
+        }
+    }
+    assert_eq!(BfrevB32.evaluate(0x0123_4567), 0xe6a2_c480);
 }

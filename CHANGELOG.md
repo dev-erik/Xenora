@@ -20,6 +20,10 @@ remains unsupported.
 - Extended the read-only RDNA2 planning CLI (`python3 -m qa rdna2`) with family/status filters, compact summaries, Codex-ready manifests under `artifacts/`, active-claim exclusion (family claims exclude those families; path-only claims block overlapping permitted files), coverage reconcile against `semantic_coverage` without inflating counts, and inventory diffs. Covered by `tests/qa/test_rdna2_plan.py`; planning only, no GPU production edits.
 
 ### Added
+- Five ordinary VOP1 integer instructions: complement, bit reversal and signed/unsigned
+  first-bit searches. Compute preserves inactive lanes and flags; graphics retains
+  exact integer payloads through aliases and bounded loops. Wider operand modifiers
+  and divergent-region admission remain unsupported.
 - Graphics lowering accepts the 19 already-decoded integer vector encodings:
   24-bit low/high products, signed/unsigned min/max, bitwise operations, reverse
   shifts and wrapping add/subtract. Exact integer payloads survive aliases,

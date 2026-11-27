@@ -5,6 +5,7 @@ use std::fmt;
 pub use xenora_isa::{
     Architecture, CompareRelation, ExportTarget, Instruction, InterpolationPhase, ScalarAluOp,
     ScalarCompareOp, ScalarSource, ScalarUnaryOp, VectorAluOp, VectorCompareOp, VectorSource,
+    VectorUnaryOp,
 };
 use xenora_isa::{
     BUFFER_LOAD_DWORD, BUFFER_STORE_DWORD, EXP, IMAGE_SAMPLE_LZ, IMAGE_STORE, S_BRANCH,
@@ -556,6 +557,11 @@ fn decode_gfx1030(bytes: &[u8], offset: usize) -> Result<(Instruction, u8), Deco
             Instruction::BranchVccZero { target },
             S_CBRANCH_VCCZ.byte_len(),
         ));
+    }
+    if let Some(op) = VectorUnaryOp::from_word(first) {
+        let dst = ((first >> 17) & 0xff) as u8;
+        let (src, len) = vector_src0(first, bytes, op.assembly_name())?;
+        return Ok((Instruction::VectorUnary { op, dst, src }, len));
     }
     if let Some(op) = VectorAluOp::from_word(first) {
         // VOP2: SRC0 in bits 0-8, VSRC1 in bits 9-16, VDST in bits 17-24.

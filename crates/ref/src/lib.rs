@@ -72,7 +72,46 @@ pub enum Op {
     /// VOP2 32-bit integer form: VDST, SRC0 (VGPR, SGPR, `vcc_lo`, inline
     /// integer or literal) and VSRC1. Writes neither VCC nor SCC.
     VectorInteger(VectorInteger, u8, CompareSource, u8),
+    VectorUnary(VectorUnary, u8, CompareSource),
     End,
+}
+
+/// Independent VOP1 integer semantics (AMD RDNA 2 section 12.8).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum VectorUnary {
+    Not,
+    Reverse,
+    FirstHighUnsigned,
+    FirstLow,
+    FirstHighSigned,
+}
+
+impl VectorUnary {
+    fn apply(self, value: u32) -> u32 {
+        match self {
+            Self::Not => !value,
+            Self::Reverse => value.reverse_bits(),
+            Self::FirstLow => {
+                if value == 0 {
+                    u32::MAX
+                } else {
+                    value.trailing_zeros()
+                }
+            }
+            Self::FirstHighUnsigned | Self::FirstHighSigned => {
+                let search = if self == Self::FirstHighSigned && value & 0x80000000 != 0 {
+                    !value
+                } else {
+                    value
+                };
+                if search == 0 {
+                    u32::MAX
+                } else {
+                    search.leading_zeros()
+                }
+            }
+        }
+    }
 }
 
 /// Relation and operand interpretation of a VOPC integer compare.
@@ -643,6 +682,26 @@ pub fn decode(code: &[u8]) -> Result<Vec<DecodedInstruction>, ReferenceError> {
                 (Op::VectorInteger(kind, dst, src0, vsrc1), length)
             }
             [lo, packed, upper, tag @ 0x7e..=0x7f, tail @ ..]
+                if upper & 1 == 0 && (55..=59).contains(&(packed >> 1)) =>
+            {
+                let kind = match packed >> 1 {
+                    55 => VectorUnary::Not,
+                    56 => VectorUnary::Reverse,
+                    57 => VectorUnary::FirstHighUnsigned,
+                    58 => VectorUnary::FirstLow,
+                    _ => VectorUnary::FirstHighSigned,
+                };
+                let dst = (upper >> 1) | ((tag & 1) << 7);
+                let (src, length) = decode_vector_source(
+                    *lo,
+                    *packed,
+                    tail,
+                    offset,
+                    "unsupported VOP1 integer source",
+                )?;
+                (Op::VectorUnary(kind, dst, src), length)
+            }
+            [lo, packed, upper, tag @ 0x7e..=0x7f, tail @ ..]
                 if packed & 0xfe == 2 && upper & 1 == 0 =>
             {
                 let dst = (upper >> 1) | ((tag & 1) << 7);
@@ -871,7 +930,8 @@ fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32
                 | Op::MoveScalar(dst, _)
                 | Op::Add(dst, ..)
                 | Op::Vector(_, dst, ..)
-                | Op::VectorInteger(_, dst, ..) => {
+                | Op::VectorInteger(_, dst, ..)
+                | Op::VectorUnary(_, dst, _) => {
                     if exec != 0
                         && registers
                             .iter()
@@ -951,6 +1011,29 @@ fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32
                 for lane in (0..lanes).filter(|&lane| executes(lane)) {
                     let value = vector_alu(operator, read(lane, lhs)?, read(lane, rhs)?, offset)?;
                     results[lane] = Some((dst, value));
+                }
+            }
+            Op::VectorUnary(kind, dst, src) => {
+                if exec != 0 {
+                    match src {
+                        CompareSource::Vector(reg) => {
+                            for lane in 0..lanes {
+                                read(lane, reg)?;
+                            }
+                        }
+                        CompareSource::Scalar(reg) => {
+                            read_scalar(Source::Register(reg))?;
+                        }
+                        CompareSource::Immediate(_) => {}
+                    }
+                }
+                for lane in (0..lanes).filter(|&lane| executes(lane)) {
+                    let value = match src {
+                        CompareSource::Vector(reg) => read(lane, reg)?,
+                        CompareSource::Scalar(reg) => read_scalar(Source::Register(reg))?,
+                        CompareSource::Immediate(bits) => bits,
+                    };
+                    results[lane] = Some((dst, kind.apply(value)));
                 }
             }
             Op::VectorInteger(kind, dst, src0, src1) => {

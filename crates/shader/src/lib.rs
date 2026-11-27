@@ -15,7 +15,7 @@ pub use graphics::{
 pub use xenora_decoder::Architecture;
 use xenora_decoder::{
     DecodeError, DecodedInstruction, Instruction, ScalarSource, VectorBinary, VectorCompareOp,
-    VectorSource,
+    VectorSource, VectorUnaryOp,
 };
 
 /// SGPR index of `vcc_lo`.
@@ -97,6 +97,7 @@ enum Op {
     Load,
     Constant(u32),
     Binary(Binary, Value, Value),
+    Unary(VectorUnaryOp, Value),
     MergeLanes {
         mask: u32,
         active: Value,
@@ -134,6 +135,7 @@ impl Op {
         match self {
             Self::Load | Self::Constant(_) | Self::ScalarBranch { .. } => Vec::new(),
             Self::Binary(_, left, right) => vec![left, right],
+            Self::Unary(_, source) => vec![source],
             Self::MergeLanes {
                 active, inactive, ..
             } => vec![active, inactive],
@@ -154,6 +156,7 @@ impl Op {
         match self {
             Self::Load => format!("input[{index}]"),
             Self::Constant(value) => format!("0x{value:08x}u"),
+            Self::Unary(op, source) => vector_unary_expression(op, &name(source)),
             Self::Binary(operator, left, right) => {
                 let (left, right) = (name(left), name(right));
                 let (_, symbol) = operator.operator();
@@ -289,6 +292,22 @@ fn vector_expression(operation: VectorBinary, left: &str, right: &str) -> String
             format!("as_type<uint>(mulhi({}, {}))", i24(left), i24(right))
         }
         VectorBinary::MulHi24Unsigned => format!("mulhi({}, {})", u24(left), u24(right)),
+    }
+}
+
+// AMD RDNA2 section 12.8: integer unary results preserve all condition/mask state.
+// Signed FFBH counts leading sign bits including the sign bit itself.
+fn vector_unary_expression(op: VectorUnaryOp, source: &str) -> String {
+    use VectorUnaryOp::*;
+    match op {
+        NotB32 => format!("~({source})"),
+        BfrevB32 => format!("reverse_bits({source})"),
+        FfbhU32 => format!("(({source}) == 0u) ? 0xffffffffu : clz({source})"),
+        FfblB32 => format!("(({source}) == 0u) ? 0xffffffffu : ctz({source})"),
+        FfbhI32 => {
+            let differing = format!("(({source}) ^ (0u - (({source}) >> 31u)))");
+            format!("({differing} == 0u) ? 0xffffffffu : clz({differing})")
+        }
     }
 }
 
@@ -449,6 +468,10 @@ pub fn compile(architecture: Architecture, bytes: &[u8]) -> Result<CompiledShade
             ),
             Op::Binary(operator, left, right) => (
                 format!("{dest} = {} {left}, {right}", operator.operator().0),
+                format!("uint {dest} = {};", operation.expression(&thread, "", "")),
+            ),
+            Op::Unary(op, source) => (
+                format!("{dest} = {} {source}", op.mnemonic()),
                 format!("uint {dest} = {};", operation.expression(&thread, "", "")),
             ),
             Op::ScalarBranch { target, taken } => {
@@ -728,7 +751,8 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
                 | Instruction::VectorXorB32 { .. }
                 | Instruction::VectorAddF32 { .. }
                 | Instruction::VectorMulF32 { .. }
-                | Instruction::VectorAlu { .. } => continue,
+                | Instruction::VectorAlu { .. }
+                | Instruction::VectorUnary { .. } => continue,
                 _ => {}
             }
         }
@@ -997,6 +1021,30 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
                         taken: true,
                     },
                 )
+            }
+            Instruction::VectorUnary { op, dst, src } => {
+                let source = match src {
+                    VectorSource::Register(register) => read(register)?,
+                    VectorSource::Scalar(register) if usize::from(register) == VCC_LO => {
+                        match (lane_vcc, scalars[VCC_LO]) {
+                            (Some(mask), _) => mask,
+                            (None, Some(bits)) => {
+                                constant(&mut operations, &mut facts, offset, bits)
+                            }
+                            (None, None) => {
+                                return Err(error("vector unary reads uninitialized VCC_LO"));
+                            }
+                        }
+                    }
+                    VectorSource::Scalar(register) => {
+                        let bits = read_scalar(ScalarSource::Register(register))?;
+                        constant(&mut operations, &mut facts, offset, bits)
+                    }
+                    VectorSource::Immediate(bits) => {
+                        constant(&mut operations, &mut facts, offset, bits)
+                    }
+                };
+                (Some(dst), Op::Unary(op, source))
             }
             Instruction::VectorAlu {
                 op,

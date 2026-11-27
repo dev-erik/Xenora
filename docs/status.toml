@@ -1459,3 +1459,63 @@ gpu = "fixture verified"
 recognized = true
 decoded = true
 llvm = "three-way passed"
+
+[[instruction]]
+form = "v_not_b32_e32"
+encoding = "VOP1; ordinary VGPR destination and nine-bit checked vector source; modifiers excluded; flags unchanged"
+representation = "4 B or 8 B with literal"
+lowering = "MSL uint complement; compute lane retention and graphics raw-word carrier"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_bfrev_b32_e32"
+encoding = "VOP1; ordinary VGPR destination and nine-bit checked vector source; modifiers excluded; flags unchanged"
+representation = "4 B or 8 B with literal"
+lowering = "MSL uint bit reversal; compute lane retention and graphics raw-word carrier"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_ffbh_u32_e32"
+encoding = "VOP1; ordinary VGPR destination and nine-bit checked vector source; modifiers excluded; flags unchanged"
+representation = "4 B or 8 B with literal"
+lowering = "MSL guarded leading-zero count; compute lane retention and graphics raw-word carrier"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_ffbl_b32_e32"
+encoding = "VOP1; ordinary VGPR destination and nine-bit checked vector source; modifiers excluded; flags unchanged"
+representation = "4 B or 8 B with literal"
+lowering = "MSL guarded trailing-zero count; compute lane retention and graphics raw-word carrier"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "v_ffbh_i32_e32"
+encoding = "VOP1; ordinary VGPR destination and nine-bit checked vector source; modifiers excluded; flags unchanged"
+representation = "4 B or 8 B with literal"
+lowering = "MSL guarded inclusive leading-sign count; compute lane retention and graphics raw-word carrier"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"

@@ -55,6 +55,43 @@ enum CmpSrc {
     Vgpr(u8),
 }
 
+// Independent bit-search formulation, without production tables or evaluators.
+#[derive(Clone, Copy, Debug)]
+enum Unary {
+    Complement,
+    Mirror,
+    High,
+    Low,
+    SignedHigh,
+}
+
+impl Unary {
+    fn result(self, input: u32) -> u32 {
+        match self {
+            Self::Complement => input ^ 0xffff_ffff,
+            Self::Mirror => {
+                let mut output = 0;
+                for bit in 0..32 {
+                    output |= ((input >> bit) & 1) << (31 - bit);
+                }
+                output
+            }
+            Self::Low => (0..32)
+                .find(|&bit| input & (1 << bit) != 0)
+                .unwrap_or(u32::MAX),
+            Self::High => (0..32)
+                .find(|&n| input & (1 << (31 - n)) != 0)
+                .unwrap_or(u32::MAX),
+            Self::SignedHigh => {
+                let sign = input >> 31;
+                (1..32)
+                    .find(|&n| ((input >> (31 - n)) & 1) != sign)
+                    .unwrap_or(u32::MAX)
+            }
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 enum Insn {
     SMov(u8, Src),
@@ -90,6 +127,7 @@ enum Insn {
     VXor(u8, u8, u8),
     /// VOP2 integer opcode 9-12, 17-20, 30 or 37-39: VDST, SRC0, VSRC1.
     VInt(u32, u8, CmpSrc, u8),
+    VUnary(Unary, u8, CmpSrc),
     VAddF(u8, u8, u8),
     VMulF(u8, u8, u8),
     Load(u8),
@@ -696,6 +734,7 @@ fn lane_step(
             | Insn::VShiftRight(dst, ..)
             | Insn::VShiftRightArithmetic(dst, ..)
             | Insn::VInt(_, dst, ..)
+            | Insn::VUnary(_, dst, _)
             | Insn::VAddF(dst, ..)
             | Insn::VMulF(dst, ..) => {
                 if execution_mask != 0 && lane.vgpr[usize::from(dst)].is_none() {
@@ -709,6 +748,18 @@ fn lane_step(
                         Insn::VMovFromVcc(_) => {
                             read_vcc()?;
                         }
+                        Insn::VUnary(_, _, src) => match src {
+                            CmpSrc::Sgpr(reg) => {
+                                read_s(reg)?;
+                            }
+                            CmpSrc::Vcc => {
+                                read_vcc()?;
+                            }
+                            CmpSrc::Vgpr(reg) => {
+                                read_vgpr(lane, reg, offset)?;
+                            }
+                            CmpSrc::Imm(_) => {}
+                        },
                         // Sources must be readable even in an inactive lane.
                         Insn::VInt(_, _, src0, src1) => {
                             match src0 {
@@ -819,6 +870,16 @@ fn lane_step(
         Insn::VXor(dst, a, b) => {
             check_destination(dst, pending_read, offset)?;
             (dst, read_v(a)? ^ read_v(b)?)
+        }
+        Insn::VUnary(operation, dst, src) => {
+            check_destination(dst, pending_read, offset)?;
+            let input = match src {
+                CmpSrc::Sgpr(reg) => read_s(reg)?,
+                CmpSrc::Vcc => read_vcc()?,
+                CmpSrc::Vgpr(reg) => read_v(reg)?,
+                CmpSrc::Imm(bits) => bits,
+            };
+            (dst, operation.result(input))
         }
         Insn::VInt(opcode, dst, src0, src1) => {
             check_destination(dst, pending_read, offset)?;
@@ -1026,6 +1087,17 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
             },
             8,
         ));
+    }
+    if first & 0xfe000000 == 0x7e000000 && (55..=59).contains(&((first >> 9) & 255)) {
+        let operation = match (first >> 9) & 255 {
+            55 => Unary::Complement,
+            56 => Unary::Mirror,
+            57 => Unary::High,
+            58 => Unary::Low,
+            _ => Unary::SignedHigh,
+        };
+        let (src, len) = vector_src0(code, offset, first, "VOP1 integer")?;
+        return Ok((Insn::VUnary(operation, (first >> 17) as u8, src), len));
     }
     if first & 0xfe01_fe00 == 0x7e00_0200 {
         let dst = (first >> 17) as u8;
