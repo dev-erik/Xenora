@@ -34,6 +34,8 @@ Map status column is the source for this generated visual.
 Regenerate with `python3 scripts/audit/xbox_map.py`; validate with
 `python3 scripts/audit/xbox_map.py --check` (also run by CI and full validation).
 
+See the [feasibility research and prioritized investigations](research/compatibility-feasibility.md) for the path from this map to validated target behavior.
+
 ## Scope and evidence rules
 
 - Keep separate target records for Series X and Series S, including guest-visible

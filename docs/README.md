@@ -12,6 +12,8 @@ either path. The [changelog](../CHANGELOG.md) records notable changes.
 
 - [Xbox Series X|S compatibility coverage map](xbox-compatibility.md) — Master target, 58 feature areas, known foundations, unresolved Xbox contracts and completion criteria. AnyPS5 was a presentation reference only.
 
+- [Compatibility feasibility research](research/compatibility-feasibility.md) — Public findings, architecture alternatives, eight prioritized research tasks and validation limits.
+
 ## Architecture and technical design
 
 - [Original guest graphics calls](graphics-call-v1.md) — Versioned synthetic resource, pipeline, transfer and command descriptors.
