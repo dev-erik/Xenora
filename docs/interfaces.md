@@ -429,6 +429,27 @@ outside smaller viewports. Without a texture target, the first draw still fixes
 the extent. Legacy callbacks reject drawing with different viewport/target sizes.
 Native targets are bounded to 1,048,576 pixels and 4,096 per axis; software targets remain bounded to 4,096 pixels.
 
+### Integer vector graphics operations
+
+Graphics supports 19 existing decoded integer vector encodings: signed/unsigned
+24-bit low/high multiplication; signed/unsigned 32-bit min/max; AND, OR, XOR and
+XNOR; logical/arithmetic reverse shifts; wrapping ADD, SUB and SUBREV; and the
+existing VOP3 ADD encoding. Sources are captured before destination writes and
+SCC remains unchanged. Registry VOP2 SRC0 accepts initialized VGPRs, ordinary
+scalar uniforms/locals, inline words or a literal. Legacy bitwise/shift forms and
+VOP3 ADD retain their register-only operand restrictions. Pixel v0/v1 remain
+reserved. No EXEC/VCC or divergent execution support is added.
+
+Integer results use exact bit reinterpretation through the graphics register
+representation, including copies, joins and bounded countdown loops. They may
+feed integer arithmetic, uint color exports and supported uint storage. They
+cannot feed floating arithmetic, texture coordinates, floating attachments or
+vertex position/parameter exports without an explicit conversion contract.
+The direct uniform-to-vector array-layer transport and original pixel-coordinate
+metadata cannot be used as integer arithmetic inputs; ordinary scalar uniform
+words instead enter through an integer operation's scalar source. Computed
+layers, descriptors and store addresses retain their existing restrictions.
+
 ### Pixel arithmetic and stateful sampled passes
 
 The graphics compiler supports the existing register-register FP32 add/multiply

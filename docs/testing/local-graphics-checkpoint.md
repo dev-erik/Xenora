@@ -6,6 +6,35 @@ claim of Xbox hardware equivalence. Supporting raw logs, mutation records and
 source manifests remain local and are not distributed with the repository.
 The array-range descriptor increment below was validated on 26 November 2026.
 
+## Stage 3.1 increment: integer vector graphics operations
+
+27 November 2026. Graphics lowering now accepts 19 previously decoded integer
+vector encodings: 12 registry VOP2 forms, six register-only bitwise/reverse-shift
+forms and VOP3 ADD_NC. See the [integer graphics contract](../interfaces.md#integer-vector-graphics-operations).
+This extends graphics lowering without changing decoder instruction counts or
+adding divergent execution. Full S3.1 remains open.
+
+Four native tests passed 765 draws (source-derived counts): 699 literal operation
+and operand/alias cases, 45 inline-source cases, 14 bounded countdown cases and
+seven branch-join cases. Exact R32Uint readback covers wraparound, signed/unsigned
+24-bit products, reverse shifts and payloads shaped like NaNs/infinities. Tests
+ran with Metal API and shader validation on Apple M4 Max; no AMD/Xbox hardware
+equivalence is claimed. Integer values remain forbidden as floating coordinates,
+float storage/colors and vertex position/parameter output; metadata guards retain
+the restricted array-layer and pixel-coordinate contracts.
+
+Three isolated mutations were detected: numeric float conversion instead of bit
+reinterpretation, missing SUBREV source reversal and removal of the integer
+array-layer escape guard. Source restoration hashes match. Local focused logs
+use the `artifacts/s31-vector-graphics-` prefix; mutation/integration logs are in
+`artifacts/s31-vector-graphics/`. All nine gates passed in
+`validation-full.RNlmkG`: workspace 1,086 passed/0 failed/152 ignored; GPU script
+478 passed/0 failed/1 ignored (overlapping totals). After test-only provenance
+additions, ten focused compiler tests and final workspace lint passed. The native
+audit checked 122 ARM64 executables/loadable dependencies. Both independent
+reviewers accepted the final ten-entry source/dependency manifest and evidence,
+including the isolated metadata guard and provenance tests. Full S3.1 remains open.
+
 ## Stage 3.1 increment: inline floating source words
 
 27 November 2026. Selectors 240-248 now decode to their exact 32-bit words in

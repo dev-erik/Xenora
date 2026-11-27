@@ -20,6 +20,11 @@ remains unsupported.
 - Extended the read-only RDNA2 planning CLI (`python3 -m qa rdna2`) with family/status filters, compact summaries, Codex-ready manifests under `artifacts/`, active-claim exclusion (family claims exclude those families; path-only claims block overlapping permitted files), coverage reconcile against `semantic_coverage` without inflating counts, and inventory diffs. Covered by `tests/qa/test_rdna2_plan.py`; planning only, no GPU production edits.
 
 ### Added
+- Graphics lowering accepts the 19 already-decoded integer vector encodings:
+  24-bit low/high products, signed/unsigned min/max, bitwise operations, reverse
+  shifts and wrapping add/subtract. Exact integer payloads survive aliases,
+  branch joins and bounded loops; provenance checks restrict them to integer
+  consumers and outputs and preserve array-layer/pixel-coordinate metadata.
 - Decoding and both independent references accept all nine RDNA2 inline floating
   source selectors as exact 32-bit words in scalar sources, vector arithmetic/
   comparisons and vector moves. Literal lengths, reserved selectors and 9-bit

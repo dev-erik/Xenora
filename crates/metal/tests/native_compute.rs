@@ -476,6 +476,8 @@ mod typed_transfers;
 
 #[path = "native/typed_attachments.rs"]
 mod typed_attachments;
+#[path = "native/vector_integer_graphics.rs"]
+mod vector_integer_graphics;
 
 #[path = "native/attachment_views.rs"]
 mod attachment_views;

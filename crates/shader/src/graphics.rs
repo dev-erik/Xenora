@@ -57,6 +57,8 @@ enum Op {
     },
     Interpolate(u8),
     Binary(Binary, Value, Value),
+    IntegerBinary(Binary, Value, Value),
+    ScalarBits(ScalarValue),
     SampleLodZero {
         u: Value,
         v: Value,
@@ -505,6 +507,7 @@ fn compile_graphics_core(
             mask
         }
     });
+    validate_vertex_integer_bits(&vertex)?;
     validate_resource_types(&pixel, types, sampled_pairs, color_count)?;
     let mut array_layers: [Vec<GraphicsArrayLayer>; 4] = Default::default();
     for (_, op) in &pixel.values {
@@ -733,16 +736,29 @@ fn lift(
             }
         }
     }
-    // For structural loop analysis, a unary operation is an arbitrary scalar
-    // write, just like MOV. Keep offsets and operands; lift the original stream
-    // below so unary values and SCC retain their actual semantics.
+    // Project new scalar/vector writes to MOV for structural loop analysis.
+    // Keep offsets and lift the original stream below for actual semantics.
     let loop_instructions: Vec<_> = decoded
         .iter()
         .map(|item| {
             let mut item = *item;
-            if let Instruction::ScalarUnary { dst, src, .. } = item.instruction {
-                item.instruction = Instruction::ScalarMoveB32 { dst, src };
-            }
+            item.instruction = match item.instruction {
+                Instruction::ScalarUnary { dst, src, .. } => {
+                    Instruction::ScalarMoveB32 { dst, src }
+                }
+                Instruction::VectorAlu { dst, .. }
+                | Instruction::AddNoCarryU32 { dst, .. }
+                | Instruction::VectorAndB32 { dst, .. }
+                | Instruction::VectorOrB32 { dst, .. }
+                | Instruction::VectorXorB32 { dst, .. }
+                | Instruction::VectorLshlrevB32 { dst, .. }
+                | Instruction::VectorLshrrevB32 { dst, .. }
+                | Instruction::VectorAshrrevI32 { dst, .. } => Instruction::MoveB32 {
+                    dst,
+                    src: VectorSource::Register(dst),
+                },
+                instruction => instruction,
+            };
             item
         })
         .collect();
@@ -1016,6 +1032,71 @@ fn lift(
                     }
                 };
                 registers[usize::from(dst)] = Some(value);
+            }
+            Instruction::VectorAlu {
+                op,
+                dst,
+                src0,
+                src1,
+            } if !exporting => {
+                if stage == Stage::Pixel && dst < 2 {
+                    return Err(error("pixel VGPRs 0 and 1 are reserved for interpolation"));
+                }
+                // All reads precede the destination write, including aliases.
+                let left = match src0 {
+                    VectorSource::Register(register) => read(register)?,
+                    VectorSource::Immediate(bits) => {
+                        ir.push(Some(offset), Op::ScalarBits(ScalarValue::Constant(bits)))
+                    }
+                    VectorSource::Scalar(register) => {
+                        // The graphics scalar domain excludes VCC/EXEC and descriptors.
+                        let source = read_scalar(
+                            ScalarSource::Register(register),
+                            &scalars,
+                            &mut ir.uniform_mask,
+                            offset,
+                        )?;
+                        ir.push(Some(offset), Op::ScalarBits(source))
+                    }
+                };
+                let right = read(src1)?;
+                let (left, right) = if op.swaps_sources() {
+                    (right, left)
+                } else {
+                    (left, right)
+                };
+                let value = ir.push(
+                    Some(offset),
+                    Op::IntegerBinary(Binary::Vector(op.lowering()), left, right),
+                );
+                registers[usize::from(dst)] = Some(value);
+            }
+            Instruction::AddNoCarryU32 { dst, src0, src1 }
+            | Instruction::VectorAndB32 { dst, src0, src1 }
+            | Instruction::VectorOrB32 { dst, src0, src1 }
+            | Instruction::VectorXorB32 { dst, src0, src1 }
+            | Instruction::VectorLshlrevB32 { dst, src0, src1 }
+            | Instruction::VectorLshrrevB32 { dst, src0, src1 }
+            | Instruction::VectorAshrrevI32 { dst, src0, src1 }
+                if !exporting =>
+            {
+                if stage == Stage::Pixel && dst < 2 {
+                    return Err(error("pixel VGPRs 0 and 1 are reserved for interpolation"));
+                }
+                let left = read(src0)?;
+                let right = read(src1)?;
+                let (operator, left, right) = match instruction {
+                    Instruction::AddNoCarryU32 { .. } => (Binary::Add, left, right),
+                    Instruction::VectorAndB32 { .. } => (Binary::And, left, right),
+                    Instruction::VectorOrB32 { .. } => (Binary::Or, left, right),
+                    Instruction::VectorXorB32 { .. } => (Binary::Xor, left, right),
+                    Instruction::VectorLshlrevB32 { .. } => (Binary::ShiftLeft, right, left),
+                    Instruction::VectorLshrrevB32 { .. } => (Binary::ShiftRight, right, left),
+                    _ => (Binary::ArithmeticShiftRight, right, left),
+                };
+                let value = ir.push(Some(offset), Op::IntegerBinary(operator, left, right));
+                registers[usize::from(dst)] = Some(value);
+                // Integer vector forms leave SCC unchanged, including unset SCC.
             }
             Instruction::VectorAddF32 { dst, src0, src1 }
             | Instruction::VectorMulF32 { dst, src0, src1 }
@@ -1593,6 +1674,61 @@ fn compare_expression(op: ScalarCompareOp, left: ScalarValue, right: ScalarValue
     format!("{} {relation} {}", source(left), source(right))
 }
 
+// VGPR copies share a Value; only control-flow edge copies need propagation.
+fn propagate_vgpr_bits(stage: &StageIr, bits: &mut [bool]) {
+    let mut dependents = vec![Vec::new(); stage.values.len()];
+    for block in stage.blocks.iter().flatten() {
+        for (_, copies) in &block.edge_copies {
+            for (destination, source) in copies {
+                if let EdgeValue::Float(source) = source {
+                    dependents[source.0].push(destination.0);
+                }
+            }
+        }
+    }
+    let mut work: Vec<_> = bits
+        .iter()
+        .enumerate()
+        .filter_map(|(index, used)| used.then_some(index))
+        .collect();
+    while let Some(source) = work.pop() {
+        for &destination in &dependents[source] {
+            if !bits[destination] {
+                bits[destination] = true;
+                work.push(destination);
+            }
+        }
+    }
+}
+
+fn validate_vertex_integer_bits(vertex: &StageIr) -> Result<(), CompileError> {
+    let mut bits: Vec<_> = vertex
+        .values
+        .iter()
+        .map(|(_, op)| matches!(op, Op::IntegerBinary(..) | Op::ScalarBits(_)))
+        .collect();
+    propagate_vgpr_bits(vertex, &mut bits);
+    for (offset, op) in &vertex.values {
+        if let Op::Binary(_, a, b) = op
+            && (bits[a.0] || bits[b.0])
+        {
+            return Err(CompileError::Verify {
+                offset: offset.unwrap_or(0),
+                reason: "floating arithmetic on integer bits requires explicit conversion",
+            });
+        }
+    }
+    for export in vertex.position.iter().chain(vertex.parameter.iter()) {
+        if export.values.iter().any(|value| bits[value.0]) {
+            return Err(CompileError::Verify {
+                offset: export.offset,
+                reason: "integer bits cannot be exported as vertex position or parameter",
+            });
+        }
+    }
+    Ok(())
+}
+
 fn validate_resource_types(
     pixel: &StageIr,
     types: GraphicsPipelineTypes4,
@@ -1667,10 +1803,16 @@ fn validate_resource_types(
             });
         }
     }
-    let mut integer_bits: Vec<bool> = pixel.values.iter().map(|(_, op)| matches!(op,
-        Op::SampleLodZero {texture_index, ..} if matches!(types.textures[binding_slot(*texture_index)],
-            GraphicsSampleType::Uint | GraphicsSampleType::UintArray)
-    )).collect();
+    let mut integer_bits: Vec<bool> = pixel
+        .values
+        .iter()
+        .map(|(_, op)| {
+            matches!(op, Op::IntegerBinary(..) | Op::ScalarBits(_))
+                || matches!(op, Op::SampleLodZero { texture_index, .. }
+                if matches!(types.textures[binding_slot(*texture_index)],
+                    GraphicsSampleType::Uint | GraphicsSampleType::UintArray))
+        })
+        .collect();
     let mut dependents = vec![Vec::new(); pixel.values.len()];
     for block in pixel.blocks.iter().flatten() {
         for (_, copies) in &block.edge_copies {
@@ -1714,7 +1856,9 @@ fn validate_resource_types(
     }
     for (offset, op) in &pixel.values {
         let escaped = match op {
-            Op::Binary(_, a, b) => pixel_coordinates[a.0] || pixel_coordinates[b.0],
+            Op::Binary(_, a, b) | Op::IntegerBinary(_, a, b) => {
+                pixel_coordinates[a.0] || pixel_coordinates[b.0]
+            }
             Op::SampleLodZero { u, v, layer, .. } => {
                 pixel_coordinates[u.0]
                     || pixel_coordinates[v.0]
@@ -1774,7 +1918,9 @@ fn validate_resource_types(
     for (offset, op) in &pixel.values {
         let invalid_use = match op {
             Op::SampleLodZero { u, v, .. } => uniform_floats[u.0] || uniform_floats[v.0],
-            Op::Binary(_, a, b) => uniform_floats[a.0] || uniform_floats[b.0],
+            Op::Binary(_, a, b) | Op::IntegerBinary(_, a, b) => {
+                uniform_floats[a.0] || uniform_floats[b.0]
+            }
             Op::Store2D { data, .. } => data.iter().flatten().any(|v| uniform_floats[v.0]),
             _ => false,
         };
@@ -2088,6 +2234,35 @@ fn emit_range(
                 format!("const.f32 0x{bits:08x}"),
                 format!("as_type<float>(0x{bits:08x}u)"),
             ),
+            Op::ScalarBits(source) => {
+                let source = source.expression();
+                (
+                    format!("scalar.bits {source}"),
+                    format!("as_type<float>({source})"),
+                )
+            }
+            Op::IntegerBinary(operator, left, right) => {
+                let a = format!("as_type<uint>({left})");
+                let b = format!("as_type<uint>({right})");
+                let expression = match operator {
+                    Binary::Vector(operation) => super::vector_expression(operation, &a, &b),
+                    Binary::Add => format!("{a} + {b}"),
+                    Binary::And => format!("{a} & {b}"),
+                    Binary::Or => format!("{a} | {b}"),
+                    Binary::Xor => format!("{a} ^ {b}"),
+                    Binary::ShiftLeft => format!("{a} << ({b} & 31u)"),
+                    Binary::ShiftRight => format!("{a} >> ({b} & 31u)"),
+                    Binary::ArithmeticShiftRight => {
+                        format!("as_type<uint>(as_type<int>({a}) >> ({b} & 31u))")
+                    }
+                    _ => unreachable!("validated integer vector operation"),
+                };
+                let (mnemonic, _) = operator.operator();
+                (
+                    format!("{mnemonic}.bits {left}, {right}"),
+                    format!("as_type<float>({expression})"),
+                )
+            }
             Op::Binary(operator, left, right) => {
                 let (mnemonic, symbol) = operator.operator();
                 (
