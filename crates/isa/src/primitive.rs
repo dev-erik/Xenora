@@ -316,3 +316,18 @@ pub const fn lshl_add_carry_u32(a: u32, b: u32, shift: u32) -> (u32, bool) {
     let sum = ((a as u64) << shift) + b as u64;
     (sum as u32, sum >> 32 != 0)
 }
+
+/// Pack the low halfwords of S0 and S1, with S0 in the low result half.
+pub const fn pack_ll_b32(a: u32, b: u32) -> u32 {
+    (a & 0xffff) | (b << 16)
+}
+
+/// Pack S0's low halfword and S1's high halfword.
+pub const fn pack_lh_b32(a: u32, b: u32) -> u32 {
+    (a & 0xffff) | (b & 0xffff_0000)
+}
+
+/// Pack the high halfwords of S0 and S1, with S0 in the low result half.
+pub const fn pack_hh_b32(a: u32, b: u32) -> u32 {
+    (a >> 16) | (b & 0xffff_0000)
+}

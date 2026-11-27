@@ -595,3 +595,99 @@ fn translated_scalar_direct_phi_observes_false_scc_and_high_bits() {
         ]
     );
 }
+
+#[test]
+fn translated_scalar_packing_preserves_runtime_scc_and_literal_halves() {
+    let gpu = NativeCompute::new().unwrap();
+    let fixtures: [(&[u8], u32); 3] = [
+        (
+            include_bytes!("../../../../fixtures/rdna2/x9-scalar-pack-ll-ps.bin"),
+            0xef01_abcd,
+        ),
+        (
+            include_bytes!("../../../../fixtures/rdna2/x9-scalar-pack-lh-ps.bin"),
+            0x5678_abcd,
+        ),
+        (
+            include_bytes!("../../../../fixtures/rdna2/x9-scalar-pack-hh-ps.bin"),
+            0x5678_1234,
+        ),
+    ];
+    for (original, result) in fixtures {
+        for alias_src1 in [false, true] {
+            for constants in [false, true] {
+                let mut ps = original.to_vec();
+                if alias_src1 {
+                    // PACK s33,s32,s33 followed by MOV s105,s33: capture both inputs first.
+                    let word = u32::from_le_bytes(ps[12..16].try_into().unwrap());
+                    ps[12..16].copy_from_slice(&((word & !0x007f0000) | (33 << 16)).to_le_bytes());
+                    ps[16] = 33;
+                }
+                if constants {
+                    let mut prefix: Vec<u8> = [0xbea003ffu32, 0x1234abcd, 0xbea103ff, 0x5678ef01]
+                        .into_iter()
+                        .flat_map(u32::to_le_bytes)
+                        .collect();
+                    prefix.extend_from_slice(&ps[8..]);
+                    ps = prefix;
+                }
+                let pipeline = compile_graphics_pipeline(Architecture::Gfx1030, VS, &ps).unwrap();
+                for flag in [false, true] {
+                    for matches in [true, false] {
+                        let draws = [TriangleDraw {
+                            vertices: &POS,
+                            colors: &COLORS,
+                            viewport: [1, 1],
+                        }];
+                        let states = [TriangleState::default()];
+                        let shaders = [TriangleShader {
+                            source: &pipeline.shader.msl,
+                            entries: ENTRIES,
+                        }];
+                        let uniforms = [DrawUniforms {
+                            required_mask: pipeline.required_uniform_mask,
+                            values: Some([
+                                0x1234_abcd,
+                                0x5678_ef01,
+                                u32::from(flag),
+                                result ^ u32::from(!matches),
+                                0,
+                                0,
+                                0,
+                                0,
+                            ]),
+                        }];
+                        let pass = TriangleTargetsPass {
+                            draws: &draws,
+                            states: &states,
+                            extent: [1, 1],
+                            clears: &[[7, 11, 13, 255]],
+                            clear_depth: None,
+                        };
+                        let actual = gpu
+                            .submit_view_binding_triangle_targets_with_uniforms_rgba8(
+                                &shaders,
+                                &pass,
+                                &[vec![]],
+                                None,
+                                &[None],
+                                &uniforms,
+                            )
+                            .unwrap()
+                            .wait()
+                            .unwrap();
+                        assert_eq!(
+                            actual,
+                            vec![vec![
+                                if matches { 255 } else { 0 },
+                                if flag { 255 } else { 0 },
+                                0,
+                                255
+                            ]]
+                        );
+                    }
+                }
+            }
+        }
+    }
+}

@@ -50,6 +50,7 @@ OPERATIONS = {
     "mul": "Multiply", "mul_hi": "MultiplyHigh", "bfe": "BitfieldExtract",
     "absdiff": "AbsoluteDifference", "lshl_add": "ShiftLeftAdd",
     "mul24": "Multiply24", "mul_hi24": "MultiplyHigh24",
+    "pack_ll": "PackLowLow", "pack_lh": "PackLowHigh", "pack_hh": "PackHighHigh",
 }
 # Unary operations read one source; they need an operand rule of the unary kind.
 UNARY = {"not", "brev", "bcnt0", "bcnt1", "ff0", "ff1", "flbit", "sext", "abs"}
@@ -61,6 +62,12 @@ RELATION_KEY = "relation"
 RELATIONS = {
     "eq": "Equal", "lg": "NotEqual", "gt": "Greater", "ge": "GreaterOrEqual",
     "lt": "Less", "le": "LessOrEqual",
+}
+# XML widths reflect which halfword each pack operation reads.
+PACK_SOURCE_WIDTHS = {
+    "pack_ll": {"SSRC0": 16, "SSRC1": 16},
+    "pack_lh": {"SSRC0": 16, "SSRC1": 32},
+    "pack_hh": {"SSRC0": 32, "SSRC1": 32},
 }
 # (relation, signedness) -> primitive. Equality does not depend on signedness,
 # so both declared signednesses of EQ and LG share one primitive.
@@ -77,6 +84,7 @@ COMPARE_PRIMITIVES = {
 LOGICAL = {
     "and", "or", "xor", "andn2", "orn2", "nand", "nor", "xnor",
     "not", "brev", "bcnt0", "bcnt1", "ff0", "ff1", "cselect", "bfm",
+    "pack_ll", "pack_lh", "pack_hh",
 }
 ARITHMETIC = {
     "add", "sub", "min", "max", "mul", "mul_hi", "bfe", "absdiff", "lshl_add", "mul24", "mul_hi24",
@@ -174,6 +182,9 @@ PRIMITIVES = {
     ("max", "unsigned"): ("selected_src0", "max_u32", False),
     ("cselect", "bitwise"): ("unchanged", "cselect_b32", True),
     ("bfm", "bitwise"): ("unchanged", "bfm_b32", False),
+    ("pack_ll", "bitwise"): ("unchanged", "pack_ll_b32", False),
+    ("pack_lh", "bitwise"): ("unchanged", "pack_lh_b32", False),
+    ("pack_hh", "bitwise"): ("unchanged", "pack_hh_b32", False),
     ("mul", "signed"): ("unchanged", "mul_lo_i32", False),
     ("mul_hi", "unsigned"): ("unchanged", "mul_hi_u32", False),
     ("mul_hi", "signed"): ("unchanged", "mul_hi_i32", False),
@@ -388,7 +399,8 @@ def _check_xml(form, rule, snapshot, errors):
             continue
         data_format, size, is_input, is_output = operands[field]
         bits = form.get(SOURCE_BITS_KEY) if is_source else None
-        expected = bits if type(bits) is int else form["width"]
+        pack_bits = PACK_SOURCE_WIDTHS.get(form["operation"], {}).get(field)
+        expected = pack_bits or (bits if type(bits) is int else form["width"])
         if size != expected:
             errors.append(f"{label}: {field} is {size} bits in the XML, declared {expected}")
         if (is_input, is_output) != (is_source, not is_source):
@@ -398,6 +410,9 @@ def _check_xml(form, rule, snapshot, errors):
                 errors.append(
                     f"{label}: control operand {field} has XML format {data_format}, not FMT_NUM_U32"
                 )
+        elif pack_bits is not None:
+            if data_format != f"FMT_NUM_B{pack_bits}":
+                errors.append(f"{label}: {field} has XML format {data_format}, not FMT_NUM_B{pack_bits}")
         elif type(bits) is int:
             if data_format != f"FMT_NUM_I{bits}":
                 errors.append(f"{label}: {field} has XML format {data_format}, not FMT_NUM_I{bits}")

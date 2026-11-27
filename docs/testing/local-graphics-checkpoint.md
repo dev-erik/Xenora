@@ -6,6 +6,48 @@ claim of Xbox hardware equivalence. Supporting raw logs, mutation records and
 source manifests remain local and are not distributed with the repository.
 The array-range descriptor increment below was validated on 26 November 2026.
 
+## Stage 3.1 increment: scalar half-word packing
+
+27 November 2026. Three SOP2 forms now pack selected 16-bit halves: LL, LH and HH.
+They preserve SCC (including unset) and keep the current normal-SGPR, inline-integer
+and single-literal restrictions. Compute resolves these scalar operands during
+translation; graphics supports both constant and runtime uniform/local operands.
+The source contract is [scalar ALU](../shaders/scalar-alu.md#scalar-half-word-packing).
+
+The initial regression failed at the unsupported opcode before implementation
+(`artifacts/s31-pack-red.log`). Independent literal cases check both destination
+alias directions, equal sources, distinct halves, zero/all-ones/high bits, literals
+and incoming SCC states. A later SCC consumer rejects when packing followed an
+unset SCC. Both reference interpreters implement these forms independently of the
+registry and generated production code.
+
+The focused LLVM oracle passed 887 instruction comparisons across 103 forms.
+Generator validation passed 111 tests. Native graphics checks cover all three
+forms, both alias directions, constant and runtime operands, both SCC values and
+matching/nonmatching result probes (48 draws). Native compute uses 63 case vectors
+plus one original assembled chained fixture. Tests run under Metal API and shader
+validation. These checks establish synthetic gfx1030 behavior on Apple M4 Max,
+not AMD/Xbox hardware equivalence.
+
+Three isolated faults failed runtime assertions: initializing compute SCC,
+initializing graphics SCC, and selecting the wrong high half in graphics. Each
+source was restored byte-for-byte; restored native graphics passed. Records are
+in `artifacts/s31-pack/mutations.json`. They are scoped sensitivity checks, not
+an exhaustive mutation score.
+
+All nine gates passed in `artifacts/validation-full.m4o7Ly`: **1,026 workspace
+checks passed, zero failed, 147 ignored**; the GPU-script suites reported **463
+passed, zero failed, one ignored**. These aggregates overlap and include CPU tests;
+ignored cases are not GPU evidence. The native packing compute test executed under
+the GPU script despite being ignored by default in the CPU-only workspace run.
+The native artifact audit passed for **117 ARM64 executables/loadable artifacts**,
+with no Vulkan/MoltenVK linkage. Two independent LOW-effort reviewers accepted
+the three-form increment after inspecting source, expectations, mutations and
+final evidence. Both verified all 20 log hashes and 24 source/test/fixture/script
+hashes in `artifacts/s31-pack/evidence.json`; no findings remain. This increment
+adds three forms; S3.1's broader instruction/operand coverage and S3.2–S3.6 remain
+open. Decoded-form and declared-form totals do not measure game compatibility.
+
 ## Stage 1 revalidation before shader expansion
 
 27 November 2026, implementation baseline `3368468`. The original finite rendering

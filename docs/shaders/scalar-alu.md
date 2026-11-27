@@ -1,6 +1,6 @@
 # SOP2 scalar ALU subset
 
-Xenora decodes and executes thirty-three gfx1030 SOP2 forms. Each takes 32-bit
+Xenora decodes and executes thirty-six gfx1030 SOP2 forms. Each takes 32-bit
 operands and writes a normal SGPR (s0-s105). The seventeen below set SCC; the
 sixteen in [Arithmetic, select and bit-field forms](#arithmetic-select-and-bit-field-forms)
 set it or leave it as the guide says.
@@ -67,6 +67,29 @@ the registry.
   `s_subb_u32` (`SIISelLowering.cpp`), which is only correct if SCC is the
   borrow and SUBB subtracts it. LLVM 23.1.6 also checks every encoding here
   against the decoder and the reference (`compares_fixture_instructions_against_llvm`).
+
+## Scalar half-word packing
+
+The three scalar packing forms select 16-bit halves without reading or changing
+SCC. `s_pack_ll_b32_b16` places S0's low half below S1's low half;
+`s_pack_lh_b32_b16` places S0's low half below S1's high half;
+`s_pack_hh_b32_b16` places S0's high half below S1's high half.
+These follow the [AMD RDNA 2 guide, section 12.1](https://docs.amd.com/v/u/en-US/rdna2-shader-instruction-set-architecture).
+Normal SGPR destinations/sources, inline integers and at most one literal retain
+the existing operand restrictions. Aliased sources are read before the destination
+changes. An unset SCC remains unset.
+
+Compute translation resolves scalar values at translation time. Graphics stages
+also accept runtime uniform/local operands and emit unsigned integer expressions;
+they preserve SCC across packing rather than deriving it from the result. Runtime
+graphics values are checked against literal packed words and SCC-dependent pixels.
+This extends three forms, not the whole Stage 3 instruction milestone.
+
+Original LLVM fixtures are `scalar-pack` and `x9-scalar-pack-{ll,lh,hh}-ps`.
+Independent cases are in `tests/validation/tests/scalar_pack.rs`; the reference
+interpreters do not share production semantic code. Native compute tests are
+opt-in and require Metal validation. Current execution evidence is recorded in
+the local graphics checkpoint after validation.
 
 ## Not supported
 

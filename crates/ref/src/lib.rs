@@ -57,7 +57,7 @@ pub enum Op {
     MoveScalar(u8, u8),
     /// VOPC 32-bit integer compare writing the Wave32 mask to `vcc_lo`.
     Compare(Comparison, CompareSource, u8),
-    /// SOP2 operation writing an SGPR and SCC.
+    /// SOP2 operation writing an SGPR, and SCC for some forms.
     Scalar(ScalarAlu, u8, Source, Source),
     /// SOPC `s_cmp_eq_{i32,u32}` (opcodes 0 and 6, identical per guide 12.4).
     CompareEqual(Source, Source),
@@ -192,6 +192,12 @@ pub enum ScalarAlu {
     AbsoluteDifference,
     /// D = (S0 << N) + S1, SCC = ((S0 << N) + S1 >= 2^32) with N = 1..4.
     ShiftLeftAdd(u8),
+    /// Guide 12.1: pack S0's selected half into D[15:0] and S1's into
+    /// D[31:16]. LL, LH and HH leave SCC unchanged, including unset.
+    Pack {
+        high0: bool,
+        high1: bool,
+    },
     /// D = high 32 bits of S0 * S1; SCC unchanged.
     MultiplyHigh {
         signed: bool,
@@ -493,7 +499,7 @@ pub fn decode(code: &[u8]) -> Result<Vec<DecodedInstruction>, ReferenceError> {
                     && matches!(
                         (high & 0x3f) << 1 | low >> 7,
                         0..=10 | 14 | 16 | 18 | 20 | 22 | 24 | 26 | 28 | 30 | 32 | 34
-                            | 36 | 38..=40 | 44 | 46..=49 | 53 | 54
+                            | 36 | 38..=40 | 44 | 46..=54
                     ) =>
             {
                 let kind = match (high & 0x3f) << 1 | low >> 7 {
@@ -525,6 +531,10 @@ pub fn decode(code: &[u8]) -> Result<Vec<DecodedInstruction>, ReferenceError> {
                     40 => ScalarAlu::BitfieldExtract { signed: true },
                     44 => ScalarAlu::AbsoluteDifference,
                     op @ 46..=49 => ScalarAlu::ShiftLeftAdd(op - 45),
+                    op @ 50..=52 => ScalarAlu::Pack {
+                        high0: op == 52,
+                        high1: op != 50,
+                    },
                     53 => ScalarAlu::MultiplyHigh { signed: false },
                     _ => ScalarAlu::MultiplyHigh { signed: true },
                 };
@@ -1035,6 +1045,11 @@ fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32
                     ScalarAlu::Select => (if carry == 1 { lhs } else { rhs }, false),
                     ScalarAlu::BitfieldMask => (((1 << (lhs & 0x1f)) - 1) << (rhs & 0x1f), false),
                     ScalarAlu::Multiply => (signed_lhs * signed_rhs, false),
+                    ScalarAlu::Pack { high0, high1 } => {
+                        let low = (lhs >> if high0 { 16 } else { 0 }) & 0xffff;
+                        let high = (rhs >> if high1 { 16 } else { 0 }) & 0xffff;
+                        (low + high * 65536, false)
+                    }
                     ScalarAlu::MultiplyHigh { signed } => {
                         // The unsigned product fits only in u64.
                         let high = if signed {
@@ -1100,6 +1115,7 @@ fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32
                         | ScalarAlu::BitfieldMask
                         | ScalarAlu::Multiply
                         | ScalarAlu::MultiplyHigh { .. }
+                        | ScalarAlu::Pack { .. }
                 ) {
                     scc = Some(flag);
                 }
@@ -1264,6 +1280,79 @@ mod tests {
     use super::*;
 
     const FIXTURE: &[u8] = include_bytes!("../../../fixtures/rdna2/add.bin");
+
+    #[test]
+    fn executes_scalar_pack_and_preserves_scc_including_unset() {
+        for (opcode, expected) in [(50, 0xdef0_5678), (51, 0x9abc_5678), (52, 0x9abc_1234)] {
+            for initial_scc in [None, Some(false), Some(true)] {
+                for dst in [8, 9, 10] {
+                    let mut words = vec![0xbe88_03ff, 0x1234_5678, 0xbe89_03ff, 0x9abc_def0];
+                    if let Some(flag) = initial_scc {
+                        words.push(if flag { 0xbf06_8080 } else { 0xbf06_8180 });
+                    }
+                    words.push(0x8000_0000 | opcode << 23 | dst << 16 | 9 << 8 | 8);
+                    let finish = |prefix: &[u32], output: u32| {
+                        let mut words = prefix.to_vec();
+                        words.extend([
+                            0x7e02_0200 | output,
+                            0xe070_2000,
+                            0x8001_0100,
+                            0xbbfd_0000,
+                            0xbf81_0000,
+                        ]);
+                        words
+                            .iter()
+                            .flat_map(|w| w.to_le_bytes())
+                            .collect::<Vec<_>>()
+                    };
+                    assert_eq!(execute(&finish(&words, dst), &[0]), Ok(vec![expected]));
+                    // CSELECT reads SCC: unset must still fail, known flags select
+                    // distinct constants rather than depending on the packed value.
+                    words.push(0x850a_8281);
+                    let result = execute(&finish(&words, 10), &[0]);
+                    match initial_scc {
+                        None => {
+                            assert_eq!(result.unwrap_err().detail, "select on uninitialized SCC")
+                        }
+                        Some(flag) => assert_eq!(result, Ok(vec![if flag { 1 } else { 2 }])),
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn decodes_scalar_pack_forms_and_keeps_operand_restrictions() {
+        for (opcode, high0, high1) in [(50, false, false), (51, false, true), (52, true, true)] {
+            let word = |dst: u32, a: u32, b: u32| {
+                0x8000_0000u32 | (opcode << 23) | (dst << 16) | (b << 8) | a
+            };
+            let bytes = |words: &[u32]| {
+                words
+                    .iter()
+                    .flat_map(|w| w.to_le_bytes())
+                    .collect::<Vec<_>>()
+            };
+            let code = bytes(&[word(105, 8, 193), 0xbf81_0000]);
+            assert_eq!(
+                decode(&code).unwrap()[0].op,
+                Op::Scalar(
+                    ScalarAlu::Pack { high0, high1 },
+                    105,
+                    Source::Register(8),
+                    Source::Immediate(u32::MAX),
+                )
+            );
+            for (a, b) in [(255, 8), (8, 255)] {
+                let code = bytes(&[word(8, a, b), 0xabcd_1234, 0xbf81_0000]);
+                assert_eq!(decode(&code).unwrap()[0].byte_len, 8);
+                assert!(decode(&bytes(&[word(8, a, b)])).is_err());
+            }
+            for (dst, a, b) in [(106, 8, 9), (8, 106, 9), (8, 8, 106), (8, 255, 255)] {
+                assert!(decode(&bytes(&[word(dst, a, b), 0xbf81_0000])).is_err());
+            }
+        }
+    }
 
     #[test]
     fn computes_the_independent_known_answers() {

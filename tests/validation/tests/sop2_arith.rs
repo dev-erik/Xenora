@@ -556,6 +556,7 @@ fn other_sop2_opcodes_stay_unsupported() {
         .iter()
         .map(|&(form, _)| form as u32)
         .chain(earlier)
+        .chain(50..=52) // Scalar packing has separate independent coverage.
         .collect();
     let init = [(8, 1), (9, 2), (12, 3), (13, 4)];
     for op in (0..=95).filter(|op| !supported.contains(op)) {

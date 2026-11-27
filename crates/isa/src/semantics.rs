@@ -76,6 +76,12 @@ pub enum Operation {
     Select,
     /// `((1 << S0[4:0]) - 1) << S1[4:0]`.
     BitfieldMask,
+    /// Pack S0 low and S1 low halfwords into the low and high result halves.
+    PackLowLow,
+    /// Pack S0 low and S1 high halfwords into the low and high result halves.
+    PackLowHigh,
+    /// Pack S0 high and S1 high halfwords into the low and high result halves.
+    PackHighHigh,
     /// Low 32 bits of the product.
     Multiply,
     /// High 32 bits of the 64-bit product.

@@ -475,6 +475,12 @@ pub enum ScalarAluOp {
     MulHiU32,
     /// `s_mul_hi_i32` (SOP2 opcode 54): signed mul_hi, SCC = unchanged.
     MulHiI32,
+    /// `s_pack_ll_b32_b16` (SOP2 opcode 50): bitwise pack_ll, SCC = unchanged.
+    PackLlB32B16,
+    /// `s_pack_lh_b32_b16` (SOP2 opcode 51): bitwise pack_lh, SCC = unchanged.
+    PackLhB32B16,
+    /// `s_pack_hh_b32_b16` (SOP2 opcode 52): bitwise pack_hh, SCC = unchanged.
+    PackHhB32B16,
 }
 
 /// ScalarAluOp by SOP2 OP field value; `None` for undeclared opcodes.
@@ -529,9 +535,9 @@ const SCALAR_ALU_OP_BY_OPCODE: [Option<ScalarAluOp>; 128] = [
     Some(ScalarAluOp::Lshl2AddU32),
     Some(ScalarAluOp::Lshl3AddU32),
     Some(ScalarAluOp::Lshl4AddU32),
-    None,
-    None,
-    None,
+    Some(ScalarAluOp::PackLlB32B16),
+    Some(ScalarAluOp::PackLhB32B16),
+    Some(ScalarAluOp::PackHhB32B16),
     Some(ScalarAluOp::MulHiU32),
     Some(ScalarAluOp::MulHiI32),
     None,
@@ -611,7 +617,7 @@ const SCALAR_ALU_OP_BY_OPCODE: [Option<ScalarAluOp>; 128] = [
 
 impl ScalarAluOp {
     /// Every operation, in registry order.
-    pub const ALL: [Self; 33] = [
+    pub const ALL: [Self; 36] = [
         Self::AddU32,
         Self::SubU32,
         Self::AddI32,
@@ -645,6 +651,9 @@ impl ScalarAluOp {
         Self::Lshl4AddU32,
         Self::MulHiU32,
         Self::MulHiI32,
+        Self::PackLlB32B16,
+        Self::PackLhB32B16,
+        Self::PackHhB32B16,
     ];
 
     /// Selects the operation from a first instruction word: the SOP2 encoding
@@ -692,6 +701,9 @@ impl ScalarAluOp {
             Self::Lshl4AddU32 => "s_lshl4_add_u32",
             Self::MulHiU32 => "s_mul_hi_u32",
             Self::MulHiI32 => "s_mul_hi_i32",
+            Self::PackLlB32B16 => "s_pack_ll_b32_b16",
+            Self::PackLhB32B16 => "s_pack_lh_b32_b16",
+            Self::PackHhB32B16 => "s_pack_hh_b32_b16",
         }
     }
 
@@ -731,6 +743,9 @@ impl ScalarAluOp {
             Self::Lshl4AddU32 => 30,
             Self::MulHiU32 => 31,
             Self::MulHiI32 => 32,
+            Self::PackLlB32B16 => 68,
+            Self::PackLhB32B16 => 69,
+            Self::PackHhB32B16 => 70,
         }]
     }
 
@@ -770,6 +785,9 @@ impl ScalarAluOp {
             Self::Lshl4AddU32 => false,
             Self::MulHiU32 => false,
             Self::MulHiI32 => false,
+            Self::PackLlB32B16 => false,
+            Self::PackLhB32B16 => false,
+            Self::PackHhB32B16 => false,
         }
     }
 
@@ -809,6 +827,9 @@ impl ScalarAluOp {
             Self::Lshl4AddU32 => true,
             Self::MulHiU32 => false,
             Self::MulHiI32 => false,
+            Self::PackLlB32B16 => false,
+            Self::PackLhB32B16 => false,
+            Self::PackHhB32B16 => false,
         }
     }
 
@@ -934,6 +955,9 @@ impl ScalarAluOp {
             }
             Self::MulHiU32 => (primitive::mul_hi_u32(src0, src1), None),
             Self::MulHiI32 => (primitive::mul_hi_i32(src0, src1), None),
+            Self::PackLlB32B16 => (primitive::pack_ll_b32(src0, src1), None),
+            Self::PackLhB32B16 => (primitive::pack_lh_b32(src0, src1), None),
+            Self::PackHhB32B16 => (primitive::pack_hh_b32(src0, src1), None),
         }
     }
 }
@@ -1413,7 +1437,7 @@ impl VectorAluOp {
 }
 
 /// Identity of every registry form, in registry order.
-pub const FORM_IDS: [(&str, EncodingFamily); 68] = [
+pub const FORM_IDS: [(&str, EncodingFamily); 71] = [
     ("S_ADD_U32", EncodingFamily::Sop2),
     ("S_SUB_U32", EncodingFamily::Sop2),
     ("S_ADD_I32", EncodingFamily::Sop2),
@@ -1482,10 +1506,13 @@ pub const FORM_IDS: [(&str, EncodingFamily); 68] = [
     ("V_ADD_NC_U32", EncodingFamily::Vop2),
     ("V_SUB_NC_U32", EncodingFamily::Vop2),
     ("V_SUBREV_NC_U32", EncodingFamily::Vop2),
+    ("S_PACK_LL_B32_B16", EncodingFamily::Sop2),
+    ("S_PACK_LH_B32_B16", EncodingFamily::Sop2),
+    ("S_PACK_HH_B32_B16", EncodingFamily::Sop2),
 ];
 
 /// One validated row per registry form, in registry order.
-pub static FORMS: [FormSemantics; 68] = [
+pub static FORMS: [FormSemantics; 71] = [
     FormSemantics {
         name: "S_ADD_U32",
         family: EncodingFamily::Sop2,
@@ -2912,6 +2939,69 @@ pub static FORMS: [FormSemantics; 68] = [
         wave: Wave::Any,
         operands: OperandRule::Vop2Vgpr,
         spec: &[SpecRef { document: Document::Guide, section: "12.7", page: 134 }],
+        verify: &[Evidence::Reference, Evidence::Independent, Evidence::Metal, Evidence::LlvmEncoding],
+    },
+    FormSemantics {
+        name: "S_PACK_LL_B32_B16",
+        family: EncodingFamily::Sop2,
+        opcode: 50,
+        operation: Operation::PackLowLow,
+        signedness: Signedness::Bitwise,
+        carry_in: CarryIn::None,
+        width: 32,
+        shift_count_bits: 0,
+        shift_amount: 0,
+        swap_sources: false,
+        source_bits: 32,
+        relation: None,
+        scc: SccEffect::Unchanged,
+        vcc: MaskEffect::Unchanged,
+        exec: MaskEffect::Unchanged,
+        wave: Wave::Any,
+        operands: OperandRule::Sop2Sgpr,
+        spec: &[SpecRef { document: Document::Guide, section: "12.1", page: 106 }],
+        verify: &[Evidence::Reference, Evidence::Independent, Evidence::Metal, Evidence::LlvmEncoding],
+    },
+    FormSemantics {
+        name: "S_PACK_LH_B32_B16",
+        family: EncodingFamily::Sop2,
+        opcode: 51,
+        operation: Operation::PackLowHigh,
+        signedness: Signedness::Bitwise,
+        carry_in: CarryIn::None,
+        width: 32,
+        shift_count_bits: 0,
+        shift_amount: 0,
+        swap_sources: false,
+        source_bits: 32,
+        relation: None,
+        scc: SccEffect::Unchanged,
+        vcc: MaskEffect::Unchanged,
+        exec: MaskEffect::Unchanged,
+        wave: Wave::Any,
+        operands: OperandRule::Sop2Sgpr,
+        spec: &[SpecRef { document: Document::Guide, section: "12.1", page: 106 }],
+        verify: &[Evidence::Reference, Evidence::Independent, Evidence::Metal, Evidence::LlvmEncoding],
+    },
+    FormSemantics {
+        name: "S_PACK_HH_B32_B16",
+        family: EncodingFamily::Sop2,
+        opcode: 52,
+        operation: Operation::PackHighHigh,
+        signedness: Signedness::Bitwise,
+        carry_in: CarryIn::None,
+        width: 32,
+        shift_count_bits: 0,
+        shift_amount: 0,
+        swap_sources: false,
+        source_bits: 32,
+        relation: None,
+        scc: SccEffect::Unchanged,
+        vcc: MaskEffect::Unchanged,
+        exec: MaskEffect::Unchanged,
+        wave: Wave::Any,
+        operands: OperandRule::Sop2Sgpr,
+        spec: &[SpecRef { document: Document::Guide, section: "12.1", page: 106 }],
         verify: &[Evidence::Reference, Evidence::Independent, Evidence::Metal, Evidence::LlvmEncoding],
     },
 ];

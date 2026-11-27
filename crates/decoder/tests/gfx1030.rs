@@ -365,6 +365,18 @@ fn reference_op(instruction: Instruction) -> Op {
                 ScalarAluOp::Lshl2AddU32 => ScalarAlu::ShiftLeftAdd(2),
                 ScalarAluOp::Lshl3AddU32 => ScalarAlu::ShiftLeftAdd(3),
                 ScalarAluOp::Lshl4AddU32 => ScalarAlu::ShiftLeftAdd(4),
+                ScalarAluOp::PackLlB32B16 => ScalarAlu::Pack {
+                    high0: false,
+                    high1: false,
+                },
+                ScalarAluOp::PackLhB32B16 => ScalarAlu::Pack {
+                    high0: false,
+                    high1: true,
+                },
+                ScalarAluOp::PackHhB32B16 => ScalarAlu::Pack {
+                    high0: true,
+                    high1: true,
+                },
                 ScalarAluOp::MulHiU32 => ScalarAlu::MultiplyHigh { signed: false },
                 ScalarAluOp::MulHiI32 => ScalarAlu::MultiplyHigh { signed: true },
             },
@@ -525,6 +537,7 @@ fn compares_fixture_instructions_against_llvm() {
         include_bytes!("../../../fixtures/rdna2/scalar-compare.bin"),
         include_bytes!("../../../fixtures/rdna2/scalar-unary.bin"),
         include_bytes!("../../../fixtures/rdna2/scalar-arith.bin"),
+        include_bytes!("../../../fixtures/rdna2/scalar-pack.bin"),
         include_bytes!("../../../fixtures/rdna2/vector-integer.bin"),
         include_bytes!("../../../fixtures/rdna2/vector-compare.bin"),
         high_registers,
@@ -532,7 +545,7 @@ fn compares_fixture_instructions_against_llvm() {
     ] {
         count += compare_against_llvm(fixture, &mut forms);
     }
-    assert_eq!(forms.len(), 100, "forms compared: {forms:?}");
+    assert_eq!(forms.len(), 103, "forms compared: {forms:?}");
     eprintln!(
         "{count} three-way instruction comparisons across {} forms",
         forms.len()

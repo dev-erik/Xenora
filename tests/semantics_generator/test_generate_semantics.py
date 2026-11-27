@@ -849,6 +849,44 @@ def _reorder(value):
     return value
 
 
+class ScalarPack(unittest.TestCase):
+    def fixture(self, half):
+        reg = registry()
+        snap = snapshot()
+        opcode, widths = {"ll": (50, (16, 16)), "lh": (51, (16, 32)), "hh": (52, (32, 32))}[half]
+        name = f"S_PACK_{half.upper()}_B32_B16"
+        reg["form"] = [_form(name, opcode, "Pack", f"pack_{half}", "bitwise", "unchanged")]
+        operands = _operands("FMT_NUM_B32", scc_out=False)
+        for operand, width in zip(operands[1:], widths):
+            operand[1], operand[3] = f"FMT_NUM_B{width}", width
+        snap["variants"][(name, "ENC_SOP2")] = {
+            "instruction": name, "encoding": "ENC_SOP2", "opcode": opcode, "operands": operands,
+        }
+        snap["encodings"]["ENC_SOP2"]["identifiers"].append(0x80000000 | (opcode << 23))
+        return reg, snap, operands
+
+    def test_pack_operations_validate_and_render(self):
+        for half in ("ll", "lh", "hh"):
+            reg, snap, _ = self.fixture(half)
+            self.assertEqual(gen.validate(reg, snap), [])
+            self.assertIn(f"primitive::pack_{half}_b32(src0, src1), None", gen.render(reg, snap))
+
+    def test_pack_rejects_wrong_source_width_and_format(self):
+        for half in ("ll", "lh", "hh"):
+            for index in (1, 2):
+                for field, wrong in ((1, "FMT_NUM_U32"), (3, 8)):
+                    reg, snap, operands = self.fixture(half)
+                    operands[index][field] = wrong
+                    self.assertTrue(gen.validate(reg, snap))
+
+    def test_pack_rejects_scc_and_signedness_changes(self):
+        for half in ("ll", "lh", "hh"):
+            for key, value in (("carry_in", "scc"), ("scc", "nonzero"), ("signedness", "signed")):
+                reg, snap, _ = self.fixture(half)
+                reg["form"][0][key] = value
+                self.assertTrue(gen.validate(reg, snap))
+
+
 class Render(unittest.TestCase):
     def test_two_renders_are_identical(self):
         self.assertEqual(gen.render(registry(), snapshot()), gen.render(registry(), snapshot()))

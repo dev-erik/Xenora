@@ -14,7 +14,7 @@
 //! and signed add and subtract, add-with-carry, subtract-with-borrow, AND, OR
 //! and XOR, the stage C forms ANDN2, ORN2, NAND, NOR, XNOR, LSHL, LSHR and
 //! ASHR (32-bit), the 32-bit integer forms MIN/MAX (I32, U32), CSELECT, BFM,
-//! MUL_I32, BFE (U32, I32), ABSDIFF, LSHL1-4_ADD and MUL_HI (U32, I32), VOP1 move
+//! MUL_I32, BFE (U32, I32), ABSDIFF, LSHL1-4_ADD, PACK (LL, LH, HH) and MUL_HI (U32, I32), VOP1 move
 //! (including from an SGPR),
 //! VOP2 bitwise, shift, arithmetic-shift and float, the VOP2 integer forms
 //! MUL_I32_I24, MUL_HI_I32_I24, MUL_U32_U24, MUL_HI_U32_U24, MIN/MAX (I32,
@@ -60,8 +60,7 @@ enum Insn {
     SMov(u8, Src),
     /// SOP1 unary opcode 7, 11, 13, 15, 17, 19, 21, 23, 25, 26 or 52.
     SUnary(u32, u8, Src),
-    /// SOP2 opcode 0-10, 14, 16, 18, an even opcode 20-36, 38-40, 44, 46-49,
-    /// 53 or 54.
+    /// SOP2 opcode 0-10, 14, 16, 18, an even opcode 20-36, 38-40, 44, 46-54.
     SAlu(u32, u8, Src, Src),
     /// SOPC opcode 0-11: `s_cmp_{eq,lg,gt,ge,lt,le}_i32` then `_u32`.
     SCmp(u32, Src, Src),
@@ -352,6 +351,18 @@ fn scalar_alu(
                 .fold(0, |d, i| d | 1 << i);
             (value, false)
         }
+        // Guide 12.1, opcodes 50-52: copy the selected source bits into
+        // the low (S0) and high (S1) halves, with no SCC write.
+        50..=52 => {
+            let start0 = if opcode == 52 { 16 } else { 0 };
+            let start1 = if opcode == 50 { 0 } else { 16 };
+            let mut value = 0;
+            for i in 0..16 {
+                value |= u32::from(bit(a, start0 + i)) << i;
+                value |= u32::from(bit(b, start1 + i)) << (16 + i);
+            }
+            (value, false)
+        }
         // MUL_I32 and MUL_HI: the 64-bit unsigned product by shift and add;
         // the signed high word subtracts S1 when S0 < 0 and S0 when S1 < 0
         // (two's complement correction).
@@ -459,9 +470,9 @@ fn scalar_alu(
         }
     };
     sgpr[dst as usize] = Some(value);
-    // CSELECT, BFM, MUL_I32 and MUL_HI have no SCC line in guide 12.1 ("n" in
+    // CSELECT, BFM, PACK, MUL_I32 and MUL_HI have no SCC line in guide 12.1 ("n" in
     // Tables 11, 12 and 14): SCC stays as it was, possibly unset.
-    if !matches!(opcode, 10 | 36 | 38 | 53 | 54) {
+    if !matches!(opcode, 10 | 36 | 38 | 50..=54) {
         *scc = Some(flag);
     }
     Ok(())
@@ -1107,9 +1118,7 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
                 | 36
                 | 38..=40
                 | 44
-                | 46..=49
-                | 53
-                | 54
+                | 46..=54
         )
     {
         let dst = ((first >> 16) & 0x7f) as u8;
@@ -1264,4 +1273,43 @@ fn word(code: &[u8], offset: usize) -> Result<u32, String> {
         .get(offset..offset + 4)
         .ok_or_else(|| format!("{offset:#x}: truncated instruction"))?;
     Ok(u32::from_le_bytes(bytes.try_into().unwrap()))
+}
+
+#[cfg(test)]
+mod scalar_pack_tests {
+    use super::*;
+
+    #[test]
+    fn packs_selected_halves_with_aliasing_and_preserves_every_scc_state() {
+        // Four distinct halfwords make source reversal and wrong-half choices visible.
+        for (opcode, expected) in [(50, 0xdef0_5678), (51, 0x9abc_5678), (52, 0x9abc_1234)] {
+            for initial_scc in [None, Some(false), Some(true)] {
+                for dst in [8, 9, 10] {
+                    let mut sgpr = [None; 128];
+                    sgpr[8] = Some(0x1234_5678);
+                    sgpr[9] = Some(0x9abc_def0);
+                    let mut scc = initial_scc;
+                    scalar_alu(
+                        &mut sgpr,
+                        &mut scc,
+                        (opcode, dst, Src::Reg(8), Src::Reg(9)),
+                        0,
+                    )
+                    .unwrap();
+                    assert_eq!(sgpr[dst as usize], Some(expected));
+                    assert_eq!(scc, initial_scc);
+                    // A zero result must not clear a previously true SCC either.
+                    scalar_alu(
+                        &mut sgpr,
+                        &mut scc,
+                        (opcode, dst, Src::Imm(0), Src::Imm(0)),
+                        0,
+                    )
+                    .unwrap();
+                    assert_eq!(sgpr[dst as usize], Some(0));
+                    assert_eq!(scc, initial_scc);
+                }
+            }
+        }
+    }
 }

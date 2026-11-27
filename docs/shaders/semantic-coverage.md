@@ -19,13 +19,13 @@ acceptance remain outside the verified count. All results concern synthetic fixt
 | EXP | 1 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 |
 | FLAT | 54 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | GLOBAL | 57 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| MIMG | 130 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 |
+| MIMG | 130 | 0 | 0 | 2 | 0 | 0 | 0 | 0 | 0 |
 | MTBUF | 16 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | MUBUF | 75 | 2 | 0 | 2 | 2 | 2 | 2 | 2 | 0 |
 | SCRATCH | 22 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | SMEM | 14 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | SOP1 | 65 | 12 | 11 | 12 | 12 | 12 | 1 | 1 | 11 |
-| SOP2 | 51 | 33 | 33 | 33 | 33 | 33 | 0 | 0 | 12 |
+| SOP2 | 51 | 36 | 36 | 36 | 36 | 36 | 3 | 3 | 12 |
 | SOPC | 18 | 12 | 12 | 12 | 12 | 12 | 1 | 1 | 7 |
 | SOPK | 27 | 1 | 0 | 1 | 1 | 1 | 1 | 1 | 0 |
 | SOPP | 36 | 6 | 0 | 6 | 6 | 6 | 4 | 4 | 0 |
@@ -36,7 +36,7 @@ acceptance remain outside the verified count. All results concern synthetic fixt
 | VOP3P | 29 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | VOP3SDST | 10 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | VOPC | 190 | 12 | 0 | 12 | 12 | 12 | 0 | 0 | 0 |
-| **Total** | 1465 | 100 | 68 | 104 | 100 | 100 | 18 | 18 | 37 |
+| **Total** | 1465 | 103 | 71 | 108 | 103 | 103 | 21 | 21 | 37 |
 
 ## Unsupported operand variants
 

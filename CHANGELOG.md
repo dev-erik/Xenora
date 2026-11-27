@@ -18,6 +18,10 @@ remains unsupported.
 - Extended the read-only RDNA2 planning CLI (`python3 -m qa rdna2`) with family/status filters, compact summaries, Codex-ready manifests under `artifacts/`, active-claim exclusion (family claims exclude those families; path-only claims block overlapping permitted files), coverage reconcile against `semantic_coverage` without inflating counts, and inventory diffs. Covered by `tests/qa/test_rdna2_plan.py`; planning only, no GPU production edits.
 
 ### Added
+- Three gfx1030 scalar half-word packing instructions (LL, LH and HH), including
+  compute translation and runtime graphics operands. Packing preserves SCC and
+  uses the existing checked scalar operand subset; independent known-answer,
+  LLVM encoding and native Metal tests cover the increment.
 - Focused Stage 1 rendering revalidation before shader expansion, covering indexed
   scenes, per-draw state, depth, blending and multiple targets; recorded in the
   local graphics checkpoint with current native and guest test evidence.

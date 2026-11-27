@@ -6,7 +6,7 @@ the decoder uses. This page explains where entries live, what each field means,
 how to check and regenerate the tables, and what the generator does not do for
 you.
 
-The registry covers the nine SOP2 forms listed in [SOP2 scalar ALU](scalar-alu.md).
+The registry includes the SOP2 forms listed in [SOP2 scalar ALU](scalar-alu.md).
 
 ## Files
 
@@ -51,7 +51,7 @@ error.
 | `family` | Encoding family; must match the XML base encoding | e.g. `SOP2` |
 | `opcode` | Opcode; must match the XML | non-negative integer |
 | `variant` | Rust enum variant of the typed operation | CamelCase, e.g. `AddU32` |
-| `operation` | The primitive the form uses | `add`, `sub`, `and`, `or`, `xor`, `andn2`, `orn2`, `nand`, `nor`, `xnor`, `lshl`, `lshr`, `ashr`, `min`, `max`, `cselect`, `bfm`, `mul`, `mul_hi`, `bfe`, `absdiff`, `lshl_add`, `mul24`, `mul_hi24` (vector only), `compare` and the SOP1 unaries |
+| `operation` | The primitive the form uses | `add`, `sub`, `and`, `or`, `xor`, `andn2`, `orn2`, `nand`, `nor`, `xnor`, `lshl`, `lshr`, `ashr`, `min`, `max`, `cselect`, `bfm`, `mul`, `mul_hi`, `bfe`, `absdiff`, `lshl_add`, `mul24`, `mul_hi24` (vector only), `pack_ll`, `pack_lh`, `pack_hh`, `compare` and the SOP1 unaries |
 | `signedness` | How operands are read | `unsigned`, `signed`, `bitwise` (always `bitwise` for the logical operations, `cselect` and `bfm`; never for the arithmetic ones, `add`, `sub`, `min`, `max`, `mul`, `mul_hi`, `bfe`, `absdiff` and `lshl_add`; shifts take their primitive's signedness) |
 | `carry_in` | Whether the form reads SCC: carry-in, borrow-in or the select condition | `none`, `scc` (`scc` only for unsigned `add` and `sub`, and required for `cselect`) |
 | `width` | Operand and result width in bits | `32` |
@@ -86,6 +86,7 @@ fixes the `scc` value:
 | `abs` / `signed` | `nonzero` | `abs_nonzero_i32` | no |
 | `min`, `max` / `signed` or `unsigned` | `selected_src0` | `min_i32`/`min_u32`, `max_i32`/`max_u32` | no |
 | `cselect` / `bitwise` | `unchanged` | `cselect_b32` | required |
+| `pack_ll`, `pack_lh`, `pack_hh` / `bitwise` | `unchanged` | `pack_ll_b32`, `pack_lh_b32`, `pack_hh_b32` | no |
 | `bfm` / `bitwise` | `unchanged` | `bfm_b32` | no |
 | `mul` / `signed` | `unchanged` | `mul_lo_i32` | no |
 | `mul_hi` / `unsigned` or `signed` | `unchanged` | `mul_hi_u32`, `mul_hi_i32` | no |

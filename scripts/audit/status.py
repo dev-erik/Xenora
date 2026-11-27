@@ -63,7 +63,7 @@ def render_progress(status):
 
     rows = [
         ("Decoded gfx1030 forms", sum(item["decoded"] for item in forms), len(forms)),
-        ("Accepted Metal forms · Apple M5", sum(item["gpu"] in verified_gpu for item in forms), len(forms)),
+        ("Accepted Metal forms", sum(item["gpu"] in verified_gpu for item in forms), len(forms)),
         ("Accepted guest milestones · X1–X4", list(milestones.values()).count("accepted"), len(milestones)),
     ]
     svg = [

@@ -1409,3 +1409,54 @@ wave = "any"
 operands = "vop2_vgpr"
 spec = [{ document = "guide", section = "12.7", page = 134 }]
 verify = ["reference", "independent", "metal", "llvm_encoding"]
+
+[[form]]
+name = "S_PACK_LL_B32_B16"
+family = "SOP2"
+opcode = 50
+variant = "PackLlB32B16"
+operation = "pack_ll"
+signedness = "bitwise"
+carry_in = "none"
+width = 32
+scc = "unchanged"
+vcc = "unchanged"
+exec = "unchanged"
+wave = "any"
+operands = "sop2_sgpr"
+spec = [{ document = "guide", section = "12.1", page = 106 }]
+verify = ["reference", "independent", "metal", "llvm_encoding"]
+
+[[form]]
+name = "S_PACK_LH_B32_B16"
+family = "SOP2"
+opcode = 51
+variant = "PackLhB32B16"
+operation = "pack_lh"
+signedness = "bitwise"
+carry_in = "none"
+width = 32
+scc = "unchanged"
+vcc = "unchanged"
+exec = "unchanged"
+wave = "any"
+operands = "sop2_sgpr"
+spec = [{ document = "guide", section = "12.1", page = 106 }]
+verify = ["reference", "independent", "metal", "llvm_encoding"]
+
+[[form]]
+name = "S_PACK_HH_B32_B16"
+family = "SOP2"
+opcode = 52
+variant = "PackHhB32B16"
+operation = "pack_hh"
+signedness = "bitwise"
+carry_in = "none"
+width = 32
+scc = "unchanged"
+vcc = "unchanged"
+exec = "unchanged"
+wave = "any"
+operands = "sop2_sgpr"
+spec = [{ document = "guide", section = "12.1", page = 106 }]
+verify = ["reference", "independent", "metal", "llvm_encoding"]

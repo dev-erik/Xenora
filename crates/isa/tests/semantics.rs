@@ -103,3 +103,22 @@ fn vector_alu_dispatch_selects_exactly_the_registry_vop2_forms() {
         VectorAluOp::from_word(word).map(|op| op.semantics().name)
     });
 }
+
+#[test]
+fn scalar_pack_halfwords_and_scc() {
+    // Four distinct halfwords expose source reversal and wrong-half selection.
+    for (opcode, expected) in [
+        (0x32, 0x3210_cdef),
+        (0x33, 0x7654_cdef),
+        (0x34, 0x7654_89ab),
+    ] {
+        let op = ScalarAluOp::from_word(0x8000_0000 | (opcode << 23)).unwrap();
+        assert!(!op.reads_scc());
+        assert_eq!(op.semantics().scc, SccEffect::Unchanged);
+        for scc in [false, true] {
+            assert_eq!(op.evaluate(0x89ab_cdef, 0x7654_3210, scc), (expected, None));
+            assert_eq!(op.evaluate(0, 0, scc), (0, None));
+            assert_eq!(op.evaluate(u32::MAX, u32::MAX, scc), (u32::MAX, None));
+        }
+    }
+}

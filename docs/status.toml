@@ -1243,3 +1243,39 @@ X1 = "accepted"
 X2 = "accepted"
 X3 = "accepted"
 X4 = "accepted"
+
+[[instruction]]
+form = "s_pack_ll_b32_b16"
+encoding = "SOP2, normal SGPR destination; normal SGPR, inline integer or one literal source; selected 16-bit halves, SCC unchanged"
+representation = "4 B or 8 B with literal"
+lowering = "resolved scalar packing; runtime graphics integer expressions"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "s_pack_lh_b32_b16"
+encoding = "SOP2, normal SGPR destination; normal SGPR, inline integer or one literal source; selected 16-bit halves, SCC unchanged"
+representation = "4 B or 8 B with literal"
+lowering = "resolved scalar packing; runtime graphics integer expressions"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
+
+[[instruction]]
+form = "s_pack_hh_b32_b16"
+encoding = "SOP2, normal SGPR destination; normal SGPR, inline integer or one literal source; selected 16-bit halves, SCC unchanged"
+representation = "4 B or 8 B with literal"
+lowering = "resolved scalar packing; runtime graphics integer expressions"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"
