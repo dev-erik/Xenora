@@ -127,7 +127,7 @@ While VCC_LO is lane-derived it may be read only by:
    lanes (inactive lanes keep vD, as for any partial-EXEC move);
 3. SRC0 of a supported compare (`v_cmp_* vcc_lo, vcc_lo, vN`), which reads the
    old VCC_LO in every active lane before the new value is written.
-4. SRC0 of a registry VOP2 integer form (for example
+4. SRC0 of a supported VOP2 integer form (for example
    `v_add_nc_u32_e32 vD, vcc_lo, vN`), which reads the 32-bit mask in every
    active lane, as `v_mov_b32_e32` does.
 
@@ -156,6 +156,8 @@ create divergent EXEC. `s_mov_b32 vcc_lo, <known>` makes VCC_LO known again.
     `v_lshrrev_b32_e32`, `v_ashrrev_i32_e32`, `v_and_b32_e32`, `v_or_b32_e32`,
     `v_xor_b32_e32`. Nothing else: no FP32 form, scalar instruction, compare,
     branch, wait, memory access or `s_endpgm`;
+  - the six bitwise/reverse-shift VOP2 forms in R retain VGPR-only SRC0. Their
+    new scalar, inline-word and literal sources are accepted outside runtime R;
   - every VGPR written in R was initialized before the branch;
   - every source read in R is ready where it is read (the normal rules, as on
     the fall-through path).

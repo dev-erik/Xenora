@@ -10,6 +10,9 @@ Guest execution uses original, purpose-built test programs. Commercial Xbox game
 remains unsupported.
 
 ### Changed
+- Expanded ordinary integer VOP2 bitwise and reverse-shift SRC0 to scalar, inline
+  word and literal sources. Existing VGPR inputs retain their behavior; runtime
+  VCC branch regions retain their original VGPR-only SRC0 contract.
 - Updated the optional LLVM branch oracle to accept signed backward targets within
   the stream and retain rejection of targets before it, matching the decoder contract.
 - Memoized graphics loop-bound inference, including unknown results and remaining

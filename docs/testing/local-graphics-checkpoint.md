@@ -6,6 +6,32 @@ claim of Xbox hardware equivalence. Supporting raw logs, mutation records and
 source manifests remain local and are not distributed with the repository.
 The array-range descriptor increment below was validated on 26 November 2026.
 
+## Stage 3.1 increment: scalar and literal integer vector operands
+
+27 November 2026. Six existing e32 bitwise/reverse-shift forms now accept the
+checked nine-bit SRC0 domain: VGPR, ordinary scalar, compute VCC-low, inline word
+or one literal. Graphics retains its ordinary uniform/local scalar domain and
+integer provenance restrictions. VSRC1 stays a VGPR; runtime VCC branch regions
+retain their old VGPR-only SRC0 rule. No decoded-form count increases.
+Both independent reviewers accepted the bounded change; full S3.1 remains open.
+
+Final stable-source checks passed 287 CPU tests (seven ignored), 20 LLVM tests
+including 378 new operand/encoding rows, 11 compute validation tests including
+72 native dispatches of 32 words, and four native graphics tests covering 972
+draws. Counts of dispatches/draws come from test loops; the graphics total includes
+prior coverage. The region matrix covers 36 old-VGPR positives and 180 new-class
+rejections across branch outcomes and EXEC masks. Two obsolete historical inline
+rejections became fixed-result positives, while reserved-selector negatives remain.
+
+All nine gates passed in `artifacts/validation-full.HiHajy`: workspace 1131
+passed/0 failed/156 ignored; GPU 482 passed/0 failed/1 ignored (overlapping
+suites). Four assertion-killed mutations cover region admission, shift operand
+order, literal length and isolated uniform accounting; restored hashes match.
+The ARM64 audit checked 127 executables/loadable dependencies. Evidence is local
+under `artifacts/s31-legacy-sources/` and adjacent independent review records.
+Native results used Apple M4 Max with Metal API/shader validation and original
+synthetic programs; no AMD/Xbox hardware or game compatibility claim follows.
+
 ## Stage 3.1 increment: integer vector unary operations
 
 27 November 2026. Five new ordinary VOP1 encodings implement complement, bit

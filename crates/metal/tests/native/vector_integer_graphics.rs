@@ -197,15 +197,8 @@ fn render(gpu: &NativeCompute, ps: &[u8], a: u32, b: u32) -> Vec<Vec<u8>> {
 fn translated_integer_vectors_export_literal_uint_results_with_both_aliases() {
     let gpu = NativeCompute::new().unwrap();
     for &(opcode, a, b, expected) in CASES {
-        let registry = matches!(opcode, 9..=12 | 17..=20 | 30 | 37..=39);
         for dst in [8, 9, 10] {
-            // Legacy VOP2 forms remain register-only. Registry forms additionally
-            // exercise direct scalar uniform and forced literal SRC0 encoding.
-            let sources: &[Source] = if registry {
-                &[Source::Vector, Source::Scalar, Source::Literal]
-            } else {
-                &[Source::Vector]
-            };
+            let sources = &[Source::Vector, Source::Scalar, Source::Literal];
             for &source in sources {
                 let ps = pixel(opcode, dst, source, a, false);
                 assert_eq!(
@@ -233,6 +226,15 @@ fn translated_integer_vectors_accept_inline_raw_words_without_float_conversion()
     // Opcode, selector, S1, literal result. A is deliberately unrelated so a
     // decoder/lifter incorrectly using v8 instead of the inline source fails.
     let cases: &[(u32, u32, u32, u32)] = &[
+        (22, 161, 0x80000001, 0x40000000),
+        (24, 193, 0x80000001, 0xffffffff),
+        (26, 161, 0x80000001, 2),
+        (22, 248, 0x80000001, 0x10000000),
+        (24, 248, 0x80000001, 0xf0000000),
+        (26, 248, 0x80000001, 8),
+        (27, 242, 0xffffffff, 0x3f800000),
+        (28, 241, 0x007fa123, 0xbf7fa123),
+        (29, 248, 0x3e22f983, 0),
         (37, 128, 0x7fa12345, 0x7fa12345),
         (37, 129, 0xffffffff, 0),
         (38, 193, 1, 0xfffffffe),

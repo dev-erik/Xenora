@@ -246,3 +246,47 @@ fn integer_vertex_parameters_and_float_arithmetic_are_rejected() {
         assert!(error.to_string().contains("integer bits"), "{error}");
     }
 }
+
+#[test]
+fn legacy_bitwise_and_shifts_accept_scalar_inline_and_literal_source_classes() {
+    for opcode in [22, 24, 26, 27, 28, 29] {
+        // Only this expanded SRC0 reads a uniform; the input VGPR is literal.
+        let code = vec![0x7e1202ff, 0x80000001, vop(opcode, 9, 31, 9)];
+        let compiled =
+            compile_graphics_pipeline_typed(Gfx1030, VS, &finish(code, 9), types()).unwrap();
+        assert_eq!(compiled.required_uniform_mask, 0x80);
+        for source in [24, 25, 128, 192, 193, 208, 240, 248, 255] {
+            for dst in [8, 9, 10] {
+                let mut code = prefix();
+                code.push(vop(opcode, dst, source, 9));
+                if source == 255 {
+                    code.push(0x7fa12345);
+                }
+                let pixel = finish(code, dst);
+                let compiled =
+                    compile_graphics_pipeline_typed(Gfx1030, VS, &pixel, types()).unwrap();
+                assert_eq!(compiled.required_uniform_mask, 3);
+                assert!(
+                    compile_graphics_pipeline_typed(
+                        Gfx1030,
+                        VS,
+                        &pixel,
+                        GraphicsPipelineTypes::default()
+                    )
+                    .is_err()
+                );
+            }
+        }
+        for source in [0, 23, 32, 105, 106, 291] {
+            let mut code = prefix();
+            code.push(vop(opcode, 10, source, 9));
+            assert!(
+                compile_graphics_pipeline_typed(Gfx1030, VS, &finish(code, 10), types()).is_err()
+            );
+        }
+        let mut code = vec![0xbea003ff, 0x7fa12345];
+        code.extend(prefix());
+        code.push(vop(opcode, 9, 32, 9));
+        compile_graphics_pipeline_typed(Gfx1030, VS, &finish(code, 9), types()).unwrap();
+    }
+}

@@ -1095,8 +1095,16 @@ fn lift(
                 );
                 registers[usize::from(dst)] = Some(value);
             }
-            Instruction::AddNoCarryU32 { dst, src0, src1 }
-            | Instruction::VectorAndB32 { dst, src0, src1 }
+            Instruction::AddNoCarryU32 { dst, src0, src1 } if !exporting => {
+                if stage == Stage::Pixel && dst < 2 {
+                    return Err(error("pixel VGPRs 0 and 1 are reserved for interpolation"));
+                }
+                let left = read(src0)?;
+                let right = read(src1)?;
+                let value = ir.push(Some(offset), Op::IntegerBinary(Binary::Add, left, right));
+                registers[usize::from(dst)] = Some(value);
+            }
+            Instruction::VectorAndB32 { dst, src0, src1 }
             | Instruction::VectorOrB32 { dst, src0, src1 }
             | Instruction::VectorXorB32 { dst, src0, src1 }
             | Instruction::VectorLshlrevB32 { dst, src0, src1 }
@@ -1107,10 +1115,23 @@ fn lift(
                 if stage == Stage::Pixel && dst < 2 {
                     return Err(error("pixel VGPRs 0 and 1 are reserved for interpolation"));
                 }
-                let left = read(src0)?;
+                let left = match src0 {
+                    VectorSource::Register(register) => read(register)?,
+                    VectorSource::Immediate(bits) => {
+                        ir.push(Some(offset), Op::ScalarBits(ScalarValue::Constant(bits)))
+                    }
+                    VectorSource::Scalar(register) => {
+                        let source = read_scalar(
+                            ScalarSource::Register(register),
+                            &scalars,
+                            &mut ir.uniform_mask,
+                            offset,
+                        )?;
+                        ir.push(Some(offset), Op::ScalarBits(source))
+                    }
+                };
                 let right = read(src1)?;
                 let (operator, left, right) = match instruction {
-                    Instruction::AddNoCarryU32 { .. } => (Binary::Add, left, right),
                     Instruction::VectorAndB32 { .. } => (Binary::And, left, right),
                     Instruction::VectorOrB32 { .. } => (Binary::Or, left, right),
                     Instruction::VectorXorB32 { .. } => (Binary::Xor, left, right),

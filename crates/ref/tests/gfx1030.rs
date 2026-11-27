@@ -27,7 +27,12 @@ fn decodes_high_vop2_operands_and_integer_immediates() {
             DecodedInstruction {
                 offset: 0,
                 byte_len: 4,
-                op: Op::Vector(VectorAlu::And, 255, 129, 254),
+                op: Op::Vector(
+                    VectorAlu::And,
+                    255,
+                    xenora_ref::CompareSource::Vector(129),
+                    254
+                ),
             },
             DecodedInstruction {
                 offset: 4,

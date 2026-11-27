@@ -701,6 +701,19 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
         }
         // docs/shaders/vector-compare.md section 6: checked whatever EXEC is.
         if let Some((_, _, before)) = &region {
+            match instruction.instruction {
+                Instruction::VectorLshlrevB32 { src0, .. }
+                | Instruction::VectorLshrrevB32 { src0, .. }
+                | Instruction::VectorAshrrevI32 { src0, .. }
+                | Instruction::VectorAndB32 { src0, .. }
+                | Instruction::VectorOrB32 { src0, .. }
+                | Instruction::VectorXorB32 { src0, .. }
+                    if !matches!(src0, VectorSource::Register(_)) =>
+                {
+                    return Err(error("runtime s_cbranch_vccz integer SRC0 must be a VGPR"));
+                }
+                _ => {}
+            }
             let dst = match instruction.instruction {
                 Instruction::MoveB32 { dst, .. }
                 | Instruction::AddNoCarryU32 { dst, .. }
@@ -853,26 +866,45 @@ fn lift(decoded: &[DecodedInstruction], code_len: usize) -> Result<Vec<(usize, O
             Instruction::AddNoCarryU32 { dst, src0, src1 } => {
                 (Some(dst), Op::Binary(Binary::Add, read(src0)?, read(src1)?))
             }
-            Instruction::VectorLshlrevB32 { dst, src0, src1 } => (
-                Some(dst),
-                Op::Binary(Binary::ShiftLeft, read(src1)?, read(src0)?),
-            ),
-            Instruction::VectorAshrrevI32 { dst, src0, src1 } => (
-                Some(dst),
-                Op::Binary(Binary::ArithmeticShiftRight, read(src1)?, read(src0)?),
-            ),
-            Instruction::VectorLshrrevB32 { dst, src0, src1 } => (
-                Some(dst),
-                Op::Binary(Binary::ShiftRight, read(src1)?, read(src0)?),
-            ),
-            Instruction::VectorAndB32 { dst, src0, src1 } => {
-                (Some(dst), Op::Binary(Binary::And, read(src0)?, read(src1)?))
-            }
-            Instruction::VectorOrB32 { dst, src0, src1 } => {
-                (Some(dst), Op::Binary(Binary::Or, read(src0)?, read(src1)?))
-            }
-            Instruction::VectorXorB32 { dst, src0, src1 } => {
-                (Some(dst), Op::Binary(Binary::Xor, read(src0)?, read(src1)?))
+            Instruction::VectorLshlrevB32 { dst, src0, src1 }
+            | Instruction::VectorLshrrevB32 { dst, src0, src1 }
+            | Instruction::VectorAshrrevI32 { dst, src0, src1 }
+            | Instruction::VectorAndB32 { dst, src0, src1 }
+            | Instruction::VectorOrB32 { dst, src0, src1 }
+            | Instruction::VectorXorB32 { dst, src0, src1 } => {
+                let left = match src0 {
+                    VectorSource::Register(register) => read(register)?,
+                    VectorSource::Scalar(register) if usize::from(register) == VCC_LO => {
+                        match (lane_vcc, scalars[VCC_LO]) {
+                            (Some(mask), _) => mask,
+                            (None, Some(bits)) => {
+                                constant(&mut operations, &mut facts, offset, bits)
+                            }
+                            (None, None) => {
+                                return Err(error("vector integer reads uninitialized VCC_LO"));
+                            }
+                        }
+                    }
+                    VectorSource::Scalar(register) => {
+                        let bits = read_scalar(ScalarSource::Register(register))?;
+                        constant(&mut operations, &mut facts, offset, bits)
+                    }
+                    VectorSource::Immediate(bits) => {
+                        constant(&mut operations, &mut facts, offset, bits)
+                    }
+                };
+                let right = read(src1)?;
+                let (operator, left, right) = match instruction.instruction {
+                    Instruction::VectorLshlrevB32 { .. } => (Binary::ShiftLeft, right, left),
+                    Instruction::VectorLshrrevB32 { .. } => (Binary::ShiftRight, right, left),
+                    Instruction::VectorAshrrevI32 { .. } => {
+                        (Binary::ArithmeticShiftRight, right, left)
+                    }
+                    Instruction::VectorAndB32 { .. } => (Binary::And, left, right),
+                    Instruction::VectorOrB32 { .. } => (Binary::Or, left, right),
+                    _ => (Binary::Xor, left, right),
+                };
+                (Some(dst), Op::Binary(operator, left, right))
             }
             Instruction::ScalarMoveB32 { dst, src } => {
                 let value = read_scalar(src)?;

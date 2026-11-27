@@ -119,12 +119,12 @@ enum Insn {
         src1: u8,
     },
     VAddNc(u8, u8, u8),
-    VAnd(u8, u8, u8),
-    VOr(u8, u8, u8),
-    VShiftLeft(u8, u8, u8),
-    VShiftRight(u8, u8, u8),
-    VShiftRightArithmetic(u8, u8, u8),
-    VXor(u8, u8, u8),
+    VAnd(u8, CmpSrc, u8),
+    VOr(u8, CmpSrc, u8),
+    VShiftLeft(u8, CmpSrc, u8),
+    VShiftRight(u8, CmpSrc, u8),
+    VShiftRightArithmetic(u8, CmpSrc, u8),
+    VXor(u8, CmpSrc, u8),
     /// VOP2 integer opcode 9-12, 17-20, 30 or 37-39: VDST, SRC0, VSRC1.
     VInt(u32, u8, CmpSrc, u8),
     VUnary(Unary, u8, CmpSrc),
@@ -670,13 +670,20 @@ fn check_runtime_region(
             Insn::VMov(dst, Src::Imm(_)) => (dst, vec![], None),
             Insn::VMovFromSgpr(dst, src) => (dst, vec![], Some(src)),
             Insn::VMovFromVcc(dst) => (dst, vec![], Some(106)),
-            Insn::VAddNc(dst, a, b)
-            | Insn::VAnd(dst, a, b)
+            Insn::VAddNc(dst, a, b) => (dst, vec![a, b], None),
+            Insn::VAnd(dst, a, b)
             | Insn::VOr(dst, a, b)
             | Insn::VXor(dst, a, b)
             | Insn::VShiftLeft(dst, a, b)
             | Insn::VShiftRight(dst, a, b)
-            | Insn::VShiftRightArithmetic(dst, a, b) => (dst, vec![a, b], None),
+            | Insn::VShiftRightArithmetic(dst, a, b) => {
+                let CmpSrc::Vgpr(a) = a else {
+                    return Err(format!(
+                        "{at:#x}: runtime VCC region requires VGPR SRC0 for legacy VOP2"
+                    ));
+                };
+                (dst, vec![a, b], None)
+            }
             _ => {
                 return Err(format!(
                     "{at:#x}: instruction not allowed in a runtime branch region"
@@ -761,7 +768,13 @@ fn lane_step(
                             CmpSrc::Imm(_) => {}
                         },
                         // Sources must be readable even in an inactive lane.
-                        Insn::VInt(_, _, src0, src1) => {
+                        Insn::VInt(_, _, src0, src1)
+                        | Insn::VAnd(_, src0, src1)
+                        | Insn::VOr(_, src0, src1)
+                        | Insn::VXor(_, src0, src1)
+                        | Insn::VShiftLeft(_, src0, src1)
+                        | Insn::VShiftRight(_, src0, src1)
+                        | Insn::VShiftRightArithmetic(_, src0, src1) => {
                             match src0 {
                                 CmpSrc::Sgpr(reg) => {
                                     read_s(reg)?;
@@ -788,6 +801,12 @@ fn lane_step(
     }
 
     let read_v = |reg: u8| read_vgpr(lane, reg, offset);
+    let read_legacy_source = |source| match source {
+        CmpSrc::Sgpr(reg) => read_s(reg),
+        CmpSrc::Vcc => read_vcc(),
+        CmpSrc::Vgpr(reg) => read_v(reg),
+        CmpSrc::Imm(value) => Ok(value),
+    };
     let pending_read = lane.pending_read;
     let value = match insn {
         Insn::Load(data) => {
@@ -842,34 +861,34 @@ fn lane_step(
         }
         Insn::VAnd(dst, a, b) => {
             check_destination(dst, pending_read, offset)?;
-            (dst, read_v(a)? & read_v(b)?)
+            (dst, read_legacy_source(a)? & read_v(b)?)
         }
         Insn::VOr(dst, a, b) => {
             check_destination(dst, pending_read, offset)?;
-            (dst, read_v(a)? | read_v(b)?)
+            (dst, read_legacy_source(a)? | read_v(b)?)
         }
         Insn::VShiftLeft(dst, count, value) => {
             check_destination(dst, pending_read, offset)?;
-            let factor = 2_u64.pow(read_v(count)? % 32);
+            let factor = 2_u64.pow(read_legacy_source(count)? % 32);
             let product = u64::from(read_v(value)?) * factor;
             (dst, (product % (1_u64 << 32)) as u32)
         }
         Insn::VShiftRight(dst, count, value) => {
             check_destination(dst, pending_read, offset)?;
-            let divisor = 2_u32.pow(read_v(count)? % 32);
+            let divisor = 2_u32.pow(read_legacy_source(count)? % 32);
             (dst, read_v(value)? / divisor)
         }
         Insn::VShiftRightArithmetic(dst, count, value) => {
             check_destination(dst, pending_read, offset)?;
             // Floor division of the sign-extended value, reduced modulo
             // 2^32. This is arithmetic shift without using `>>`.
-            let shifted =
-                i64::from(read_v(value)? as i32).div_euclid(1_i64 << (read_v(count)? % 32));
+            let shifted = i64::from(read_v(value)? as i32)
+                .div_euclid(1_i64 << (read_legacy_source(count)? % 32));
             (dst, shifted.rem_euclid(1_i64 << 32) as u32)
         }
         Insn::VXor(dst, a, b) => {
             check_destination(dst, pending_read, offset)?;
-            (dst, read_v(a)? ^ read_v(b)?)
+            (dst, read_legacy_source(a)? ^ read_v(b)?)
         }
         Insn::VUnary(operation, dst, src) => {
             check_destination(dst, pending_read, offset)?;
@@ -1259,35 +1278,32 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
             4,
         ));
     }
-    for (mask, value, kind) in [
-        (0xfe00_0000, 0x3600_0000u32, 0u8),
-        (0xfe00_0000, 0x3a00_0000, 1),
-        (0xfe00_0000, 0x0600_0000, 2),
-        (0xfe00_0000, 0x1000_0000, 3),
-        (0xfe00_0000, 0x3800_0000, 4),
-        (0xfe00_0000, 26 << 25, 5),
-        (0xfe00_0000, 22 << 25, 6),
-        (0xfe00_0000, 24 << 25, 7),
-    ] {
-        if first & mask == value {
-            if first & 0x100 == 0 {
-                return Err(fail("VOP2 source modifier"));
-            }
-            let dst = (first >> 17) as u8;
-            let a = first as u8;
-            let b = (first >> 9) as u8;
-            let insn = match kind {
-                0 => Insn::VAnd(dst, a, b),
-                1 => Insn::VXor(dst, a, b),
-                2 => Insn::VAddF(dst, a, b),
-                3 => Insn::VMulF(dst, a, b),
-                4 => Insn::VOr(dst, a, b),
-                5 => Insn::VShiftLeft(dst, a, b),
-                6 => Insn::VShiftRight(dst, a, b),
-                _ => Insn::VShiftRightArithmetic(dst, a, b),
-            };
-            return Ok((insn, 4));
+    let legacy_opcode = first >> 25;
+    if matches!(legacy_opcode, 22 | 24 | 26..=29) {
+        let dst = (first >> 17) as u8;
+        let b = (first >> 9) as u8;
+        let (a, length) = vector_src0(code, offset, first, "legacy VOP2")?;
+        let instruction = match legacy_opcode {
+            22 => Insn::VShiftRight(dst, a, b),
+            24 => Insn::VShiftRightArithmetic(dst, a, b),
+            26 => Insn::VShiftLeft(dst, a, b),
+            27 => Insn::VAnd(dst, a, b),
+            28 => Insn::VOr(dst, a, b),
+            _ => Insn::VXor(dst, a, b),
+        };
+        return Ok((instruction, length));
+    }
+    if matches!(first >> 25, 3 | 8) {
+        if first & 0x100 == 0 {
+            return Err(fail("floating VOP2 requires VGPR SRC0"));
         }
+        let (dst, a, b) = ((first >> 17) as u8, first as u8, (first >> 9) as u8);
+        let instruction = if first >> 25 == 3 {
+            Insn::VAddF(dst, a, b)
+        } else {
+            Insn::VMulF(dst, a, b)
+        };
+        return Ok((instruction, 4));
     }
     if first & 0xffff_0000 == 0xbf8c_0000 {
         if first != 0xbf8c_3f70 {

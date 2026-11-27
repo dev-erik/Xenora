@@ -579,46 +579,40 @@ fn decode_gfx1030(bytes: &[u8], offset: usize) -> Result<(Instruction, u8), Deco
         ));
     }
     if V_LSHLREV_B32.matches(first) {
-        let (dst, src0, src1) = vop2_registers(first, "v_lshlrev_b32_e32")?;
-        return Ok((
-            Instruction::VectorLshlrevB32 { dst, src0, src1 },
-            V_LSHLREV_B32.byte_len(),
-        ));
+        let dst = ((first >> 17) & 0xff) as u8;
+        let src1 = ((first >> 9) & 0xff) as u8;
+        let (src0, len) = vector_src0(first, bytes, "v_lshlrev_b32_e32")?;
+        return Ok((Instruction::VectorLshlrevB32 { dst, src0, src1 }, len));
     }
     if V_ASHRREV_I32.matches(first) {
-        let (dst, src0, src1) = vop2_registers(first, "v_ashrrev_i32_e32")?;
-        return Ok((
-            Instruction::VectorAshrrevI32 { dst, src0, src1 },
-            V_ASHRREV_I32.byte_len(),
-        ));
+        let dst = ((first >> 17) & 0xff) as u8;
+        let src1 = ((first >> 9) & 0xff) as u8;
+        let (src0, len) = vector_src0(first, bytes, "v_ashrrev_i32_e32")?;
+        return Ok((Instruction::VectorAshrrevI32 { dst, src0, src1 }, len));
     }
     if V_LSHRREV_B32.matches(first) {
-        let (dst, src0, src1) = vop2_registers(first, "v_lshrrev_b32_e32")?;
-        return Ok((
-            Instruction::VectorLshrrevB32 { dst, src0, src1 },
-            V_LSHRREV_B32.byte_len(),
-        ));
+        let dst = ((first >> 17) & 0xff) as u8;
+        let src1 = ((first >> 9) & 0xff) as u8;
+        let (src0, len) = vector_src0(first, bytes, "v_lshrrev_b32_e32")?;
+        return Ok((Instruction::VectorLshrrevB32 { dst, src0, src1 }, len));
     }
     if V_AND_B32.matches(first) {
-        let (dst, src0, src1) = vop2_registers(first, "v_and_b32_e32")?;
-        return Ok((
-            Instruction::VectorAndB32 { dst, src0, src1 },
-            V_AND_B32.byte_len(),
-        ));
+        let dst = ((first >> 17) & 0xff) as u8;
+        let src1 = ((first >> 9) & 0xff) as u8;
+        let (src0, len) = vector_src0(first, bytes, "v_and_b32_e32")?;
+        return Ok((Instruction::VectorAndB32 { dst, src0, src1 }, len));
     }
     if V_OR_B32.matches(first) {
-        let (dst, src0, src1) = vop2_registers(first, "v_or_b32_e32")?;
-        return Ok((
-            Instruction::VectorOrB32 { dst, src0, src1 },
-            V_OR_B32.byte_len(),
-        ));
+        let dst = ((first >> 17) & 0xff) as u8;
+        let src1 = ((first >> 9) & 0xff) as u8;
+        let (src0, len) = vector_src0(first, bytes, "v_or_b32_e32")?;
+        return Ok((Instruction::VectorOrB32 { dst, src0, src1 }, len));
     }
     if V_XOR_B32.matches(first) {
-        let (dst, src0, src1) = vop2_registers(first, "v_xor_b32_e32")?;
-        return Ok((
-            Instruction::VectorXorB32 { dst, src0, src1 },
-            V_XOR_B32.byte_len(),
-        ));
+        let dst = ((first >> 17) & 0xff) as u8;
+        let src1 = ((first >> 9) & 0xff) as u8;
+        let (src0, len) = vector_src0(first, bytes, "v_xor_b32_e32")?;
+        return Ok((Instruction::VectorXorB32 { dst, src0, src1 }, len));
     }
     if V_ADD_F32.matches(first) {
         let (dst, src0, src1) = vop2_registers(first, "v_add_f32_e32")?;

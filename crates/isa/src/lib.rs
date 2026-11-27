@@ -264,17 +264,41 @@ pub enum Instruction {
     /// SOPP unconditional jump to a stream byte offset.
     Branch { target: usize },
     /// VOP2 logical left shift with the count in src0.
-    VectorLshlrevB32 { dst: u8, src0: u8, src1: u8 },
+    VectorLshlrevB32 {
+        dst: u8,
+        src0: VectorSource,
+        src1: u8,
+    },
     /// VOP2 logical right shift with the count in src0.
-    VectorLshrrevB32 { dst: u8, src0: u8, src1: u8 },
+    VectorLshrrevB32 {
+        dst: u8,
+        src0: VectorSource,
+        src1: u8,
+    },
     /// VOP2 arithmetic right shift with the count in src0.
-    VectorAshrrevI32 { dst: u8, src0: u8, src1: u8 },
+    VectorAshrrevI32 {
+        dst: u8,
+        src0: VectorSource,
+        src1: u8,
+    },
     /// VOP2 bitwise AND.
-    VectorAndB32 { dst: u8, src0: u8, src1: u8 },
+    VectorAndB32 {
+        dst: u8,
+        src0: VectorSource,
+        src1: u8,
+    },
     /// VOP2 bitwise OR.
-    VectorOrB32 { dst: u8, src0: u8, src1: u8 },
+    VectorOrB32 {
+        dst: u8,
+        src0: VectorSource,
+        src1: u8,
+    },
     /// VOP2 bitwise XOR.
-    VectorXorB32 { dst: u8, src0: u8, src1: u8 },
+    VectorXorB32 {
+        dst: u8,
+        src0: VectorSource,
+        src1: u8,
+    },
     /// VOP2 single-precision addition. Execution requires an explicit FP mode.
     VectorAddF32 { dst: u8, src0: u8, src1: u8 },
     /// VOP2 single-precision multiplication. Execution requires an explicit FP mode.
@@ -415,15 +439,17 @@ impl fmt::Display for Instruction {
             Self::WaitStore => formatter.write_str(" null, 0"),
             Self::MoveB32 { dst, src } => write!(formatter, " v{dst}, {src}"),
             Self::AddNoCarryU32 { dst, src0, src1 }
-            | Self::VectorLshlrevB32 { dst, src0, src1 }
+            | Self::VectorAddF32 { dst, src0, src1 }
+            | Self::VectorMulF32 { dst, src0, src1 } => {
+                write!(formatter, " v{dst}, v{src0}, v{src1}")
+            }
+            Self::VectorLshlrevB32 { dst, src0, src1 }
             | Self::VectorLshrrevB32 { dst, src0, src1 }
             | Self::VectorAshrrevI32 { dst, src0, src1 }
             | Self::VectorAndB32 { dst, src0, src1 }
             | Self::VectorOrB32 { dst, src0, src1 }
-            | Self::VectorXorB32 { dst, src0, src1 }
-            | Self::VectorAddF32 { dst, src0, src1 }
-            | Self::VectorMulF32 { dst, src0, src1 } => {
-                write!(formatter, " v{dst}, v{src0}, v{src1}")
+            | Self::VectorXorB32 { dst, src0, src1 } => {
+                write!(formatter, " v{dst}, {src0}, v{src1}")
             }
             Self::ScalarMoveB32 { dst, src } | Self::ScalarUnary { dst, src, .. } => {
                 write!(formatter, " {}, {src}", ScalarDestination(dst))

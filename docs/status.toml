@@ -976,8 +976,8 @@ llvm = "three-way passed"
 
 [[instruction]]
 form = "v_and_b32_e32"
-encoding = "Two VGPR sources and one VGPR destination"
-representation = "`36020702`"
+encoding = "VOP2; checked VGPR/SGPR/VCC-low/inline-word/literal SRC0; VGPR VSRC1 and VDST; runtime VCC regions retain VGPR-only SRC0"
+representation = "4 B or 8 B with literal"
 lowering = "MSL bitwise AND"
 reference = "implemented"
 cpu = "fixture verified"
@@ -986,10 +986,11 @@ recognized = true
 decoded = true
 llvm = "three-way passed"
 
+
 [[instruction]]
 form = "v_xor_b32_e32"
-encoding = "Two VGPR sources and one VGPR destination"
-representation = "`3A020702`"
+encoding = "VOP2; checked VGPR/SGPR/VCC-low/inline-word/literal SRC0; VGPR VSRC1 and VDST; runtime VCC regions retain VGPR-only SRC0"
+representation = "4 B or 8 B with literal"
 lowering = "MSL bitwise XOR"
 reference = "implemented"
 cpu = "fixture verified"
@@ -997,6 +998,7 @@ gpu = "fixture verified"
 recognized = true
 decoded = true
 llvm = "three-way passed"
+
 
 [[instruction]]
 form = "v_add_f32_e32"
@@ -1024,8 +1026,8 @@ llvm = "three-way passed"
 
 [[instruction]]
 form = "v_or_b32_e32"
-encoding = "Two VGPR sources and one VGPR destination"
-representation = "`3803FF01`"
+encoding = "VOP2; checked VGPR/SGPR/VCC-low/inline-word/literal SRC0; VGPR VSRC1 and VDST; runtime VCC regions retain VGPR-only SRC0"
+representation = "4 B or 8 B with literal"
 lowering = "MSL bitwise OR"
 reference = "implemented"
 cpu = "fixture verified"
@@ -1034,10 +1036,11 @@ recognized = true
 decoded = true
 llvm = "three-way passed"
 
+
 [[instruction]]
 form = "v_lshlrev_b32_e32"
-encoding = "Two VGPR sources and one VGPR destination"
-representation = "`34020501`"
+encoding = "VOP2; checked VGPR/SGPR/VCC-low/inline-word/literal SRC0; VGPR VSRC1 and VDST; runtime VCC regions retain VGPR-only SRC0"
+representation = "4 B or 8 B with literal"
 lowering = "MSL logical left shift with a five-bit count"
 reference = "implemented"
 cpu = "fixture verified"
@@ -1046,10 +1049,11 @@ recognized = true
 decoded = true
 llvm = "three-way passed"
 
+
 [[instruction]]
 form = "v_lshrrev_b32_e32"
-encoding = "Two VGPR sources and one VGPR destination"
-representation = "`2DFFFF01`"
+encoding = "VOP2; checked VGPR/SGPR/VCC-low/inline-word/literal SRC0; VGPR VSRC1 and VDST; runtime VCC regions retain VGPR-only SRC0"
+representation = "4 B or 8 B with literal"
 lowering = "MSL logical right shift with a five-bit count"
 reference = "implemented"
 cpu = "fixture verified"
@@ -1058,10 +1062,11 @@ recognized = true
 decoded = true
 llvm = "three-way passed"
 
+
 [[instruction]]
 form = "v_ashrrev_i32_e32"
-encoding = "Two VGPR sources and one VGPR destination"
-representation = "`31FFFF01`"
+encoding = "VOP2; checked VGPR/SGPR/VCC-low/inline-word/literal SRC0; VGPR VSRC1 and VDST; runtime VCC regions retain VGPR-only SRC0"
+representation = "4 B or 8 B with literal"
 lowering = "MSL signed right shift with a five-bit count"
 reference = "implemented"
 cpu = "local known-answer test passed"
@@ -1069,6 +1074,7 @@ gpu = "local Apple M5 readback passed; acceptance pending"
 recognized = true
 decoded = true
 llvm = "three-way passed"
+
 
 [[instruction]]
 form = "s_cbranch_execz"

@@ -53,7 +53,7 @@ mod review {
             0x3803_ff03_u32, // Uninitialized v3 in SRC0.
             0x3802_0701,     // Uninitialized v3 in VSRC1.
             0x3801_ff01,     // Write to synthetic index v0.
-            0x3803_fe80,     // Inline SRC0 outside the supported subset.
+            0x3803_fe6b,     // Reserved SRC0 selector107.
         ] {
             let mut code = *OR_FIXTURE;
             code[20..24].copy_from_slice(&instruction.to_le_bytes());
@@ -191,7 +191,7 @@ mod review {
             0x31ff_ff03_u32, // Uninitialized v3 as the count.
             0x31fe_0701,     // Uninitialized v3 as the value.
             0x3001_ff01,     // Write to synthetic index v0.
-            0x31ff_ff80,     // Inline SRC0 outside the supported subset.
+            0x31ff_ff80,     // Uninitialized VGPR v128 (nine-bit SRC0).
         ] {
             let mut code = *ASHR_FIXTURE;
             code[20..24].copy_from_slice(&instruction.to_le_bytes());
@@ -388,16 +388,31 @@ mod review {
     }
 
     #[test]
+    fn legacy_fixture_inline_operands_now_have_known_results() {
+        let mut code = *OR_FIXTURE;
+        code[20..24].copy_from_slice(&0x3803_fe80_u32.to_le_bytes());
+        verify(&code, &OR_INPUT, Some(&[0x8055_00aa; OR_INPUT.len()]));
+        let mut code = *SHIFT_FIXTURE;
+        code[32..36].copy_from_slice(&0x3402_0480_u32.to_le_bytes());
+        // LSHL count0 retains80000003; XOR with the preceding logical shift.
+        let expected = [
+            2, 0xc0000003, 0xa0000003, 0x80000001, 0x80000002, 2, 0xc0000003, 0x80000002, 2, 2,
+            0xc0000003, 0x80000002,
+        ];
+        verify(&code, &SHIFT_INPUT, Some(&expected));
+    }
+
+    #[test]
     fn vector_shifts_reject_invalid_operands_and_incomplete_streams() {
         for (offset, instruction) in [
             (28, 0x2dff_ff03_u32), // Uninitialized count.
             (28, 0x2dfe_0701),     // Uninitialized value.
             (28, 0x2c01_ff01),     // Write to synthetic index.
-            (28, 0x2dff_fe08),     // SGPR count.
+            (28, 0x2dff_fe08),     // Uninitialized SGPR count.
             (32, 0x3402_0503),     // Uninitialized count.
             (32, 0x3402_0701),     // Uninitialized value.
             (32, 0x3400_0501),     // Write to synthetic index.
-            (32, 0x3402_0480),     // Inline count.
+            (32, 0x3402_046b),     // Reserved count selector107.
         ] {
             let mut code = *SHIFT_FIXTURE;
             code[offset..offset + 4].copy_from_slice(&instruction.to_le_bytes());

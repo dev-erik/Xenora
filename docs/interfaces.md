@@ -435,9 +435,9 @@ Graphics supports 19 existing decoded integer vector encodings: signed/unsigned
 24-bit low/high multiplication; signed/unsigned 32-bit min/max; AND, OR, XOR and
 XNOR; logical/arithmetic reverse shifts; wrapping ADD, SUB and SUBREV; and the
 existing VOP3 ADD encoding. Sources are captured before destination writes and
-SCC remains unchanged. Registry VOP2 SRC0 accepts initialized VGPRs, ordinary
-scalar uniforms/locals, inline words or a literal. Legacy bitwise/shift forms and
-VOP3 ADD retain their register-only operand restrictions. Pixel v0/v1 remain
+SCC remains unchanged. All supported integer VOP2 SRC0 operands accept initialized
+VGPRs, ordinary scalar uniforms/locals, inline words or a literal; VSRC1 remains
+a VGPR. VOP3 ADD retains its register-only operand restrictions. Pixel v0/v1 remain
 reserved. No EXEC/VCC or divergent execution support is added.
 
 Integer results use exact bit reinterpretation through the graphics register

@@ -68,7 +68,7 @@ pub enum Op {
         target: usize,
         condition: BranchCondition,
     },
-    Vector(VectorAlu, u8, u8, u8),
+    Vector(VectorAlu, u8, CompareSource, u8),
     /// VOP2 32-bit integer form: VDST, SRC0 (VGPR, SGPR, `vcc_lo`, inline
     /// integer or literal) and VSRC1. Writes neither VCC nor SCC.
     VectorInteger(VectorInteger, u8, CompareSource, u8),
@@ -628,11 +628,11 @@ pub fn decode(code: &[u8]) -> Result<Vec<DecodedInstruction>, ReferenceError> {
                     4,
                 )
             }
-            [first, second, third, opcode, ..]
+            [first, second, third, opcode, tail @ ..]
                 if matches!(
                     opcode & 0xfe,
                     0x06 | 0x10 | 0x2c | 0x30 | 0x34 | 0x36 | 0x38 | 0x3a
-                ) && second & 1 != 0 =>
+                ) =>
             {
                 let kind = match opcode & 0xfe {
                     0x06 => VectorAlu::FloatAdd,
@@ -646,7 +646,22 @@ pub fn decode(code: &[u8]) -> Result<Vec<DecodedInstruction>, ReferenceError> {
                 };
                 let dst = (third >> 1) | ((opcode & 1) << 7);
                 let src1 = (second >> 1) | ((third & 1) << 7);
-                (Op::Vector(kind, dst, *first, src1), 4)
+                let (src0, length) =
+                    if matches!(kind, VectorAlu::FloatAdd | VectorAlu::FloatMultiply) {
+                        if second & 1 == 0 {
+                            return Err(error(offset, "floating VOP2 requires VGPR SRC0"));
+                        }
+                        (CompareSource::Vector(*first), 4)
+                    } else {
+                        decode_vector_source(
+                            *first,
+                            *second,
+                            tail,
+                            offset,
+                            "unsupported legacy VOP2 source",
+                        )?
+                    };
+                (Op::Vector(kind, dst, src0, src1), length)
             }
             [dst, 0, 0x25, 0xd5, lo, middle, hi @ 2..=3, 0x02, ..] if middle & 1 == 1 => {
                 let src1 = (middle >> 1) | ((hi & 1) << 7);
@@ -1008,8 +1023,27 @@ fn execute_wave(program: &[DecodedInstruction], input: &[u32]) -> Result<Vec<u32
                 }
             }
             Op::Vector(operator, dst, lhs, rhs) => {
+                // The expanded integer domain has wave-uniform readiness checks,
+                // including present inactive lanes. Preserve the old FP path.
+                if exec != 0 && !matches!(operator, VectorAlu::FloatAdd | VectorAlu::FloatMultiply)
+                {
+                    for lane in 0..lanes {
+                        if let CompareSource::Vector(reg) = lhs {
+                            read(lane, reg)?;
+                        }
+                        read(lane, rhs)?;
+                    }
+                    if let CompareSource::Scalar(reg) = lhs {
+                        read_scalar(Source::Register(reg))?;
+                    }
+                }
                 for lane in (0..lanes).filter(|&lane| executes(lane)) {
-                    let value = vector_alu(operator, read(lane, lhs)?, read(lane, rhs)?, offset)?;
+                    let left = match lhs {
+                        CompareSource::Vector(reg) => read(lane, reg)?,
+                        CompareSource::Scalar(reg) => read_scalar(Source::Register(reg))?,
+                        CompareSource::Immediate(bits) => bits,
+                    };
+                    let value = vector_alu(operator, left, read(lane, rhs)?, offset)?;
                     results[lane] = Some((dst, value));
                 }
             }
@@ -1376,6 +1410,12 @@ fn check_runtime_region(
             Op::Vector(kind, dst, lhs, rhs)
                 if !matches!(kind, VectorAlu::FloatAdd | VectorAlu::FloatMultiply) =>
             {
+                let CompareSource::Vector(lhs) = lhs else {
+                    return Err(error(
+                        offset,
+                        "runtime VCC region requires VGPR SRC0 for legacy VOP2",
+                    ));
+                };
                 (dst, vec![lhs, rhs], None)
             }
             _ => {
