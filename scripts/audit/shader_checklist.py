@@ -116,6 +116,9 @@ def generate():
         '[local checkpoints](../testing/local-graphics-checkpoint.md); reconcile their evidence before changing status. '
         'Missing CPU/GPU records mean unrecorded, not a test failure.', '',
         '## Stage 3 planning map', '',
+        '**All S3 stages remain open.** See the [latest validated checkpoint](../testing/stage3-control-memory-opening.md) '
+        'for bounded SCC1 branch and compute load-wait support. Wave/lane support is still unimplemented; '
+        'masked bit count is the next researched candidate.', '',
         'The partition below includes SOPP control flow and memory families alongside arithmetic. It is provisional, '
         'not a claim that a stage is complete or that forms outside arithmetic are optional. '
         'S3.6 numerical correctness applies across floating-point operations and is not counted as a disjoint opcode bucket. '
@@ -159,7 +162,7 @@ def generate():
         md.append('')
     # Accessible per-form map: one square per encoding, grouped by family.
     width, columns, pitch = 1040, 64, 13
-    height = 130 + sum(35 + ((sum(r[0] == f for r in rows)+columns-1)//columns)*pitch for f in families)
+    height = 440 + sum(35 + ((sum(r[0] == f for r in rows)+columns-1)//columns)*pitch for f in families)
     svg = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" role="img" aria-labelledby="title desc">',
            '<title id="title">All pinned RDNA2 instruction forms: conversion and evidence</title>',
            '<desc id="desc">One square per instruction encoding. Green: accepted fixture subset; amber: recorded translation with acceptance pending; blue: decoder with evidence gap; gray: not converted. Full accessible table in shader-checklist.md.</desc>',
@@ -172,7 +175,18 @@ def generate():
         y = 78 + (i//2)*22
         svg += [f'<rect x="{x}" y="{y-10}" width="10" height="10" fill="{color}"/>',
                 f'<text x="{x+18}" y="{y}" font-size="12">{escape(label)}: {counts[state]}</text>']
-    y = 125
+    svg += ['<text x="24" y="135" font-size="17">S3 workstreams · all stages open</text>',
+            '<text x="24" y="158" font-size="12">Provisional desktop inventory · decoded counts are not completion percentages</text>']
+    for i, (group, tally) in enumerate(sorted(groups.items())):
+        total = sum(tally.values())
+        decoded = total - tally['missing']
+        y = 184 + i * 26
+        svg.append(f'<text x="24" y="{y}" font-size="13">{escape(group)}</text>')
+        svg.append(f'<text x="330" y="{y}" font-size="13">{decoded}/{total} decoded · {tally["missing"]} not decoded</text>')
+    svg += ['<text x="24" y="355" font-size="13">S3.6 Numerical correctness · cross-cutting · incomplete</text>',
+            '<text x="24" y="380" font-size="12">Operand modes, masks, ordering and numerical acceptance remain separate work.</text>',
+            '<text x="24" y="402" font-size="12">This map does not establish Xbox shader or game compatibility.</text>']
+    y = 435
     for family in families:
         members = [r for r in rows if r[0] == family]
         svg.append(f'<text x="24" y="{y}" font-size="13">{family} · {len(members)}</text>')

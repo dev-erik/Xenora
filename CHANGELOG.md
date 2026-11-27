@@ -10,6 +10,8 @@ Guest execution uses original, purpose-built test programs. Commercial Xbox game
 remains unsupported.
 
 ### Changed
+- Added the provisional S3 workstream counts and open-stage status to the generated
+  shader coverage map, with a link from the checklist to the latest validation checkpoint.
 - Expanded ordinary integer VOP2 bitwise and reverse-shift SRC0 to scalar, inline
   word and literal sources. Existing VGPR inputs retain their behavior; runtime
   VCC branch regions retain their original VGPR-only SRC0 contract.
