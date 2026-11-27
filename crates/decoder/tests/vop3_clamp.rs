@@ -4,7 +4,7 @@ use xenora_decoder::{
     Architecture::Gfx1030, DecodeErrorKind, Instruction, VectorClampOp, VectorSource, decode,
     decode_at,
 };
-const OPS: [u32; 5] = [265, 267, 293, 294, 295];
+const OPS: [u32; 6] = [265, 267, 293, 294, 295, 886];
 const FLOAT: [u32; 9] = [
     0x3f000000, 0xbf000000, 0x3f800000, 0xbf800000, 0x40000000, 0xc0000000, 0x40800000, 0xc0800000,
     0x3e22f983,
@@ -41,6 +41,7 @@ fn expected(op: u32, dst: u8, src: [VectorSource; 3]) -> Instruction {
             293 => VectorClampOp::AddU32,
             294 => VectorClampOp::SubU32,
             295 => VectorClampOp::SubrevU32,
+            886 => VectorClampOp::SubI32,
             _ => unreachable!(),
         },
         dst,
@@ -188,7 +189,7 @@ fn shared_literals_all_positions_truncation_and_stream_boundaries() {
     }
 }
 #[test]
-fn only_five_clamp_modes_and_old_add_representation() {
+fn unrelated_clamp_modes_rejected_and_old_add_representation_preserved() {
     for op in [
         266, 268, 273, 274, 275, 276, 278, 280, 282, 283, 284, 285, 286, 334, 439, 440, 441, 442,
         443,
@@ -221,6 +222,7 @@ fn names_display_and_existing_identity_count() {
         (293, "v_add_nc_u32_e64"),
         (294, "v_sub_nc_u32_e64"),
         (295, "v_subrev_nc_u32_e64"),
+        (886, "v_sub_nc_i32"),
     ] {
         let instruction = decode_at(Gfx1030, &code(op, 255, [106, 255, 128], 0xffffffff), 0)
             .unwrap()

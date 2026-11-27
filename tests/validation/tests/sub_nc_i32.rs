@@ -26,9 +26,23 @@ struct Case {
     input: Vec<u32>,
     expected: Vec<u32>,
 }
-fn cases() -> Vec<Case> {
+fn cases(clamp: bool) -> Vec<Case> {
+    let insn = |dst, src| {
+        let mut words = insn(dst, src);
+        if clamp {
+            words[0] |= 0x8000;
+        }
+        words
+    };
     let mut cases = Vec::new();
-    for &(a, b, want) in ANSWERS {
+    for (index, &(a, b, wrapped)) in ANSWERS.iter().enumerate() {
+        let want = if clamp {
+            [
+                0xffffffff, 0x80000000, 0x7fffffff, 0x7fffffff, 0x80000000, 0x6d6ccccd, 0,
+            ][index]
+        } else {
+            wrapped
+        };
         for dst in [1, 2, 255] {
             for mask in [u32::MAX, 0x80000005, 0] {
                 let old = match dst {
@@ -126,34 +140,43 @@ fn check(case: &Case, gpu: Option<&xenora_metal::NativeCompute>) {
 }
 #[test]
 fn fixed_boundaries_aliases_sources_masks_and_flags() {
-    for case in cases() {
+    for case in cases(false) {
         check(&case, None);
     }
 }
 #[test]
 fn modifiers_and_noncanonical_padding_stay_rejected() {
-    for bit in (8..16).chain(27..32) {
+    for clamp in [false, true] {
+        for bit in (8..15).chain(27..32) {
+            let mut words = insn(2, [129, 129]);
+            if clamp {
+                words[0] |= 0x8000;
+            }
+            words[usize::from(bit >= 27)] |= 1 << bit;
+            let code = program(&words, 2);
+            assert!(compile(Gfx1030, &code).is_err());
+            assert!(xenora_ref::execute(&code, &[0]).is_err());
+            assert!(independent_ref::execute(&code, &[0]).is_err());
+        }
         let mut words = insn(2, [129, 129]);
-        words[usize::from(bit >= 27)] |= 1 << bit;
+        if clamp {
+            words[0] |= 0x8000;
+        }
+        words[1] &= !(511 << 18);
         let code = program(&words, 2);
         assert!(compile(Gfx1030, &code).is_err());
         assert!(xenora_ref::execute(&code, &[0]).is_err());
         assert!(independent_ref::execute(&code, &[0]).is_err());
     }
-    let mut words = insn(2, [129, 129]);
-    words[1] &= !(511 << 18);
-    let code = program(&words, 2);
-    assert!(compile(Gfx1030, &code).is_err());
-    assert!(xenora_ref::execute(&code, &[0]).is_err());
-    assert!(independent_ref::execute(&code, &[0]).is_err());
 }
+
 #[test]
 #[ignore = "native Metal validation must be enabled"]
 fn native_sub_nc_i32_compute() {
     assert_eq!(std::env::var("MTL_DEBUG_LAYER").as_deref(), Ok("1"));
     assert_eq!(std::env::var("MTL_SHADER_VALIDATION").as_deref(), Ok("1"));
     let gpu = xenora_metal::NativeCompute::new().unwrap();
-    for case in cases() {
+    for case in cases(false).into_iter().chain(cases(true)) {
         check(&case, Some(&gpu));
     }
     check(&fixture_case(), Some(&gpu));
@@ -169,4 +192,11 @@ fn fixture_case() -> Case {
 #[test]
 fn assembled_fixture_known_answers() {
     check(&fixture_case(), None);
+}
+
+#[test]
+fn signed_saturation_boundaries_aliases_sources_masks_and_flags() {
+    for case in cases(true) {
+        check(&case, None);
+    }
 }

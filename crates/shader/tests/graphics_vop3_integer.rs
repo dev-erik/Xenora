@@ -5,7 +5,7 @@ use xenora_shader::{
     compile_graphics_pipeline_typed,
 };
 const VS: &[u8] = include_bytes!("../../../fixtures/rdna2/x9-constant-vs.bin");
-const OPS: [u32; 68] = [
+const OPS: [u32; 69] = [
     886,
     883,
     885,
@@ -62,6 +62,7 @@ const OPS: [u32; 68] = [
     293 | 0x8000,
     294 | 0x8000,
     295 | 0x8000,
+    886 | 0x8000,
     322,
     323,
     346,

@@ -15,7 +15,8 @@ Position-specific inline constants expand these existing forms without increasin
 the decoded count. Modifiers and broad multiplicand literal support remain open.
 
 The subsequent signed-subtraction increment adds bounded `V_SUB_NC_I32`
-(opcode 886). Saturation and broader modifiers remain open. See the
+(opcode 886). Signed saturation is now implemented and awaits independent review;
+broader modifiers remain open. See the
 [signed-subtraction checkpoint](../testing/local-graphics-checkpoint.md#stage-31-increment-signed-subtraction-without-carry).
 
 ## Whole-stage map

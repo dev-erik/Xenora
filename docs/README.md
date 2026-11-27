@@ -27,7 +27,7 @@ either path. The [changelog](../CHANGELOG.md) records notable changes.
 
 ## Native Metal graphics
 
-- [Signed subtraction validation](testing/local-graphics-checkpoint.md#stage-31-increment-signed-subtraction-without-carry) — Bounded S3.1 arithmetic, exact native cases and remaining saturation limits.
+- [Signed subtraction validation](testing/local-graphics-checkpoint.md#stage-31-increment-signed-subtraction-saturation) — Bounded S3.1 arithmetic, wrapping and saturation cases, with separate review status.
 
 - [Bounded resource dependencies](interfaces.md#bounded-resource-dependency-contract) — Version selection, failure/lifetime rules and [acceptance checklist](superpowers/plans/2026-11-27-resource-graph-acceptance.md).
 

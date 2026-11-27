@@ -10,6 +10,9 @@ Guest execution uses original, purpose-built test programs. Commercial Xbox game
 remains unsupported.
 
 ### Changed
+- Implemented signed saturation for `V_SUB_NC_I32` in compute and graphics;
+  wrapping mode and condition flags retain their behavior. Independent review of
+  the added clamp mode remains pending.
 - Expanded MAD16 floating-named inline selectors to position-specific halfword
   multiplicand bits and full-word accumulator bits, preserving integer semantics.
 - Updated Stage 3 execution priority to S3.1 arithmetic expansion while retaining
@@ -32,7 +35,7 @@ remains unsupported.
 
 ### Added
 - Added bounded `V_SUB_NC_I32` translation with wrapping 32-bit subtraction,
-  unchanged flags, and explicit rejection of deferred saturation/modifier forms.
+  unchanged flags, and explicit rejection of unsupported modifier forms.
   Independent fixed-answer compute and graphics validation passed.
 - Added bounded signed/unsigned low-halfword multiply-add with full32-bit
   wrapping accumulation and preserved flags. Multiplicand literal and

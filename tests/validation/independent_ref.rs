@@ -965,6 +965,16 @@ fn lane_step(
                         ripple(a, !b, true).0
                     }
                 }
+                886 => {
+                    let result = ripple(a, !b, true).0;
+                    let negative_a = a >= 0x80000000;
+                    let negative_b = b >= 0x80000000;
+                    if negative_a != negative_b && (result >= 0x80000000) != negative_a {
+                        if negative_a { 0x80000000 } else { 0x7fffffff }
+                    } else {
+                        result
+                    }
+                }
                 295 => {
                     if b < a {
                         0
@@ -1602,7 +1612,7 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
             || (clamp
                 && !matches!(
                     opcode,
-                    265 | 267 | 293 | 294 | 295 | 322 | 323 | 346 | 347 | 348 | 349
+                    886 | 265 | 267 | 293 | 294 | 295 | 322 | 323 | 346 | 347 | 348 | 349
                 ))
         {
             return Err(fail("unsupported VOP3 modifiers"));

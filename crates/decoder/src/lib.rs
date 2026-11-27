@@ -1401,6 +1401,7 @@ impl CheckedVectorOp {
             Self::BinaryAlias(VectorBinaryOp::Alu(VectorAluOp::SubrevNcU32)) => {
                 VectorClampOp::SubrevU32
             }
+            Self::BinaryAlias(VectorBinaryOp::SubNcI32) => VectorClampOp::SubI32,
             _ => return None,
         })
     }

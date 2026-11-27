@@ -135,6 +135,8 @@ pub enum VectorClampOp {
     AddU32,
     /// Saturating `v_sub_nc_u32`.
     SubU32,
+    /// Saturating signed `v_sub_nc_i32`.
+    SubI32,
     /// Saturating `v_subrev_nc_u32`.
     SubrevU32,
 }
@@ -146,6 +148,7 @@ impl VectorClampOp {
             Self::MulU24 => "v_mul_u32_u24_e64",
             Self::AddU32 => "v_add_nc_u32_e64",
             Self::SubU32 => "v_sub_nc_u32_e64",
+            Self::SubI32 => "v_sub_nc_i32",
             Self::SubrevU32 => "v_subrev_nc_u32_e64",
         }
     }

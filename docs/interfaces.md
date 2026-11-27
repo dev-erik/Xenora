@@ -1935,6 +1935,7 @@ records the expanded inline-source evidence.
 
 The VOP3 `V_SUB_NC_I32` form uses `VectorBinaryOp::SubNcI32` and the existing
 wrapping integer subtraction lowering in compute and graphics. SCC and VCC are
-preserved. Zero modifiers and canonical unused SRC2 selector 128 are required;
-signed clamp is deferred. The [operand contract](shaders/vop3-integer.md#signed-subtraction-without-carry)
+preserved. Only optional CLAMP and canonical unused SRC2 selector 128 are
+supported. CLAMP saturates to the signed 32-bit range before narrowing; the
+new mode awaits independent review. The [operand contract](shaders/vop3-integer.md#signed-subtraction-without-carry)
 records the admitted subset; this is not a claim of complete signed arithmetic.

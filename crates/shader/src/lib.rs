@@ -575,6 +575,14 @@ fn clamped_expression(op: VectorClampOp, a: &str, b: &str) -> String {
         VectorClampOp::AddU32 => {
             format!("(({a}) > (0xffffffffu - ({b})) ? 0xffffffffu : (({a}) + ({b})))")
         }
+        VectorClampOp::SubI32 => {
+            // Subtraction overflows iff the operands differ in sign and the
+            // wrapped result differs in sign from the minuend. All math is uint.
+            let difference = format!("(({a}) - ({b}))");
+            format!(
+                "((((({a}) ^ ({b})) & (({a}) ^ {difference}) & 0x80000000u) != 0u) ? ((({a}) & 0x80000000u) != 0u ? 0x80000000u : 0x7fffffffu) : {difference})"
+            )
+        }
         VectorClampOp::SubU32 => format!("(({a}) < ({b}) ? 0u : (({a}) - ({b})))"),
         VectorClampOp::SubrevU32 => format!("(({b}) < ({a}) ? 0u : (({b}) - ({a})))"),
         VectorClampOp::MulU24 => {

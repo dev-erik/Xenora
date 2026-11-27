@@ -722,6 +722,7 @@ fn reference_op(instruction: Instruction) -> Op {
                 xenora_decoder::VectorClampOp::MulI24 => xenora_ref::ClampOp::MulI24,
                 xenora_decoder::VectorClampOp::MulU24 => xenora_ref::ClampOp::MulU24,
                 xenora_decoder::VectorClampOp::AddU32 => xenora_ref::ClampOp::AddU32,
+                xenora_decoder::VectorClampOp::SubI32 => xenora_ref::ClampOp::SubI32,
                 xenora_decoder::VectorClampOp::SubU32 => xenora_ref::ClampOp::SubU32,
                 xenora_decoder::VectorClampOp::SubrevU32 => xenora_ref::ClampOp::SubrevU32,
             },
@@ -3122,6 +3123,14 @@ fn llvm_mask_half_sources_match_exact_words_and_reference() {
 #[ignore = "requires native LLVM llvm-mc"]
 fn sub_nc_i32_exact_llvm_encodings() {
     let rows = [
+        (
+            "v_sub_nc_i32 v5, v1, v2 clamp",
+            vec![0xd7768005, 0x02020501],
+        ),
+        (
+            "v_sub_nc_i32 v3, 0x12345678, 0x12345678 clamp",
+            vec![0xd7768003, 0x0201feff, 0x12345678],
+        ),
         ("v_sub_nc_i32 v5, v1, v2", vec![0xd7760005, 0x02020501]),
         ("v_sub_nc_i32 v255, s8, -1", vec![0xd77600ff, 0x02018208]),
         (
@@ -3157,10 +3166,17 @@ fn sub_nc_i32_exact_llvm_encodings() {
         assert_eq!(decoded.len(), 1);
         assert_eq!(decoded[0].byte_len as usize, expected.len());
         assert_eq!(decoded[0].instruction.mnemonic(), "v_sub_nc_i32");
+        assert_eq!(
+            matches!(decoded[0].instruction, Instruction::VectorClampedE64 { .. }),
+            line.ends_with(" clamp")
+        );
         assert!(matches!(
             decoded[0].instruction,
             Instruction::VectorBinaryE64 {
                 op: xenora_decoder::VectorBinaryOp::SubNcI32,
+                ..
+            } | Instruction::VectorClampedE64 {
+                op: xenora_decoder::VectorClampOp::SubI32,
                 ..
             }
         ));

@@ -1396,7 +1396,7 @@ Update the implementation and its evidence in `docs/status.toml`, then regenerat
 | 882 | `V_OR3_B32` | Converted subset; fixture accepted | MSL uint three-input bitwise OR; compute and graphics | fixture verified | fixture verified |
 | 883 | `V_MAD_U32_U16` | Converted subset; fixture accepted | MSL low-halfword multiplication and full-word wrapping accumulation; compute and graphics | fixture verified | fixture verified |
 | 885 | `V_MAD_I32_I16` | Converted subset; fixture accepted | MSL low-halfword multiplication and full-word wrapping accumulation; compute and graphics | fixture verified | fixture verified |
-| 886 | `V_SUB_NC_I32` | Converted subset; fixture accepted | MSL wrapping 32-bit subtraction; compute and graphics | fixture verified | fixture verified |
+| 886 | `V_SUB_NC_I32` | Converted subset; fixture accepted | MSL wrapping or signed-saturating 32-bit subtraction; compute and graphics | fixture verified | fixture verified |
 | 887 | `V_PERMLANE16_B32` | Converted subset; fixture accepted | MSL nibble-selected same-row gather with captured source and selector versions | fixture verified | fixture verified |
 | 888 | `V_PERMLANEX16_B32` | Converted subset; fixture accepted | MSL nibble-selected paired-row gather (0/1 and 2/3) with captured source and selector versions | fixture verified | fixture verified |
 | 895 | `V_ADD_NC_I32` | Not converted | — | — | — |

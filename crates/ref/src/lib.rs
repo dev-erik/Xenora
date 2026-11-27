@@ -419,6 +419,7 @@ pub enum ClampOp {
     AddU32,
     SubU32,
     SubrevU32,
+    SubI32,
 }
 
 /// Canonical e64 aliases retain two independently decoded generic sources.
@@ -1340,7 +1341,7 @@ fn decode_vop3_integer(bytes: &[u8], offset: usize) -> Result<(Op, usize), Refer
         || (clamp
             && !matches!(
                 opcode,
-                265 | 267 | 293 | 294 | 295 | 322 | 323 | 346 | 347 | 348 | 349
+                886 | 265 | 267 | 293 | 294 | 295 | 322 | 323 | 346 | 347 | 348 | 349
             ))
     {
         return Err(error(offset, "unsupported VOP3 modifiers"));
@@ -1460,6 +1461,7 @@ fn decode_vop3_integer(bytes: &[u8], offset: usize) -> Result<(Op, usize), Refer
             267 => ClampOp::MulU24,
             293 => ClampOp::AddU32,
             294 => ClampOp::SubU32,
+            886 => ClampOp::SubI32,
             295 => ClampOp::SubrevU32,
             _ => unreachable!(),
         };
@@ -2218,10 +2220,11 @@ fn execute_wave(
                                     i64::from(a & 0xffffff) * i64::from(b & 0xffffff)
                                 }
                                 ClampOp::AddU32 => i64::from(a) + i64::from(b),
+                                ClampOp::SubI32 => i64::from(a as i32) - i64::from(b as i32),
                                 ClampOp::SubU32 => i64::from(a) - i64::from(b),
                                 ClampOp::SubrevU32 => i64::from(b) - i64::from(a),
                             };
-                            let (low, high) = if kind == ClampOp::MulI24 {
+                            let (low, high) = if matches!(kind, ClampOp::MulI24 | ClampOp::SubI32) {
                                 (i64::from(i32::MIN), i64::from(i32::MAX))
                             } else {
                                 (0, i64::from(u32::MAX))
