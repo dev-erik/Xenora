@@ -2490,3 +2490,15 @@ gpu = "fixture verified"
 recognized = true
 decoded = true
 llvm = "three-way passed"
+
+[[instruction]]
+form = "v_sub_nc_i32"
+encoding = "VOP3; two checked sources, canonical unused SRC2, zero modifiers"
+representation = "8 B or 12 B with shared literal"
+lowering = "MSL wrapping 32-bit subtraction; compute and graphics"
+reference = "implemented"
+cpu = "fixture verified"
+gpu = "fixture verified"
+recognized = true
+decoded = true
+llvm = "three-way passed"

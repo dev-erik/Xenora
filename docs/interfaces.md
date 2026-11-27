@@ -1930,3 +1930,11 @@ graphics integer/uniform/descriptor restrictions remain in force. The
 details the source positions and exclusions. The [MAD16 checkpoint](testing/local-graphics-checkpoint.md#stage-31-increment-mixed-width-multiply-add)
 records the initial subset validation; the [inline-width checkpoint](testing/local-graphics-checkpoint.md#stage-31-increment-width-dependent-mad16-inline-constants)
 records the expanded inline-source evidence.
+
+### Signed subtraction subset
+
+The VOP3 `V_SUB_NC_I32` form uses `VectorBinaryOp::SubNcI32` and the existing
+wrapping integer subtraction lowering in compute and graphics. SCC and VCC are
+preserved. Zero modifiers and canonical unused SRC2 selector 128 are required;
+signed clamp is deferred. The [operand contract](shaders/vop3-integer.md#signed-subtraction-without-carry)
+records the admitted subset; this is not a claim of complete signed arithmetic.

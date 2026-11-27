@@ -752,6 +752,9 @@ fn reference_op(instruction: Instruction) -> Op {
                         VectorAluOp::SubrevNcU32 => VectorInteger::SubtractReverse,
                     })
                 }
+                xenora_decoder::VectorBinaryOp::SubNcI32 => {
+                    xenora_ref::VectorAlias::Integer(VectorInteger::Subtract)
+                }
                 xenora_decoder::VectorBinaryOp::AndB32 => {
                     xenora_ref::VectorAlias::Legacy(VectorAlu::And)
                 }
@@ -857,6 +860,7 @@ fn compares_fixture_instructions_against_llvm() {
         include_bytes!("../../../fixtures/rdna2/vop3-mad-sad.bin"),
         include_bytes!("../../../fixtures/rdna2/vop3-byte-arithmetic.bin"),
         include_bytes!("../../../fixtures/rdna2/vop3-mad16.bin"),
+        include_bytes!("../../../fixtures/rdna2/vop3-sub-nc-i32.bin"),
         include_bytes!("../../../fixtures/rdna2/vector-compare.bin"),
         high_registers,
         &matrix,
@@ -875,7 +879,7 @@ fn compares_fixture_instructions_against_llvm() {
     ] {
         count += compare_against_llvm(fixture, &mut forms);
     }
-    assert_eq!(forms.len(), 187, "forms compared: {forms:?}");
+    assert_eq!(forms.len(), 188, "forms compared: {forms:?}");
     eprintln!(
         "{count} three-way instruction comparisons across {} forms",
         forms.len()
@@ -1347,6 +1351,7 @@ fn normalize_llvm_assembly(assembly: &str, next_offset: usize) -> String {
         | "v_max_u32_e64"
         | "v_xnor_b32_e64"
         | "v_add_nc_u32_e64"
+        | "v_sub_nc_i32"
         | "v_sub_nc_u32_e64"
         | "v_subrev_nc_u32_e64"
         | "v_and_b32_e64"
@@ -3111,4 +3116,53 @@ fn llvm_mask_half_sources_match_exact_words_and_reference() {
         );
     }
     eprintln!("28 exact mask-half encoding/reference comparisons; no new forms");
+}
+
+#[test]
+#[ignore = "requires native LLVM llvm-mc"]
+fn sub_nc_i32_exact_llvm_encodings() {
+    let rows = [
+        ("v_sub_nc_i32 v5, v1, v2", vec![0xd7760005, 0x02020501]),
+        ("v_sub_nc_i32 v255, s8, -1", vec![0xd77600ff, 0x02018208]),
+        (
+            "v_sub_nc_i32 v1, 0x80000000, v1",
+            vec![0xd7760001, 0x020202ff, 0x80000000],
+        ),
+        (
+            "v_sub_nc_i32 v2, v1, 0x7fffffff",
+            vec![0xd7760002, 0x0201ff01, 0x7fffffff],
+        ),
+        (
+            "v_sub_nc_i32 v3, 0x12345678, 0x12345678",
+            vec![0xd7760003, 0x0201feff, 0x12345678],
+        ),
+    ];
+    let assembly = rows
+        .iter()
+        .map(|(line, _)| format!("{line}\n"))
+        .collect::<String>();
+    let output = llvm_mc(&[], assembly.as_bytes());
+    assert_llvm_success(&output);
+    let text = String::from_utf8(output.stdout).unwrap();
+    let encoded: Vec<_> = text
+        .lines()
+        .filter_map(|line| line.split_once("; encoding: ["))
+        .map(|(_, encoding)| encoding_bytes(encoding))
+        .collect();
+    assert_eq!(encoded.len(), rows.len());
+    for (actual, (line, words)) in encoded.iter().zip(rows) {
+        let expected: Vec<_> = words.into_iter().flat_map(u32::to_le_bytes).collect();
+        assert_eq!(*actual, expected, "{line}");
+        let decoded = decode(Architecture::Gfx1030, actual).unwrap();
+        assert_eq!(decoded.len(), 1);
+        assert_eq!(decoded[0].byte_len as usize, expected.len());
+        assert_eq!(decoded[0].instruction.mnemonic(), "v_sub_nc_i32");
+        assert!(matches!(
+            decoded[0].instruction,
+            Instruction::VectorBinaryE64 {
+                op: xenora_decoder::VectorBinaryOp::SubNcI32,
+                ..
+            }
+        ));
+    }
 }

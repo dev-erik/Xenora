@@ -27,6 +27,8 @@ either path. The [changelog](../CHANGELOG.md) records notable changes.
 
 ## Native Metal graphics
 
+- [Signed subtraction validation](testing/local-graphics-checkpoint.md#stage-31-increment-signed-subtraction-without-carry) — Bounded S3.1 arithmetic, exact native cases and remaining saturation limits.
+
 - [Bounded resource dependencies](interfaces.md#bounded-resource-dependency-contract) — Version selection, failure/lifetime rules and [acceptance checklist](superpowers/plans/2026-11-27-resource-graph-acceptance.md).
 
 - [Four-queue resource graphs](interfaces.md#four-queue-graph-increment) — Expanded opt-in queue admission, recovery and [increment checklist](superpowers/plans/2026-11-27-four-queue-graphs.md).

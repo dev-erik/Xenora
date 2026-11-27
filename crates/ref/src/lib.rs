@@ -863,6 +863,7 @@ pub fn decode(code: &[u8]) -> Result<Vec<DecodedInstruction>, ReferenceError> {
                                 | 879
                                 | 883
                                 | 885
+                                | 886
                                 | 837
                                 | 333
                                 | 369
@@ -1346,7 +1347,8 @@ fn decode_vop3_integer(bytes: &[u8], offset: usize) -> Result<(Op, usize), Refer
     }
     let binary = matches!(
         opcode,
-        361 | 362
+        886 | 361
+            | 362
             | 364
             | 867
             | 868
@@ -1534,7 +1536,7 @@ fn decode_vop3_integer(bytes: &[u8], offset: usize) -> Result<(Op, usize), Refer
             args[0],
             args[1],
         ),
-        294 => Op::VectorBinaryAlias(
+        294 | 886 => Op::VectorBinaryAlias(
             VectorAlias::Integer(VectorInteger::from_opcode(38).unwrap()),
             dst,
             args[0],

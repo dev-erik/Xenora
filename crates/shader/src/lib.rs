@@ -612,6 +612,8 @@ fn vector_unary_expression(op: VectorUnaryOp, source: &str) -> String {
 fn alias_binary(op: VectorBinaryOp) -> (Binary, bool) {
     match op {
         VectorBinaryOp::Alu(op) => (Binary::Vector(op.lowering()), op.swaps_sources()),
+        // RDNA2 p185: S0 - S1, no carry. Unsigned arithmetic preserves wrapping bits.
+        VectorBinaryOp::SubNcI32 => (Binary::Vector(VectorBinary::Sub), false),
         VectorBinaryOp::AndB32 => (Binary::And, false),
         VectorBinaryOp::OrB32 => (Binary::Or, false),
         VectorBinaryOp::XorB32 => (Binary::Xor, false),

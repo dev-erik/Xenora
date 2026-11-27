@@ -557,3 +557,47 @@ fn mad16_named_float_sources_use_half_and_full_width_pixels() {
     }
     assert_eq!(count, 72);
 }
+
+#[test]
+fn sub_nc_i32_boundaries_sources_and_aliases() {
+    let gpu = NativeCompute::new().unwrap();
+    for (a, b, want) in [
+        (0u32, 1u32, 0xffffffffu32),
+        (0x80000000, 1, 0x7fffffff),
+        (0x7fffffff, 0xffffffff, 0x80000000),
+        (0xffffffff, 0x80000000, 0x7fffffff),
+        (0x80000000, 0x7fffffff, 1),
+        (0x7fa12345, 0x12345678, 0x6d6ccccd),
+        (0xffffffff, 0xffffffff, 0),
+    ] {
+        for dst in [8, 9, 11] {
+            for (src, lit) in [
+                ([264, 265, 128], None),
+                ([24, 265, 128], None),
+                ([264, 25, 128], None),
+                ([255, 265, 128], Some(a)),
+                ([264, 255, 128], Some(b)),
+            ] {
+                assert_eq!(
+                    render(
+                        &gpu,
+                        &pixel(886, dst, src, lit, false),
+                        [a, b, 0, 0, 0, 0, 0, 0]
+                    ),
+                    vec![want.to_le_bytes().to_vec()]
+                );
+            }
+        }
+    }
+    for (src, lit, want) in [
+        ([255, 255, 128], Some(0x80000000), 0u32),
+        ([240, 129, 128], None, 0x3effffff),
+        ([129, 240, 128], None, 0xc1000001),
+        ([193, 129, 128], None, 0xfffffffe),
+    ] {
+        assert_eq!(
+            render(&gpu, &pixel(886, 11, src, lit, false), [0; 8]),
+            vec![want.to_le_bytes().to_vec()]
+        );
+    }
+}

@@ -1554,6 +1554,7 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
                 | 879
                 | 883
                 | 885
+                | 886
                 | 837
                 | 333
                 | 369
@@ -1611,7 +1612,8 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
             1
         } else if matches!(
             opcode,
-            361 | 362
+            886 | 361
+                | 362
                 | 364
                 | 867
                 | 868
@@ -1715,7 +1717,7 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
             276 => Insn::VAlias(20, dst, args[0], args[1]),
             286 => Insn::VAlias(30, dst, args[0], args[1]),
             293 => Insn::VAlias(37, dst, args[0], args[1]),
-            294 => Insn::VAlias(38, dst, args[0], args[1]),
+            294 | 886 => Insn::VAlias(38, dst, args[0], args[1]),
             295 => Insn::VAlias(39, dst, args[0], args[1]),
             282 => Insn::VAlias(26, dst, args[0], args[1]),
             278 => Insn::VAlias(22, dst, args[0], args[1]),

@@ -5,7 +5,8 @@ use xenora_shader::{
     compile_graphics_pipeline_typed,
 };
 const VS: &[u8] = include_bytes!("../../../fixtures/rdna2/x9-constant-vs.bin");
-const OPS: [u32; 67] = [
+const OPS: [u32; 68] = [
+    886,
     883,
     885,
     837,
@@ -79,7 +80,7 @@ fn arity(op: u32) -> usize {
     match op {
         439..=443 => 1,
         265 | 266 | 267 | 268 | 273 | 274 | 275 | 276 | 286 | 293 | 294 | 295 | 282 | 278 | 280
-        | 283 | 284 | 285 | 361 | 362 | 364 | 867 | 868 => 2,
+        | 283 | 284 | 285 | 361 | 362 | 364 | 867 | 868 | 886 => 2,
         _ => 3,
     }
 }

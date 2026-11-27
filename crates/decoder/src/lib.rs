@@ -46,7 +46,7 @@ const fn concat_forms<const N: usize>() -> [(&'static str, EncodingFamily); N] {
 }
 
 /// Decoded forms not yet described by the semantic registry.
-const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 132] = [
+const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 133] = [
     ("DS_PERMUTE_B32", EncodingFamily::Ds),
     ("DS_BPERMUTE_B32", EncodingFamily::Ds),
     ("DS_SWIZZLE_B32", EncodingFamily::Ds),
@@ -71,6 +71,7 @@ const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 132] = [
     ("V_MAX_U32", EncodingFamily::Vop3),
     ("V_XNOR_B32", EncodingFamily::Vop3),
     ("V_SUB_NC_U32", EncodingFamily::Vop3),
+    ("V_SUB_NC_I32", EncodingFamily::Vop3),
     ("V_SUBREV_NC_U32", EncodingFamily::Vop3),
     ("V_AND_B32", EncodingFamily::Vop3),
     ("V_OR_B32", EncodingFamily::Vop3),
@@ -1345,6 +1346,7 @@ impl CheckedVectorOp {
             0xd5250000 => Self::BinaryAlias(VectorBinaryOp::Alu(VectorAluOp::AddNcU32)),
             0xd5260000 => Self::BinaryAlias(VectorBinaryOp::Alu(VectorAluOp::SubNcU32)),
             0xd5270000 => Self::BinaryAlias(VectorBinaryOp::Alu(VectorAluOp::SubrevNcU32)),
+            0xd7760000 => Self::BinaryAlias(VectorBinaryOp::SubNcI32),
             0xd51b0000 => Self::BinaryAlias(VectorBinaryOp::AndB32),
             0xd51c0000 => Self::BinaryAlias(VectorBinaryOp::OrB32),
             0xd51d0000 => Self::BinaryAlias(VectorBinaryOp::XorB32),

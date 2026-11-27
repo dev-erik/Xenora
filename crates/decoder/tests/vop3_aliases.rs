@@ -4,9 +4,9 @@ use xenora_decoder::{
     Architecture::Gfx1030, DecodeErrorKind, Instruction, VectorAluOp, VectorBinaryOp, VectorSource,
     VectorUnaryOp, decode, decode_at,
 };
-const OPS: [u32; 23] = [
+const OPS: [u32; 24] = [
     265, 266, 267, 268, 273, 274, 275, 276, 286, 293, 294, 295, 283, 284, 285, 282, 278, 280, 439,
-    440, 441, 442, 443,
+    440, 441, 442, 443, 886,
 ];
 const FLOAT: [u32; 9] = [
     0x3f000000, 0xbf000000, 0x3f800000, 0xbf800000, 0x40000000, 0xc0000000, 0x40800000, 0xc0800000,
@@ -83,6 +83,7 @@ fn expected(op: u32, dst: u8, src: [VectorSource; 3]) -> Instruction {
                 293 => VectorBinaryOp::Alu(VectorAluOp::AddNcU32),
                 294 => VectorBinaryOp::Alu(VectorAluOp::SubNcU32),
                 295 => VectorBinaryOp::Alu(VectorAluOp::SubrevNcU32),
+                886 => VectorBinaryOp::SubNcI32,
                 283 => VectorBinaryOp::AndB32,
                 284 => VectorBinaryOp::OrB32,
                 285 => VectorBinaryOp::XorB32,
@@ -270,6 +271,7 @@ fn exact_names_and_metadata_unique() {
         (441, "v_ffbh_u32_e64", "V_FFBH_U32"),
         (442, "v_ffbl_b32_e64", "V_FFBL_B32"),
         (443, "v_ffbh_i32_e64", "V_FFBH_I32"),
+        (886, "v_sub_nc_i32", "V_SUB_NC_I32"),
     ] {
         let instruction = decode_at(Gfx1030, &code(opcode, 5, baseline(opcode), 0), 0)
             .unwrap()

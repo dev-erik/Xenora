@@ -272,3 +272,17 @@ graphics renders on Apple M4 Max. These results cover only this bounded subset.
 The subsequent [inline-width checkpoint](../testing/local-graphics-checkpoint.md#stage-31-increment-width-dependent-mad16-inline-constants)
 adds72 native compute and72 typed graphics cases for the position-specific
 constants above. Modifier and broad literal support remain separate gaps.
+
+## Signed subtraction without carry
+
+`V_SUB_NC_I32` (VOP3 opcode 886) subtracts SRC1 from SRC0 modulo 2^32,
+without changing SCC or VCC. It uses the existing two-source integer path in
+compute and graphics, including captured source/destination aliases and retained
+inactive compute lanes. Floating-named inline constants supply raw 32-bit words.
+
+The bounded form requires zero modifiers and unused SRC2 selector 128. Both active
+sources admit the existing checked VOP3 register/inline/shared-literal domain;
+consumer readiness and stage restrictions still apply. Signed saturation is
+specified by AMD but remains deliberately unsupported here; it is not equivalent
+to the unsigned subtract clamp operation. Broader source/modifier and execution
+contracts remain S3.1 work. See AMD RDNA2 section 12.12, printed page 185.

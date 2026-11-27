@@ -218,6 +218,7 @@ The wider LLVM operand matrix exercises decoding only. ABI means application bin
 | `v_msad_u8` | VOP3; checked three sources; zero modifiers | 8 B or 12 B with shared literal | yes | yes | three-way passed | MSL unsigned integer compute and graphics; documented bounded sources and masks | implemented | fixture verified | fixture verified |
 | `v_mad_u32_u16` | VOP3; checked sources with width-dependent inline bits; zero modifiers and bounded multiplicand literals | 8 B or 12 B with shared literal | yes | yes | three-way passed | MSL low-halfword multiplication and full-word wrapping accumulation; compute and graphics | implemented | fixture verified | fixture verified |
 | `v_mad_i32_i16` | VOP3; checked sources with width-dependent inline bits; zero modifiers and bounded multiplicand literals | 8 B or 12 B with shared literal | yes | yes | three-way passed | MSL low-halfword multiplication and full-word wrapping accumulation; compute and graphics | implemented | fixture verified | fixture verified |
+| `v_sub_nc_i32` | VOP3; two checked sources, canonical unused SRC2, zero modifiers | 8 B or 12 B with shared literal | yes | yes | three-way passed | MSL wrapping 32-bit subtraction; compute and graphics | implemented | fixture verified | fixture verified |
 <!-- status:instructions:end -->
 
 ## Automated three-way comparison

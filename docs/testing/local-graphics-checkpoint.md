@@ -6,6 +6,51 @@ claim of Xbox hardware equivalence. Supporting raw logs, mutation records and
 source manifests remain local and are not distributed with the repository.
 The array-range descriptor increment below was validated on 26 November 2026.
 
+## Stage 3.1 increment: signed subtraction without carry
+
+27 November 2026. Added the bounded `V_SUB_NC_I32` VOP3 form (opcode 886):
+wrapping 32-bit subtraction with unchanged SCC/VCC. The existing compute and
+graphics integer paths capture aliased operands and retain inactive compute
+lanes. Both sources admit the checked VOP3 register/inline/shared-literal domain.
+Zero modifiers and canonical unused SRC2 selector 128 are required. Signed
+saturation remains deferred, not hardware-invalid. See the
+[operand contract](../shaders/vop3-integer.md#signed-subtraction-without-carry).
+
+Arithmetic decoding advances to 164/480 forms, leaving 316 undecoded. All S3
+stages remain open; this is synthetic public-specification evidence, not Xbox
+hardware validation or game compatibility.
+
+The focused independent CPU target passed seven tests with one native test
+ignored. The explicitly enabled native target then passed all eight tests,
+zero ignored, with Metal API and shader validation enabled: 99 fixed-answer
+cases plus one assembled fixture (100 native dispatches). Cases cover signed
+overflow, both source orders, register/literal/scalar aliases, empty/sparse/full
+EXEC, partial final waves, and unchanged SCC/VCC. The native graphics test also
+passed 109 exact R32Uint renders under the same Metal validation settings.
+Independent specification and code-quality reviews found no production blocker.
+The suggested canonical-padding unsupported-neighbor checks were added and passed.
+Five exact LLVM encoding rows and 1,349 three-way instruction comparisons across
+188 forms passed. A deliberate source-order reversal failed an exact native pixel
+assertion; the production source was restored byte-for-byte afterward.
+The secondary reference retains its existing exclusion of VCC_HI/EXEC source
+selectors 107/126/127; no native acceptance for those source variants is implied.
+The restored graphics run passed all 109 renders again. Formatting, generated
+coverage/visual maps, fixture reproduction, claims and dependency checks passed.
+The final four-package CPU regression passed 896 tests with zero failures and
+62 ignored; ignored tests are not native evidence. Workspace all-target Clippy
+also passed. Full workspace tests and the full native GPU wrapper were not rerun
+for this increment.
+
+Logs are local under `artifacts/s31-sub-i32/`. Reproduce on Apple Silicon:
+
+```sh
+export CARGO_BUILD_JOBS=2 CARGO_BUILD_TARGET=aarch64-apple-darwin
+export MTL_DEBUG_LAYER=1 MTL_SHADER_VALIDATION=1
+export MTL_SHADER_VALIDATION_REPORT_TO_STDERR=1 MTL_SHADER_VALIDATION_ABORT_ON_FAULT=1
+cargo test --locked -p xenora-semantic-review --test sub_nc_i32 -- --include-ignored --test-threads=1
+cargo test --locked -p xenora-metal --features gpu-tests --test native_compute sub_nc_i32 -- --test-threads=1
+```
+
 ## Stage 3.1 increment: width-dependent MAD16 inline constants
 
 27 November 2026. Expanded the existing signed and unsigned MAD16 forms to

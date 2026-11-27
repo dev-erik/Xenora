@@ -82,6 +82,8 @@ impl fmt::Display for VectorSource {
 pub enum VectorBinaryOp {
     /// Existing registry arithmetic semantics.
     Alu(VectorAluOp),
+    /// Unclamped signed subtraction; wrapping bits, no carry-in or carry-out.
+    SubNcI32,
     /// `v_and_b32`.
     AndB32,
     /// `v_or_b32`.
@@ -111,6 +113,7 @@ impl VectorBinaryOp {
             Self::Alu(VectorAluOp::AddNcU32) => "v_add_nc_u32_e64",
             Self::Alu(VectorAluOp::SubNcU32) => "v_sub_nc_u32_e64",
             Self::Alu(VectorAluOp::SubrevNcU32) => "v_subrev_nc_u32_e64",
+            Self::SubNcI32 => "v_sub_nc_i32",
             Self::AndB32 => "v_and_b32_e64",
             Self::OrB32 => "v_or_b32_e64",
             Self::XorB32 => "v_xor_b32_e64",
