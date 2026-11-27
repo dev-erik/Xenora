@@ -490,19 +490,28 @@ fn decode_gfx1030(bytes: &[u8], offset: usize) -> Result<(Instruction, u8), Deco
         let second = word(bytes, 8)?;
         let src = second & 511;
         let lane = (second >> 9) & 511;
-        if first & 0xff00 != 0 || second >> 18 != 128 || src > 105 || lane > 105 {
+        if first & 0xff00 != 0
+            || second >> 18 != 128
+            || !matches!(src, 0..=105 | 128..=208 | 240..=248 | 255)
+            || lane > 105
+        {
             return Err(unsupported(
                 "v_writelane_b32",
-                "expected unmodified normal SGPR data/index and inline-zero SRC2",
+                "expected unmodified normal SGPR or constant data, normal SGPR index and inline-zero SRC2",
             ));
         }
+        let (src, source_len) = if src == 255 {
+            (ScalarSource::Immediate(word(bytes, 12)?), 8)
+        } else {
+            scalar_source(src as u8, bytes, "v_writelane_b32")?
+        };
         return Ok((
             Instruction::WriteLaneB32 {
                 dst: first as u8,
-                src: src as u8,
+                src,
                 lane: lane as u8,
             },
-            8,
+            source_len + 4,
         ));
     }
     if first & 0xffff0000 == 0xd7600000 {

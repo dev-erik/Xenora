@@ -69,3 +69,118 @@ fn rejects_unready_destinations_and_runtime_selector_even_exec_zero() {
         .is_err()
     );
 }
+
+#[test]
+fn constant_data_encodings_and_literals_execute_in_both_wave_sizes() {
+    use xenora_ref::{WaveConfig, WaveLaunch, WaveSize, execute_with_wave_config};
+    let cases = [
+        (128, 0),
+        (192, 64),
+        (193, u32::MAX),
+        (208, 0xfffffff0),
+        (240, 0x3f000000),
+        (241, 0xbf000000),
+        (242, 0x3f800000),
+        (243, 0xbf800000),
+        (244, 0x40000000),
+        (245, 0xc0000000),
+        (246, 0x40800000),
+        (247, 0xc0800000),
+        (248, 0x3e22f983),
+        (255, 0xdeadbeef),
+    ];
+    for (size, width) in [(WaveSize::Wave32, 32), (WaveSize::Wave64, 64)] {
+        for (source, value) in cases {
+            let mut body = vec![
+                0xbe8903ff,
+                width - 1,
+                0xbefe0380,
+                0xbeff0380,
+                0xd7610001,
+                0x02001200 | source,
+            ];
+            if source == 255 {
+                body.push(value);
+            }
+            body.extend([0xbefe03c1, 0xbeff03c1]);
+            let input: Vec<u32> = (0..width * 2).map(|i| 1000 + i).collect();
+            let mut expected = input.clone();
+            expected[width as usize - 1] = value;
+            expected[width as usize * 2 - 1] = value;
+            assert_eq!(
+                execute_with_wave_config(
+                    &code(&body),
+                    &input,
+                    WaveConfig {
+                        size,
+                        launch: WaveLaunch::FullWavesRequired
+                    }
+                )
+                .unwrap(),
+                expected,
+                "source {source}, width {width}"
+            );
+        }
+    }
+}
+#[test]
+fn literal_decode_consumes_third_word_and_rejects_truncation() {
+    use xenora_ref::{Op, ScalarSource, decode};
+    let bytes: Vec<u8> = [0xd7610001u32, 0x020012ff, 0x12345678, 0xbf810000]
+        .into_iter()
+        .flat_map(u32::to_le_bytes)
+        .collect();
+    let decoded = decode(&bytes).unwrap();
+    assert_eq!(
+        decoded[0].op,
+        Op::WriteLane {
+            dst: 1,
+            src: ScalarSource::Immediate(0x12345678),
+            index: 9
+        }
+    );
+    assert_eq!(decoded[1].offset, 12);
+    for len in [4, 8, 9, 10, 11] {
+        assert!(decode(&bytes[..len]).is_err(), "length {len}");
+    }
+}
+#[test]
+fn constant_sources_do_not_relax_selector_modifier_or_destination_contract() {
+    use xenora_ref::decode;
+    for source in [106, 107, 124, 126, 127, 209, 239, 249, 254, 256] {
+        let bytes: Vec<u8> = [0xd7610001u32, 0x02001200 | source]
+            .into_iter()
+            .flat_map(u32::to_le_bytes)
+            .collect();
+        assert!(decode(&bytes).is_err(), "source {source}");
+    }
+    for (first, second) in [
+        (0xd7618001, 0x02001280),
+        (0xd7610101, 0x02001280),
+        (0xd7610001, 0x0200d480),
+        (0xd7610001, 0x02010080),
+        (0xd7610001, 0x02041280),
+        (0xd7610001, 0x0a001280),
+    ] {
+        let bytes: Vec<u8> = [first, second]
+            .into_iter()
+            .flat_map(u32::to_le_bytes)
+            .collect();
+        assert!(decode(&bytes).is_err());
+    }
+    for dst in [0, 2] {
+        assert!(
+            execute(
+                &code(&[
+                    0xbe890380,
+                    0xbefe0380,
+                    0xd7610000 | dst,
+                    0x02001280,
+                    0xbefe03c1
+                ]),
+                &[1]
+            )
+            .is_err()
+        );
+    }
+}

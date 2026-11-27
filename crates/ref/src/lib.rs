@@ -68,7 +68,7 @@ pub enum Op {
     WaitLgkm,
     WriteLane {
         dst: u8,
-        src: u8,
+        src: ScalarSource,
         index: u8,
     },
     /// A VGPR read into an SGPR; None chooses the first EXEC lane (zero when empty).
@@ -794,17 +794,25 @@ pub fn decode(code: &[u8]) -> Result<Vec<DecodedInstruction>, ReferenceError> {
                     return Err(error(offset, "truncated writelane"));
                 };
                 let index = (u16::from(*b) >> 1) | (u16::from(*c & 3) << 7);
-                if *flags != 0 || *a > 105 || b & 1 != 0 || index > 105 || c & 0xfc != 0 || *d != 2
+                // AMD RDNA2 p184 permits constants as data, but this contract
+                // keeps the lane selector a normal SGPR and all modifiers clear.
+                if *flags != 0
+                    || !matches!(*a, 0..=105 | 128..=208 | 240..=248 | 255)
+                    || b & 1 != 0
+                    || index > 105
+                    || c & 0xfc != 0
+                    || *d != 2
                 {
                     return Err(error(offset, "unsupported writelane operands or modifiers"));
                 }
+                let (src, source_length) = decode_scalar(*a, &rest[4..], offset)?;
                 (
                     Op::WriteLane {
                         dst: *dst,
-                        src: *a,
+                        src,
                         index: index as u8,
                     },
-                    8,
+                    4 + source_length,
                 )
             }
             [dst, flags, 0x60, 0xd7, rest @ ..] => {
@@ -1930,9 +1938,12 @@ fn execute_wave(
             }
             Op::WriteLane { dst, src, index } => {
                 let selected = read_scalar(Source::Register(index))? & (width as u32 - 1);
-                let value = scalars[usize::from(src)]
-                    .or(lane_scalars[usize::from(src)])
-                    .ok_or_else(|| error(offset, "read from uninitialized SGPR"))?;
+                let value = match src {
+                    Source::Immediate(bits) => bits,
+                    Source::Register(register) => scalars[usize::from(register)]
+                        .or(lane_scalars[usize::from(register)])
+                        .ok_or_else(|| error(offset, "read from uninitialized SGPR"))?,
+                };
                 for (lane, result) in results.iter_mut().enumerate() {
                     let old = read(lane, dst)?;
                     *result = Some((dst, if lane as u32 == selected { value } else { old }));

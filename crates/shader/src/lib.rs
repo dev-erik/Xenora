@@ -1875,11 +1875,23 @@ fn lift(
             Instruction::WriteLaneB32 { dst, src, lane } => {
                 let selected = read_scalar(ScalarSource::Register(lane))? & lane_mask;
                 let old = read(dst)?;
-                let value = if let Some(bits) = scalars[usize::from(src)] {
-                    constant(&mut operations, &mut facts, offset, bits)
-                } else {
-                    lane_scalars[usize::from(src)]
-                        .ok_or_else(|| error("scalar source has no known value"))?
+                let value = match src {
+                    ScalarSource::Immediate(bits) => {
+                        constant(&mut operations, &mut facts, offset, bits)
+                    }
+                    ScalarSource::Register(src @ 0..=105) => {
+                        if let Some(bits) = scalars[usize::from(src)] {
+                            constant(&mut operations, &mut facts, offset, bits)
+                        } else {
+                            lane_scalars[usize::from(src)]
+                                .ok_or_else(|| error("scalar source has no known value"))?
+                        }
+                    }
+                    ScalarSource::Register(_) => {
+                        return Err(error(
+                            "lane write data requires an ordinary SGPR or constant",
+                        ));
+                    }
                 };
                 registers[usize::from(dst)] = Some(merge_lanes(
                     &mut operations,

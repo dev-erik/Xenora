@@ -411,3 +411,47 @@ fixture-byte checks, generated status/coverage/map checks, claims and dependency
 checks passed. Independent review approved the corrected test expectations.
 Final changed-source hashes are recorded in
 `artifacts/s34-wave64/verified-source.json`. Full S3.4 and S3.2 remain open.
+
+## WRITELANE constant-data continuation
+
+WRITELANE now accepts inline integers, inline floating-point bit patterns and
+literal words as data, alongside its existing ordinary-SGPR data. Literal
+instructions consume12 bytes and preserve the payload exactly, including NaN
+bits and words that resemble opcodes. Lane selectors remain known ordinary
+SGPRs. This adds operand coverage to an existing instruction identity, so S3.4
+stays at11/11 decoded forms and remains open.
+
+The independently authored corpus contains132 new programs:96 source encoding
+and literal cases,18 Wave64 boundary/mask cases and18 partial-Wave32 cases.
+Expected outputs preserve every unselected input word and do not depend on
+production lowering or reference execution. On Apple M4 Max with Metal API and
+shader validation, the combined lane-write and Wave64 suite passed16 tests,
+zero ignored, covering762 native dispatches:132 new constant-data cases,
+504 existing lane-write cases and126 Wave64 regressions.
+
+A controlled mutation flipped bit zero of WRITELANE immediate data. The native
+constant-data test failed its output assertion. Production source was restored
+byte-for-byte, and the same16-test native suite passed again. Logs are
+`artifacts/s34-write-constants/native.log`, `mutation.log` and
+`native-restored.log`. This checks sensitivity to an incorrect value, not every
+possible implementation fault.
+
+CPU validation passed313 shader tests and339 independent semantic tests;
+38 native opt-ins were ignored in that ordinary CPU run. The selected native
+results above are reported separately. The independent reference passed77 CPU
+tests. LLVM checked five exact WRITELANE encodings, including register data,
+negative inline data, float-bit data and a literal. Two independent static
+reviews approved the bounded implementation and independently derived outputs.
+The [plan](../superpowers/plans/2026-11-27-writelane-constants.md) records scope.
+
+Remaining S3.4 work includes runtime lane selectors, special-register data and
+LDS-direct reads; dynamic EXEC, partial Wave64 populations and shared VGPRs;
+graphics/helper-lane semantics; and unresolved masked-rotation/inactive-PERMLANE
+behavior in public RDNA2 documentation. Constant-data support does not close
+these gaps or establish Xbox shader compatibility.
+
+Final decoder regression:113 passed,17 LLVM opt-ins ignored in the ordinary
+run; the focused five-encoding LLVM check passed separately. Workspace all-target
+Clippy, formatting, generated coverage/map checks, claims and dependency checks
+passed. Exact changed-source hashes are archived in
+`artifacts/s34-write-constants/verified-source.json`.

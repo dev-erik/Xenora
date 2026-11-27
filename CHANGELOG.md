@@ -29,6 +29,10 @@ remains unsupported.
 - Extended the read-only RDNA2 planning CLI (`python3 -m qa rdna2`) with family/status filters, compact summaries, Codex-ready manifests under `artifacts/`, active-claim exclusion (family claims exclude those families; path-only claims block overlapping permitted files), coverage reconcile against `semantic_coverage` without inflating counts, and inventory diffs. Covered by `tests/qa/test_rdna2_plan.py`; planning only, no GPU production edits.
 
 ### Added
+- Extended compute WRITELANE data to inline integer values, floating-point bit
+  patterns and literal words while preserving lane selection, destination
+  readiness and EXEC-independent writes. Verification is recorded in the shader
+  checkpoint; broader S3.4 support remains open.
 - Added explicit complete-wave Wave64 compute configuration, independent 64-lane
   reference execution, mask-half preservation and half-local DS routing. Legacy
   entry points retain Wave32 behavior; unsupported Wave64 scalar overlaps and

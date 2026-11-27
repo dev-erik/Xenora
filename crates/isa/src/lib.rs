@@ -470,10 +470,10 @@ pub enum Instruction {
         fetch_inactive: bool,
         bound_control: bool,
     },
-    /// Write normal SGPR data to one VGPR lane, independently of EXEC.
+    /// Write normal SGPR or constant data to one VGPR lane, independently of EXEC.
     WriteLaneB32 {
         dst: u8,
-        src: u8,
+        src: ScalarSource,
         lane: u8,
     },
     /// Copy the first active VGPR lane (lane zero for empty EXEC) to an SGPR.
@@ -923,7 +923,7 @@ impl fmt::Display for Instruction {
                 Ok(())
             }
             Self::WaitLgkm => formatter.write_str(" lgkmcnt(0)"),
-            Self::WriteLaneB32 { dst, src, lane } => write!(formatter, " v{dst}, s{src}, s{lane}"),
+            Self::WriteLaneB32 { dst, src, lane } => write!(formatter, " v{dst}, {src}, s{lane}"),
             Self::ReadFirstLaneB32 { dst, src } => write!(formatter, " s{dst}, v{src}"),
             Self::ReadLaneB32 { dst, src, lane } => write!(formatter, " s{dst}, v{src}, s{lane}"),
             Self::BufferLoadDword {

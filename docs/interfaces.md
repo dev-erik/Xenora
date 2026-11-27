@@ -1718,11 +1718,14 @@ See [remaining wave/lane requirements](shaders/control-wave-memory.md).
 
 
 `v_writelane_b32` admits a known ordinary SGPR selector and ordinary SGPR data
-(constant or a captured lane-read result), with an initialized v1–v255
-destination. The write selects `selector & 31`, ignores EXEC, and preserves
+(constant or a captured lane-read result), inline integer/float-bit constants,
+or a literal dword, with an initialized v1–v255 destination. Literal data follows
+both encoding words, making the instruction12 bytes rather than8. The write
+selects `selector & 31` under Wave32 or `selector & 63` under complete Wave64, ignores EXEC, and preserves
 other destination lanes. An absent destination changes none of the present
-invocations. Pending destinations, runtime selectors, modifiers, special/inline
-sources, graphics and lane writes inside runtime branch regions remain rejected.
+invocations. Pending destinations, runtime selectors, modifiers, special-register
+data, inline/literal selectors, graphics and lane writes inside runtime branch
+regions remain rejected. Constant float operands retain their exact word bits.
 
 
 ### Explicit full-Wave32 compute launches

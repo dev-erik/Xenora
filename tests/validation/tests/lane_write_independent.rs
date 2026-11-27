@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! Original expectations: AMD RDNA2 ISA 70648 section12.12 printed p184,
 //! https://docs.amd.com/api/khub/documents/Et~wpu9g~Ffl7d9q0QZ~Og/content
-//! Opcode865 writes one VGPR lane selected by low five scalar bits and ignores
+//! Opcode865 writes one VGPR lane selected modulo wave size and ignores
 //! EXEC. Retain other lanes; absent destination has no present-lane effect under
 //! this approved ABI. LLVM23.1.6 native ARM64 gfx1030: v1,s8,s9 encodes
 //! [01,00,61,d7,08,12,00,02]. No production evaluator supplies expected values.
@@ -218,11 +218,15 @@ fn undefined_pending_destinations_and_scalar_sources_reject() {
     rejects(&finish(w, 1), 20);
 }
 #[test]
-fn special_inline_vector_sources_and_modifiers_reject() {
+fn special_vector_sources_inline_indices_and_modifiers_reject() {
     for bad in [
         106, 107, 124, 125, 126, 127, 128, 129, 160, 192, 193, 255, 256, 257, 511,
     ] {
         for src in [[bad, 9], [8, bad]] {
+            // Inline/literal data is now admitted; selectors remain ordinary SGPRs.
+            if src[1] == 9 && matches!(bad, 128..=208 | 240..=248 | 255) {
+                continue;
+            }
             let mut w = LOAD.to_vec();
             w.extend([WAIT, 0xbe88038d, 0xbe890380]);
             w.extend(write(1, src[0], src[1]));
@@ -270,4 +274,180 @@ fn native_lane_write_independent_outputs() {
             want
         );
     }
+}
+
+// AMD section6 inline-constant table: floating constants are raw binary32 words,
+// including the explicitly specified reciprocal-two-pi value (not host division).
+fn constant_words() -> Vec<(u32, u32)> {
+    let mut values: Vec<_> = (128..=192).map(|s| (s, s - 128)).collect();
+    values.extend((193..=208).map(|s| (s, 0u32.wrapping_sub(s - 192))));
+    values.extend((240..=248).zip([
+        0x3f000000, 0xbf000000, 0x3f800000, 0xbf800000, 0x40000000, 0xc0000000, 0x40800000,
+        0xc0800000, 0x3e22f983,
+    ]));
+    values.extend(
+        [
+            0, 0x80000000, 0xffffffff, 0x7fa12345, 0xbf810000, 0xd7610001,
+        ]
+        .map(|v| (255, v)),
+    );
+    values
+}
+struct ConstantCase {
+    code: Vec<u8>,
+    data: Vec<u32>,
+    expected: Vec<u32>,
+    wave64: bool,
+}
+fn constant_case(
+    selector: u32,
+    value: u32,
+    index: u32,
+    len: usize,
+    wave64: bool,
+    mask: u64,
+) -> ConstantCase {
+    let mut w = LOAD.to_vec();
+    w.extend([WAIT, 0xbe8903ff, index, 0xbefe03ff, mask as u32]);
+    if wave64 {
+        w.extend([0xbeff03ff, (mask >> 32) as u32]);
+    }
+    w.extend(write(1, selector, 9));
+    if selector == 255 {
+        w.push(value);
+    }
+    w.push(0xbefe03c1);
+    if wave64 {
+        w.push(0xbeff03c1);
+    }
+    let data = input(len);
+    let mut expected = data.clone();
+    let size = if wave64 { 64 } else { 32 };
+    // Sequential destination update per wave, independent of EXEC and preserving
+    // every input sentinel. A missing destination in a partial wave is untouched.
+    for wave in expected.chunks_mut(size) {
+        if let Some(dst) = wave.get_mut(index as usize % size) {
+            *dst = value;
+        }
+    }
+    ConstantCase {
+        code: finish(w, 1),
+        data,
+        expected,
+        wave64,
+    }
+}
+fn constant_cases() -> Vec<ConstantCase> {
+    let mut out = Vec::new();
+    // Every admitted source encoding once; pairwise variation avoids a Cartesian corpus.
+    for (n, (selector, value)) in constant_words().into_iter().enumerate() {
+        let wide = n % 2 == 1;
+        let index = [0, 31, 32, 63, 64, 127][n % 6];
+        let len = if wide {
+            [64, 128][(n / 2) % 2]
+        } else {
+            [1, 31, 32, 33, 65][n % 5]
+        };
+        let mask = [0, 0x8000000100000002, u64::MAX][n % 3];
+        out.push(constant_case(selector, value, index, len, wide, mask));
+    }
+    // All Wave64 half boundaries and wraps, each under empty/partial/full EXEC.
+    for index in [0, 31, 32, 63, 64, 127] {
+        for mask in [0, 0x8000000100000002, u64::MAX] {
+            out.push(constant_case(255, 0x7fa12345, index, 128, true, mask));
+        }
+    }
+    // Wave32 absent destinations and wrap-to-zero under empty EXEC.
+    for len in [1, 31, 32, 33, 63, 65] {
+        for index in [31, 32, 63] {
+            out.push(constant_case(248, 0x3e22f983, index, len, false, 0));
+        }
+    }
+    out
+}
+fn compile_constant(case: &ConstantCase) -> xenora_shader::CompiledShader {
+    if case.wave64 {
+        xenora_shader::compile_with_wave_config(
+            xenora_shader::Architecture::Gfx1030,
+            &case.code,
+            xenora_shader::WaveConfig {
+                size: xenora_shader::WaveSize::Wave64,
+                launch: xenora_shader::WaveLaunch::FullWavesRequired,
+            },
+        )
+        .unwrap()
+    } else {
+        xenora_shader::compile(xenora_shader::Architecture::Gfx1030, &case.code).unwrap()
+    }
+}
+#[test]
+fn constant_data_exact_words_lengths_and_retained_values() {
+    assert_eq!(write(1, 128, 9), [0xd7610001, 0x02001280]);
+    assert_eq!(write(1, 248, 9), [0xd7610001, 0x020012f8]);
+    let literal = bytes(&[0xd7610001, 0x020012ff, 0x7fa12345]);
+    assert_eq!(
+        literal,
+        [1, 0, 0x61, 0xd7, 0xff, 0x12, 0, 2, 0x45, 0x23, 0xa1, 0x7f]
+    );
+    assert_eq!(constant_words().len(), 96);
+    let cases = constant_cases();
+    assert_eq!(cases.len(), 132);
+    for case in cases {
+        compile_constant(&case);
+        let actual = if case.wave64 {
+            xenora_ref::execute_with_wave_config(
+                &case.code,
+                &case.data,
+                xenora_ref::WaveConfig {
+                    size: xenora_ref::WaveSize::Wave64,
+                    launch: xenora_ref::WaveLaunch::FullWavesRequired,
+                },
+            )
+            .unwrap()
+        } else {
+            xenora_ref::execute(&case.code, &case.data).unwrap()
+        };
+        assert_eq!(actual, case.expected);
+    }
+}
+#[test]
+fn constant_data_truncation_reserved_sources_and_inline_indices_reject() {
+    let op = bytes(&[0xd7610001, 0x020012ff, 0x7fa12345]);
+    for len in 8..12 {
+        // Literal payload must contain all four bytes, even if EXEC would be empty.
+        assert!(xenora_shader::compile(xenora_shader::Architecture::Gfx1030, &op[..len]).is_err());
+        assert!(xenora_ref::execute(&op[..len], &[0]).is_err());
+    }
+    for data in [209, 239, 249, 254] {
+        let mut w = LOAD.to_vec();
+        w.extend([WAIT, 0xbe890380]);
+        w.extend(write(1, data, 9));
+        rejects(&finish(w, 1), 16);
+    }
+    for index in [128, 208, 240, 248, 255] {
+        let mut w = LOAD.to_vec();
+        w.push(WAIT);
+        w.extend(write(1, 128, index));
+        if index == 255 {
+            w.push(0);
+        }
+        rejects(&finish(w, 1), 12);
+    }
+}
+#[test]
+#[ignore = "lead coordinates native Metal with API and shader validation"]
+fn native_constant_lane_write_independent_outputs() {
+    assert_eq!(std::env::var("MTL_DEBUG_LAYER").as_deref(), Ok("1"));
+    assert_eq!(std::env::var("MTL_SHADER_VALIDATION").as_deref(), Ok("1"));
+    let gpu = xenora_metal::NativeCompute::new().unwrap();
+    let cases = constant_cases();
+    assert_eq!(cases.len(), 132);
+    for case in cases {
+        let shader = compile_constant(&case);
+        assert_eq!(
+            gpu.run_compiled_words(&shader, &case.data).unwrap(),
+            case.expected
+        );
+    }
+    eprintln!("WRITELANE constant data: 132 independent native dispatches");
 }

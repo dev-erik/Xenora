@@ -386,7 +386,7 @@ fn reference_op(instruction: Instruction) -> Op {
         },
         Instruction::WriteLaneB32 { dst, src, lane } => Op::WriteLane {
             dst,
-            src,
+            src: reference_scalar(src),
             index: lane,
         },
         Instruction::ReadFirstLaneB32 { dst, src } => Op::ReadLane {
@@ -1417,6 +1417,28 @@ fn normalize_llvm_assembly(assembly: &str, next_offset: usize) -> String {
                 None => operand.to_owned(),
             };
             format!("{mnemonic} {}, {}", scalar(left), scalar(right))
+        }
+        "v_writelane_b32" => {
+            let mut parts: Vec<_> = operands.split(", ").map(str::to_owned).collect();
+            let bits = match parts[1].as_str() {
+                "0.5" => Some(0x3f000000u32),
+                "-0.5" => Some(0xbf000000),
+                "1.0" => Some(0x3f800000),
+                "-1.0" => Some(0xbf800000),
+                "2.0" => Some(0x40000000),
+                "-2.0" => Some(0xc0000000),
+                "4.0" => Some(0x40800000),
+                "-4.0" => Some(0xc0800000),
+                "0.15915494" => Some(0x3e22f983),
+                other => literal_bits(other),
+            };
+            if let Some(bits) = bits {
+                parts[1] = match bits as i32 {
+                    inline @ -16..=64 => inline.to_string(),
+                    _ => format!("0x{bits:x}"),
+                };
+            }
+            format!("{mnemonic} {}", parts.join(", "))
         }
         "s_add_u32" | "s_sub_u32" | "s_add_i32" | "s_sub_i32" | "s_addc_u32" | "s_subb_u32"
         | "s_and_b32" | "s_or_b32" | "s_xor_b32" => {
@@ -2961,7 +2983,7 @@ fn llvm_vop3_mad_sad_sources_match_exact_bytes_and_reference() {
 fn original_writelane_llvm_encodings_match_both_decoders() {
     let output = llvm_mc(
         &[],
-        b"v_writelane_b32 v1, s8, s9\nv_writelane_b32 v255, s105, s104\n",
+        b"v_writelane_b32 v1, s8, s9\nv_writelane_b32 v255, s105, s104\nv_writelane_b32 v1, -1, s9\nv_writelane_b32 v1, 0.5, s9\nv_writelane_b32 v1, 0x12345678, s9\n",
     );
     assert_llvm_success(&output);
     let stdout = String::from_utf8(output.stdout).unwrap();
@@ -2974,7 +2996,10 @@ fn original_writelane_llvm_encodings_match_both_decoders() {
         actual,
         vec![
             vec![1, 0, 0x61, 0xd7, 8, 0x12, 0, 2],
-            vec![255, 0, 0x61, 0xd7, 105, 0xd0, 0, 2]
+            vec![255, 0, 0x61, 0xd7, 105, 0xd0, 0, 2],
+            vec![1, 0, 0x61, 0xd7, 193, 0x12, 0, 2],
+            vec![1, 0, 0x61, 0xd7, 240, 0x12, 0, 2],
+            vec![1, 0, 0x61, 0xd7, 255, 0x12, 0, 2, 0x78, 0x56, 0x34, 0x12]
         ]
     );
     let mut forms = std::collections::BTreeSet::new();

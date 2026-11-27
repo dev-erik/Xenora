@@ -20,6 +20,7 @@ either path. The [changelog](../CHANGELOG.md) records notable changes.
 - [Interface contracts](interfaces.md) — Translated shader stages, guest services, native command submission, and synthetic textures.
 - [Fixture memory model](adr/0003-demo-memory-model.md) and [CPU boundary](adr/0004-cpu-boundary.md) — Buffer bindings, guest address translation, and dependency direction.
 
+- [WRITELANE constant-data plan](superpowers/plans/2026-11-27-writelane-constants.md) — Scope and validation for inline and literal lane-write data.
 - [Explicit Wave64 compute plan](superpowers/plans/2026-11-27-wave64-compute.md) — Implemented complete-wave configuration, 64-bit masks and half-wave transfer rules, with independent native validation and remaining limits.
 
 ## Native Metal graphics

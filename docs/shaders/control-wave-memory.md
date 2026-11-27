@@ -29,7 +29,7 @@ general loops, dynamic EXEC, divergence and reconvergence acceptance work.
 
 ## S3.4 wave and lane
 
-Implemented subsets: MBCNT LO/HI, validated full-wave lane reads, selected-lane writes and bounded gather/swizzle transfers under an explicit Wave32 compute contract. LO counts selected bits below the guest lane and adds the accumulator; HI adds no bits for lanes below 32. Typed decoding, compute lowering and an independent CPU reference are implemented. Native validation is recorded in the checkpoint; this does not complete wave/lane support.
+Implemented subsets: MBCNT LO/HI, validated full-wave lane reads, selected-lane writes and bounded gather/swizzle transfers under explicit Wave32 and complete-wave Wave64 compute contracts. LO counts selected bits below the guest lane and adds the accumulator; HI adds no bits for lanes below 32. Typed decoding, compute lowering and an independent CPU reference are implemented. Native validation is recorded in the checkpoint; this does not complete wave/lane support.
 
 | Family | Form | Decoder present at audit |
 | --- | --- | --- |
@@ -184,12 +184,14 @@ this increment does not complete S3.4.
 
 ### Bounded selected-lane writes
 
-VOP3 WRITELANE accepts ordinary SGPR data and a compile-time-known ordinary
-SGPR lane selector. The selected lane is the low five selector bits; the write
+VOP3 WRITELANE accepts ordinary SGPR data, inline integer/float-bit constants
+and literal words, with a compile-time-known ordinary SGPR lane selector.
+The selected lane is the low five selector bits in Wave32 or six in complete
+Wave64; the write
 ignores EXEC, including EXEC zero. An initialized v1–v255 destination retains
 its earlier value in every other lane. Pending-load destinations, unknown
-scalar data, runtime lane selectors, modifiers and special/inline source modes
-remain rejected. The data may be a captured lane-read scalar snapshot.
+scalar data, runtime lane selectors, modifiers, special-register data and
+inline/literal lane selectors remain rejected. The data may be a captured lane-read scalar snapshot.
 
 No input lookup is required at the destination lane. When that lane lies outside
 a final partial wave, present invocations keep their previous destination values.
