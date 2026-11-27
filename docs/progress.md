@@ -5,6 +5,9 @@ independently authored synthetic programs and shaders; commercial game
 execution and authentic Xbox startup are unsupported. Progress is measured by
 reproducible tests, not by estimated game compatibility percentages.
 
+The [integrated Stage 2 resource acceptance](testing/stage2-integrated-acceptance.md)
+records the current bounded resource milestone separately from shader coverage.
+
 ## Reading the progress graphic
 
 - **Decoded forms** counts rows marked decoded in the [status registry](status.toml), out of all rows in that reviewed gfx1030 instruction inventory.

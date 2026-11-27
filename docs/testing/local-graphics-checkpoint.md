@@ -6,6 +6,14 @@ claim of Xbox hardware equivalence. Supporting raw logs, mutation records and
 source manifests remain local and are not distributed with the repository.
 The array-range descriptor increment below was validated on 26 November 2026.
 
+## Integrated Stage 2 acceptance
+
+The [integrated acceptance record](stage2-integrated-acceptance.md) records accepted
+S2.1–S2.7 integration on 27 November 2026: all nine gates passed and 116 native
+artifacts passed the architecture/linkage audit. Two independent reviewers accepted
+the finite scope and evidence. Increment sections below preserve historical
+results and limitations; their open-work statements refer to that increment.
+
 ## One-command validation
 
 From the repository root, run `./scripts/validate-graphics.sh` for the focused
@@ -69,7 +77,8 @@ Two independent reviewers accepted the bounded implementation and evidence, with
 their full-gate condition satisfied by that run. They independently checked literal
 outputs, presentation ordering, gate placement, recovery, mutation failures and
 restoration hashes. **S2.7 is complete within the documented finite contract.**
-Final integrated Stage2 acceptance remains separate.
+At this increment, final integrated Stage2 acceptance remained separate; it is
+now recorded in the integrated acceptance section above.
 
 ## S2.7 increment: four-queue resource graphs
 

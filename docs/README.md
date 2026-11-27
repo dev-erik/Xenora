@@ -63,6 +63,7 @@ either path. The [changelog](../CHANGELOG.md) records notable changes.
 ## Testing, validation, and benchmarks
 
 - [Engineering progress](progress.md) — Verification commands, metric definitions, and open release gates.
+- [Integrated Stage 2 acceptance](testing/stage2-integrated-acceptance.md) — Seven resource contracts, cross-workstream evidence and final acceptance limits.
 - [Local graphics checkpoint](testing/local-graphics-checkpoint.md) — Bounded acceptance, reproducible gates, local results and evidence limitations.
 - [Selective upstream imports](testing/upstream-imports.md) — Source commits, licensing, adaptations and deferred changes.
 - [Test inventory comparison](testing/test-inventory.md) — Detect missing or newly ignored Cargo tests across commits.

@@ -18,6 +18,14 @@ remains unsupported.
 - Extended the read-only RDNA2 planning CLI (`python3 -m qa rdna2`) with family/status filters, compact summaries, Codex-ready manifests under `artifacts/`, active-claim exclusion (family claims exclude those families; path-only claims block overlapping permitted files), coverage reconcile against `semantic_coverage` without inflating counts, and inventory diffs. Covered by `tests/qa/test_rdna2_plan.py`; planning only, no GPU production edits.
 
 ### Added
+- Integrated S2 resource acceptance matrix linking the seven finite contracts,
+  cross-workstream tests and final validation evidence; see
+  `docs/testing/stage2-integrated-acceptance.md`.
+
+The resource entries below record successive implementation increments. Their
+then-current exclusions and open-work statements are historical; the integrated
+acceptance matrix and linked contracts describe the current supported scope.
+
 - Added connected four-queue resource graph acceptance tests combining produced
   geometry, attachment loads, descriptor sampling, storage writes and copies.
   Coverage checks bounded admission, retained versions, explicit guest mirrors
