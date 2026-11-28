@@ -10,6 +10,9 @@ Guest execution uses original, purpose-built test programs. Commercial Xbox game
 remains unsupported.
 
 ### Changed
+- Implemented `V_ALIGNBYTE_B32` for checked unmodified sources in compute and
+  integer graphics, with explicit large-count behavior and masked destination
+  preservation. Independent semantic acceptance remains pending.
 - Accept full-word shared literals for MAD16, including negative literals emitted
   by LLVM. Multiplicands use low16 bits while the accumulator retains all32 bits;
   the expanded operand domain awaits independent acceptance.

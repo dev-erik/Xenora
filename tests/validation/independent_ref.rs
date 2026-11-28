@@ -151,6 +151,7 @@ enum Insn {
     VExtractUnsigned(u8, CmpSrc, CmpSrc, CmpSrc),
     VMask(u8, CmpSrc, CmpSrc),
     VAlignBits(u8, CmpSrc, CmpSrc, CmpSrc),
+    VAlignBytes(u8, CmpSrc, CmpSrc, CmpSrc),
     VCountAdd(u8, CmpSrc, CmpSrc),
     VOrThree(u8, CmpSrc, CmpSrc, CmpSrc),
     VXorThree(u8, CmpSrc, CmpSrc, CmpSrc),
@@ -834,6 +835,7 @@ fn lane_step(
         | Insn::VShiftUnion(d, a, b, c)
         | Insn::VExtractUnsigned(d, a, b, c)
         | Insn::VAlignBits(d, a, b, c)
+        | Insn::VAlignBytes(d, a, b, c)
         | Insn::VOrThree(d, a, b, c)
         | Insn::VXorThree(d, a, b, c)
         | Insn::VBitSelect(d, a, b, c)
@@ -1163,6 +1165,7 @@ fn lane_step(
             Insn::VExtractUnsigned(..)
             | Insn::VMask(..)
             | Insn::VAlignBits(..)
+            | Insn::VAlignBytes(..)
             | Insn::VOrThree(..)
             | Insn::VXorThree(..) => {
                 let mut out = 0;
@@ -1181,6 +1184,16 @@ fn lane_step(
                                 (b / 2u32.pow(k)) % 2 != 0
                             } else {
                                 !(a / 2u32.pow(k - 32)).is_multiple_of(2)
+                            }
+                        }
+                        Insn::VAlignBytes(..) => {
+                            let k = j + 8 * (c % 32);
+                            if k < 32 {
+                                (b / 2u32.pow(k)) % 2 != 0
+                            } else if k < 64 {
+                                !(a / 2u32.pow(k - 32)).is_multiple_of(2)
+                            } else {
+                                false
                             }
                         }
                         Insn::VOrThree(..) => {
@@ -1588,6 +1601,7 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
                 | 328
                 | 867
                 | 334
+                | 335
                 | 868
                 | 882
                 | 376
@@ -1805,6 +1819,7 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
             328 => Insn::VExtractUnsigned(dst, args[0], args[1], args[2]),
             867 => Insn::VMask(dst, args[0], args[1]),
             334 => Insn::VAlignBits(dst, args[0], args[1], args[2]),
+            335 => Insn::VAlignBytes(dst, args[0], args[1], args[2]),
             868 => Insn::VCountAdd(dst, args[0], args[1]),
             882 => Insn::VOrThree(dst, args[0], args[1], args[2]),
             376 => Insn::VXorThree(dst, args[0], args[1], args[2]),

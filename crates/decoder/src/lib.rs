@@ -46,7 +46,7 @@ const fn concat_forms<const N: usize>() -> [(&'static str, EncodingFamily); N] {
 }
 
 /// Decoded forms not yet described by the semantic registry.
-const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 136] = [
+const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 137] = [
     ("DS_PERMUTE_B32", EncodingFamily::Ds),
     ("DS_BPERMUTE_B32", EncodingFamily::Ds),
     ("DS_SWIZZLE_B32", EncodingFamily::Ds),
@@ -151,6 +151,7 @@ const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 136] = [
     ("V_BCNT_U32_B32", EncodingFamily::Vop3),
     ("V_BFE_U32", EncodingFamily::Vop3),
     ("V_ALIGNBIT_B32", EncodingFamily::Vop3),
+    ("V_ALIGNBYTE_B32", EncodingFamily::Vop3),
     ("V_OR3_B32", EncodingFamily::Vop3),
     ("V_XOR3_B32", EncodingFamily::Vop3),
     ("V_MUL_LO_U32", EncodingFamily::Vop3),
@@ -1377,6 +1378,7 @@ impl CheckedVectorOp {
             0xd7710000 => Self::Ternary(VectorTernaryOp::AndOrB32),
             0xd5480000 => Self::Ternary(VectorTernaryOp::BfeU32),
             0xd54e0000 => Self::Ternary(VectorTernaryOp::AlignbitB32),
+            0xd54f0000 => Self::Ternary(VectorTernaryOp::AlignbyteB32),
             0xd7720000 => Self::Ternary(VectorTernaryOp::Or3B32),
             0xd5780000 => Self::Ternary(VectorTernaryOp::Xor3B32),
             0xd5490000 => Self::Ternary(VectorTernaryOp::BfeI32),

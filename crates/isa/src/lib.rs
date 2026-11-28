@@ -249,6 +249,8 @@ pub enum VectorTernaryOp {
     BfeU32,
     /// `v_alignbit_b32`.
     AlignbitB32,
+    /// `v_alignbyte_b32`.
+    AlignbyteB32,
     /// `v_or3_b32`.
     Or3B32,
     /// `v_xor3_b32`.
@@ -296,6 +298,7 @@ impl VectorTernaryOp {
             Self::AndOrB32 => "v_and_or_b32",
             Self::BfeU32 => "v_bfe_u32",
             Self::AlignbitB32 => "v_alignbit_b32",
+            Self::AlignbyteB32 => "v_alignbyte_b32",
             Self::Or3B32 => "v_or3_b32",
             Self::Xor3B32 => "v_xor3_b32",
             Self::BfeI32 => "v_bfe_i32",

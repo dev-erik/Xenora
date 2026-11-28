@@ -708,6 +708,13 @@ fn vector_ternary_expression(op: VectorTernaryOp, a: &str, b: &str, c: &str) -> 
         VectorTernaryOp::AlignbitB32 => format!(
             "((({c}) & 31u) == 0u ? ({b}) : ((({b}) >> (({c}) & 31u)) | (({a}) << ((32u - (({c}) & 31u)) & 31u))))"
         ),
+        VectorTernaryOp::AlignbyteB32 => {
+            let n = format!("(({c}) & 31u)");
+            let shift = format!("(({n} * 8u) & 31u)");
+            // Split the 64-bit window without requiring native 64-bit shifts.
+            // Mask every shift even in branches not selected by the result.
+            format!("({n} >= 8u ? 0u : ({n} >= 4u ? (({a}) >> {shift}) : ({n} == 0u ? ({b}) : ((({b}) >> {shift}) | (({a}) << ((32u - {shift}) & 31u))))))")
+        }
         VectorTernaryOp::Or3B32 => format!("({a}) | ({b}) | ({c})"),
         VectorTernaryOp::Xor3B32 => format!("({a}) ^ ({b}) ^ ({c})"),
         VectorTernaryOp::BfeI32 => {

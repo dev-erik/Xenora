@@ -2538,3 +2538,15 @@ gpu = "acceptance pending"
 recognized = true
 decoded = true
 llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_alignbyte_b32"
+encoding = "VOP3; three checked sources; modifiers rejected"
+representation = "8 B or 12 B with shared literal"
+lowering = "MSL byte window over two words; five-bit count; compute and graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"

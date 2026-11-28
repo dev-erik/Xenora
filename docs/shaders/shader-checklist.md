@@ -11,11 +11,11 @@ For the Xbox Series X|S target and non-shader requirements, see the [master comp
 | Status | Forms | Meaning |
 | --- | ---: | --- |
 | Converted subset; fixture accepted | 122 | Translation is recorded and the status registry records accepted native fixture evidence; only the documented operand subset is covered. |
-| Converted subset; acceptance pending | 85 | Translation is recorded, but the registry does not record accepted native fixture evidence. This may reflect pending acceptance or documentation lag. |
+| Converted subset; acceptance pending | 86 | Translation is recorded, but the registry does not record accepted native fixture evidence. This may reflect pending acceptance or documentation lag. |
 | Decoded; translation evidence unrecorded | 5 | The decoder lists the form, but no translation evidence row is recorded. This is an evidence gap, not proof that lowering is absent. |
-| Not converted | 1253 | No supported decoder identity exists. Opcode recognition from metadata alone does not implement execution. |
+| Not converted | 1252 | No supported decoder identity exists. Opcode recognition from metadata alone does not implement execution. |
 
-**Decoder coverage: 212/1465. Not yet decoded: 1253.**
+**Decoder coverage: 213/1465. Not yet decoded: 1252.**
 
 No row means “all operand modes complete.” Sources, literals, modifiers, register widths, execution masks, graphics versus compute applicability, control-flow interactions and numerical behavior still require their own contracts and tests. This list covers the pinned inventory, not every future AMD instruction or every Xbox graphics method.
 
@@ -29,14 +29,14 @@ The partition below includes SOPP control flow and memory families alongside ari
 
 | Workstream | Total forms | Decoded | Not decoded |
 | --- | ---: | ---: | ---: |
-| S3.1 Arithmetic | 480 | 167 | 313 |
+| S3.1 Arithmetic | 480 | 168 | 312 |
 | S3.2 Control flow | 24 | 8 | 16 |
 | S3.3 Masks / comparisons | 419 | 12 | 407 |
 | S3.4 Wave / lane | 11 | 11 | 0 |
 | S3.5 Memory / interfaces | 509 | 14 | 495 |
 | State / assignment pending | 22 | 0 | 22 |
 
-**167/480 arithmetic forms decoded is not 167 accepted or fully converted forms.** This distinction corrects the earlier shorthand used in progress updates.
+**168/480 arithmetic forms decoded is not 168 accepted or fully converted forms.** This distinction corrects the earlier shorthand used in progress updates.
 
 ## Families
 
@@ -59,7 +59,7 @@ The partition below includes SOPP control flow and memory families alongside ari
 | [VINTRP](#vintrp) | 3 | 0 | 0 | 2 | 1 |
 | [VOP1](#vop1) | 81 | 7 | 0 | 0 | 74 |
 | [VOP2](#vop2) | 47 | 7 | 13 | 0 | 27 |
-| [VOP3](#vop3) | 416 | 64 | 3 | 0 | 349 |
+| [VOP3](#vop3) | 416 | 64 | 4 | 0 | 348 |
 | [VOP3P](#vop3p) | 29 | 0 | 0 | 0 | 29 |
 | [VOP3SDST](#vop3sdst) | 10 | 0 | 0 | 0 | 10 |
 | [VOPC](#vopc) | 190 | 0 | 12 | 0 | 178 |
@@ -1225,7 +1225,7 @@ Update the implementation and its evidence in `docs/status.toml`, then regenerat
 | 332 | `V_FMA_F64` | Not converted | — | — | — |
 | 333 | `V_LERP_U8` | Converted subset; fixture accepted | MSL unsigned integer compute and graphics; documented bounded sources and masks | fixture verified | fixture verified |
 | 334 | `V_ALIGNBIT_B32` | Converted subset; fixture accepted | MSL uint concatenated word alignment with zero-count handling; compute and graphics | fixture verified | fixture verified |
-| 335 | `V_ALIGNBYTE_B32` | Not converted | — | — | — |
+| 335 | `V_ALIGNBYTE_B32` | Converted subset; acceptance pending | MSL byte window over two words; five-bit count; compute and graphics | local known-answer test passed | acceptance pending |
 | 336 | `V_MULLIT_F32` | Not converted | — | — | — |
 | 337 | `V_MIN3_F32` | Not converted | — | — | — |
 | 338 | `V_MIN3_I32` | Converted subset; fixture accepted | MSL signed/unsigned integer ordering; compute and graphics | fixture verified | fixture verified |

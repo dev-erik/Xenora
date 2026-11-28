@@ -118,7 +118,7 @@ fn exact_opcode_scope_and_each_modifier_bit() {
         }
     }
     // Nearby full-width/ternary opcodes are not admitted by a family catch-all.
-    for op in [335, 336, 337, 340, 343, 350, 834, 840, 878, 880] {
+    for op in [336, 337, 340, 343, 350, 834, 840, 878, 880] {
         assert!(decode_at(Gfx1030, &code(op, false, 5, [257, 258, 259], 0), 0).is_err());
     }
 }
@@ -224,5 +224,5 @@ fn display_both_modes_and_unique_metadata() {
             1
         );
     }
-    assert_eq!(xenora_decoder::SEMANTIC_FORMS.len(), 212);
+    assert_eq!(xenora_decoder::SEMANTIC_FORMS.len(), 213);
 }

@@ -646,6 +646,9 @@ fn reference_op(instruction: Instruction) -> Op {
                 xenora_decoder::VectorTernaryOp::BfeU32 => {
                     xenora_ref::VectorTernary::ExtractUnsigned
                 }
+                xenora_decoder::VectorTernaryOp::AlignbyteB32 => {
+                    xenora_ref::VectorTernary::AlignBytes
+                }
                 xenora_decoder::VectorTernaryOp::AlignbitB32 => {
                     xenora_ref::VectorTernary::AlignBits
                 }
@@ -869,6 +872,7 @@ fn compares_fixture_instructions_against_llvm() {
         include_bytes!("../../../fixtures/rdna2/vop3-sub-nc-i32.bin"),
         include_bytes!("../../../fixtures/rdna2/vop3-word-arithmetic.bin"),
         include_bytes!("../../../fixtures/rdna2/vop3-move.bin"),
+        include_bytes!("../../../fixtures/rdna2/vop3-alignbyte.bin"),
         include_bytes!("../../../fixtures/rdna2/vector-compare.bin"),
         high_registers,
         &matrix,
@@ -888,7 +892,7 @@ fn compares_fixture_instructions_against_llvm() {
         count += compare_against_llvm(fixture, &mut forms);
     }
     // VOP3 move canonicalizes to the existing e32 move IR mnemonic.
-    assert_eq!(forms.len(), 190, "forms compared: {forms:?}");
+    assert_eq!(forms.len(), 191, "forms compared: {forms:?}");
     eprintln!(
         "{count} three-way instruction comparisons across {} forms",
         forms.len()
@@ -1335,6 +1339,7 @@ fn normalize_llvm_assembly(assembly: &str, next_offset: usize) -> String {
         | "v_bfe_u32"
         | "v_bfm_b32"
         | "v_alignbit_b32"
+        | "v_alignbyte_b32"
         | "v_bcnt_u32_b32"
         | "v_mbcnt_lo_u32_b32"
         | "v_mbcnt_hi_u32_b32"

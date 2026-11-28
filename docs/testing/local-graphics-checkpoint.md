@@ -1754,3 +1754,55 @@ cargo test --locked -p xenora-semantic-review --test move_e64 -- --include-ignor
 cargo test --locked -p xenora-metal --features gpu-tests --test native_compute move_e64
 LLVM_BIN="$(brew --prefix llvm)/bin" cargo test --locked -p xenora-decoder --test gfx1030 --test move_e64 -- --include-ignored --nocapture
 ```
+
+
+## Stage 3.1 increment: byte alignment
+
+28 November 2026. Added unmodified `V_ALIGNBYTE_B32` (VOP3 opcode 335)
+to the checked decoder, both reference interpreters, and shared compute/graphics
+MSL expression lowering. The contract follows the public
+[AMD RDNA2 reference](https://docs.amd.com/v/u/en-US/rdna2-shader-instruction-set-architecture),
+p170: SRC0 is the high word, SRC1 the low word, and SRC2's low five bits
+select the byte offset. The spec-derived logical-shift model returns zero for
+offsets 8 through 31. This is not verification on AMD or Xbox hardware.
+
+The MSL implementation splits the window into 32-bit operations and bounds every
+shift, including shifts in unselected branches. The first reference uses a checked
+64-bit logical shift; the second reconstructs individual bits. Test answers use
+fixed byte windows, independently of either evaluator. Existing source-selector,
+two-scalar-input, shared-literal and modifier restrictions remain enforced.
+
+Local validation:
+
+- A failing test first demonstrated the missing opcode.
+- Affected CPU regressions: **934 passed, 0 failed, 71 ignored**. Skipped tests are
+  not GPU verification.
+- **3,073 native compute dispatches**: 256 count values × four destination aliases
+  × three EXEC masks, plus an original assembled fixture. Each combination uses
+  35 invocations to cross a Wave32 boundary.
+- **1,296 native integer graphics readbacks**: counts 0–31 and four high-bit
+  variants, four destination aliases including v255, and each source position
+  independently using VGPR, scalar uniform, or literal input.
+- Decoder checks cover all 512 selectors in each source position, register
+  boundaries, instruction truncation, shared literals and scalar-input limits.
+  Four exact encodings agree with native LLVM. The full fixture oracle passed
+  **1,369 three-way instruction comparisons across 191 canonical IR mnemonics**.
+- A deliberate mutation reducing the count mask from five bits to three failed at
+  a native graphics readback assertion. Restoring the implementation restored the
+  passing graphics result; the compute suite and assembled fixture also passed.
+
+Both Metal validation layers were enabled. Required independent review remains
+pending: these are local results from the implementing lead, not independent
+acceptance. General dynamic EXEC, broader operand/modifier modes and integrated
+numerical/stage acceptance remain outside this increment. S3.1 now has
+**168/480 decoded forms**, with **312 undecoded**; the stage remains open.
+Logs: `artifacts/s31-alignbyte/`.
+
+```sh
+export CARGO_BUILD_TARGET=aarch64-apple-darwin CARGO_BUILD_JOBS=2
+export MTL_DEBUG_LAYER=1 MTL_SHADER_VALIDATION=1
+export MTL_SHADER_VALIDATION_REPORT_TO_STDERR=1 MTL_SHADER_VALIDATION_ABORT_ON_FAULT=1
+cargo test --locked -p xenora-semantic-review --test alignbyte_b32 -- --include-ignored
+cargo test --locked -p xenora-metal --features gpu-tests --test native_compute alignbyte_windows
+LLVM_BIN="$(brew --prefix llvm)/bin" cargo test --locked -p xenora-decoder --test alignbyte_b32 --test gfx1030 -- --include-ignored --nocapture
+```

@@ -825,3 +825,48 @@ fn move_e64_retains_existing_graphics_rejections() {
         assert_eq!(a.to_string(), b.to_string());
     }
 }
+
+#[test]
+fn alignbyte_windows_sources_and_aliases() {
+    let gpu = NativeCompute::new().unwrap();
+    let answers = [
+        0x807f81ffu32,
+        0x01807f81,
+        0x7e01807f,
+        0xfe7e0180,
+        0xabfe7e01,
+        0x00abfe7e,
+        0x0000abfe,
+        0x000000ab,
+    ];
+    let mut count = 0;
+    for control in (0..32u32).chain([32, 33, 0xffffffe4, u32::MAX]) {
+        let want = answers.get((control & 31) as usize).copied().unwrap_or(0);
+        for dst in [8, 9, 10, 255] {
+            // Each position independently uses a VGPR, scalar uniform, or literal.
+            for position in 0..3 {
+                for mode in 0..3 {
+                    let mut sources = [264, 265, 266];
+                    let values = [0xabfe7e01, 0x807f81ff, control, 0, 0, 0, 0, 0];
+                    let literal = match mode {
+                        1 => {
+                            sources[position] = 24 + position as u32;
+                            None
+                        }
+                        2 => {
+                            sources[position] = 255;
+                            Some(values[position])
+                        }
+                        _ => None,
+                    };
+                    assert_eq!(
+                        render(&gpu, &pixel(335, dst, sources, literal, false), values),
+                        vec![want.to_le_bytes().to_vec()]
+                    );
+                    count += 1;
+                }
+            }
+        }
+    }
+    assert_eq!(count, 1296);
+}

@@ -175,6 +175,7 @@ pub enum VectorTernary {
     ShiftOr,
     ExtractUnsigned,
     AlignBits,
+    AlignBytes,
     OrThree,
     XorThree,
     MadU32U16,
@@ -855,6 +856,7 @@ pub fn decode(code: &[u8]) -> Result<Vec<DecodedInstruction>, ReferenceError> {
                                 | 328
                                 | 867
                                 | 334
+                                | 335
                                 | 868
                                 | 869
                                 | 870
@@ -1634,6 +1636,7 @@ fn decode_vop3_integer(bytes: &[u8], offset: usize) -> Result<(Op, usize), Refer
             args[2],
         ),
         334 => Op::VectorTernary(VectorTernary::AlignBits, dst, args[0], args[1], args[2]),
+        335 => Op::VectorTernary(VectorTernary::AlignBytes, dst, args[0], args[1], args[2]),
         882 => Op::VectorTernary(VectorTernary::OrThree, dst, args[0], args[1], args[2]),
         376 => Op::VectorTernary(VectorTernary::XorThree, dst, args[0], args[1], args[2]),
         _ => return Err(error(offset, "unsupported VOP3 integer opcode")),
@@ -2376,6 +2379,11 @@ fn execute_wave(
                         }
                         Op::VectorTernary(VectorTernary::AlignBits, ..) => {
                             (((u64::from(a) << 32) | u64::from(b)) >> (c & 31)) as u32
+                        }
+                        Op::VectorTernary(VectorTernary::AlignBytes, ..) => {
+                            ((u64::from(a) << 32) | u64::from(b))
+                                .checked_shr(8 * (c & 31))
+                                .unwrap_or(0) as u32
                         }
                         Op::VectorTernary(VectorTernary::OrThree, ..) => a | b | c,
                         Op::VectorTernary(VectorTernary::XorThree, ..) => a ^ b ^ c,
