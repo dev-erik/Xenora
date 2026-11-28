@@ -33,10 +33,10 @@ acceptance remain outside the verified count. All results concern synthetic fixt
 | VOP1 | 81 | 7 | 5 | 7 | 7 | 7 | 7 | 7 | 6 |
 | VOP2 | 47 | 20 | 12 | 20 | 20 | 20 | 7 | 7 | 6 |
 | VOP3 | 416 | 63 | 0 | 70 | 70 | 70 | 64 | 64 | 0 |
-| VOP3P | 29 | 0 | 0 | 14 | 14 | 14 | 0 | 0 | 0 |
+| VOP3P | 29 | 0 | 0 | 20 | 20 | 20 | 0 | 0 | 0 |
 | VOP3SDST | 10 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | VOPC | 190 | 12 | 0 | 12 | 12 | 12 | 0 | 0 | 0 |
-| **Total** | 1465 | 203 | 76 | 229 | 224 | 224 | 122 | 122 | 39 |
+| **Total** | 1465 | 203 | 76 | 235 | 230 | 230 | 122 | 122 | 39 |
 
 ## Unsupported operand variants
 

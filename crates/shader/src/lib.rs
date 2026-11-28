@@ -694,6 +694,24 @@ fn vector_bit_binary_expression(op: VectorBitBinaryOp, a: &str, b: &str, lane: &
 }
 fn vector_ternary_expression(op: VectorTernaryOp, a: &str, b: &str, c: &str) -> String {
     match op {
+        VectorTernaryOp::DotI16 | VectorTernaryOp::DotU16 | VectorTernaryOp::DotI8 | VectorTernaryOp::DotU8 | VectorTernaryOp::DotI4 | VectorTernaryOp::DotU4 => {
+            let width = match op {
+                VectorTernaryOp::DotI16 | VectorTernaryOp::DotU16 => 16,
+                VectorTernaryOp::DotI8 | VectorTernaryOp::DotU8 => 8,
+                _ => 4,
+            };
+            let signed=matches!(op,VectorTernaryOp::DotI16 | VectorTernaryOp::DotI8 | VectorTernaryOp::DotI4);
+            let mask=(1u32<<width)-1;
+            let sign=1u32<<(width-1);
+            // Sign extension in uint preserves modular products without signed overflow.
+            let extract=|source:&str,shift:u32| {
+                let bits=format!("((({source}) >> {shift}u) & {mask}u)");
+                if signed {format!("(({bits} ^ {sign}u) - {sign}u)")}else{bits}
+            };
+            let mut terms=vec![format!("({c})")];
+            for lane in 0..32/width {terms.push(format!("({} * {})",extract(a,lane*width),extract(b,lane*width)));}
+            terms.join(" + ")
+        }
         VectorTernaryOp::PackedMadI16 | VectorTernaryOp::PackedMadU16 => [0,16].into_iter().map(|shift| {
             // Signed/unsigned products have the same low16 bits; uint avoids signed overflow.
             format!("(((((({a}) >> {shift}u) & 65535u) * ((({b}) >> {shift}u) & 65535u) + ((({c}) >> {shift}u) & 65535u)) & 65535u) << {shift}u)")

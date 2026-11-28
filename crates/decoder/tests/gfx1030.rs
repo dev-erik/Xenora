@@ -646,6 +646,30 @@ fn reference_op(instruction: Instruction) -> Op {
                 xenora_decoder::VectorTernaryOp::BfeU32 => {
                     xenora_ref::VectorTernary::ExtractUnsigned
                 }
+                xenora_decoder::VectorTernaryOp::DotI16 => xenora_ref::VectorTernary::PackedDot {
+                    width: 16,
+                    signed: true,
+                },
+                xenora_decoder::VectorTernaryOp::DotU16 => xenora_ref::VectorTernary::PackedDot {
+                    width: 16,
+                    signed: false,
+                },
+                xenora_decoder::VectorTernaryOp::DotI8 => xenora_ref::VectorTernary::PackedDot {
+                    width: 8,
+                    signed: true,
+                },
+                xenora_decoder::VectorTernaryOp::DotU8 => xenora_ref::VectorTernary::PackedDot {
+                    width: 8,
+                    signed: false,
+                },
+                xenora_decoder::VectorTernaryOp::DotI4 => xenora_ref::VectorTernary::PackedDot {
+                    width: 4,
+                    signed: true,
+                },
+                xenora_decoder::VectorTernaryOp::DotU4 => xenora_ref::VectorTernary::PackedDot {
+                    width: 4,
+                    signed: false,
+                },
                 xenora_decoder::VectorTernaryOp::PackedMadI16 => {
                     xenora_ref::VectorTernary::PackedMadSigned
                 }
@@ -885,6 +909,7 @@ fn compares_fixture_instructions_against_llvm() {
         include_bytes!("../../../fixtures/rdna2/vop3-float.bin"),
         include_bytes!("../../../fixtures/rdna2/vop3p-integer.bin"),
         include_bytes!("../../../fixtures/rdna2/vop3p-mad.bin"),
+        include_bytes!("../../../fixtures/rdna2/vop3p-dot.bin"),
         include_bytes!("../../../fixtures/rdna2/vector-compare.bin"),
         high_registers,
         &matrix,
@@ -904,7 +929,7 @@ fn compares_fixture_instructions_against_llvm() {
         count += compare_against_llvm(fixture, &mut forms);
     }
     // VOP3 move canonicalizes to the existing e32 move IR mnemonic.
-    assert_eq!(forms.len(), 205, "forms compared: {forms:?}");
+    assert_eq!(forms.len(), 211, "forms compared: {forms:?}");
     eprintln!(
         "{count} three-way instruction comparisons across {} forms",
         forms.len()

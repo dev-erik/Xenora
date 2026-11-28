@@ -10,6 +10,10 @@ Guest execution uses original, purpose-built test programs. Commercial Xbox game
 remains unsupported.
 
 ### Changed
+- Added six packed integer dot-product forms for signed/unsigned 16-, 8- and
+  4-bit components with wrapping 32-bit accumulation in compute and graphics.
+  The initial VGPR-only subset rejects clamp and other modifier modes; independent
+  acceptance remains pending.
 - Added packed signed/unsigned 16-bit multiply-add for default VGPR halves in
   compute and integer graphics, preserving wrapping and inactive destinations.
   Other operand/modifier modes and independent acceptance remain open.

@@ -164,6 +164,7 @@ enum Insn {
     /// VOP2 integer opcode 9-12, 17-20, 30 or 37-39: VDST, SRC0, VSRC1.
     VInt(u32, u8, CmpSrc, u8),
     VUnary(Unary, u8, CmpSrc),
+    VPackedDot(u8, bool, u8, CmpSrc, CmpSrc, CmpSrc),
     VPackedMad(u8, CmpSrc, CmpSrc, CmpSrc),
     VPacked(u8, u8, CmpSrc, CmpSrc),
     VAddF(u8, u8, u8),
@@ -825,7 +826,8 @@ fn lane_step(
         | Insn::VMask(d, a, b)
         | Insn::VCountAdd(d, a, b)
         | Insn::VMulHighSigned(d, a, b) => Some((d, [a, b, CmpSrc::Imm(0)])),
-        Insn::VPackedMad(d, a, b, c)
+        Insn::VPackedDot(_, _, d, a, b, c)
+        | Insn::VPackedMad(d, a, b, c)
         | Insn::VMadSad(_, _, d, a, b, c)
         | Insn::VLeastSigned(d, a, b, c)
         | Insn::VLeastUnsigned(d, a, b, c)
@@ -874,6 +876,26 @@ fn lane_step(
         check_destination(dst, lane.pending_read, offset)?;
         let [a, b, c] = values;
         let result = match insn {
+            Insn::VPackedDot(width, signed, ..) => {
+                let radix = 2u64.pow(u32::from(width));
+                let mut left = u64::from(a);
+                let mut right = u64::from(b);
+                let mut total = i64::from(c);
+                for _ in 0..32 / width {
+                    let value = |n: u64| {
+                        let raw = (n % radix) as i64;
+                        if signed && raw >= radix as i64 / 2 {
+                            raw - radix as i64
+                        } else {
+                            raw
+                        }
+                    };
+                    total += value(left) * value(right);
+                    left /= radix;
+                    right /= radix;
+                }
+                total.rem_euclid(4294967296) as u32
+            }
             Insn::VPackedMad(..) => {
                 let mut result = 0;
                 for power in [1u32, 65536] {
@@ -1633,6 +1655,25 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
     let first = word(code, offset)?;
     let fail = |detail: &str| format!("{offset:#x}: {detail}");
     let opcode = (first / 65536) % 1024;
+    if first / 16777216 == 0xcc && (20..=25).contains(&opcode) {
+        let word = word(code, offset + 4)?;
+        let src = [word % 512, (word / 512) % 512, (word / 262144) % 512];
+        if (first / 256) % 256 != 64 || word / 134217728 != 3 || src.iter().any(|s| *s < 256) {
+            return Err(fail("unsupported packed dot modifiers/sources"));
+        }
+        let width = 16u8 >> ((opcode - 20) / 2);
+        return Ok((
+            Insn::VPackedDot(
+                width,
+                opcode % 2 == 0,
+                first as u8,
+                CmpSrc::Vgpr(src[0] as u8),
+                CmpSrc::Vgpr(src[1] as u8),
+                CmpSrc::Vgpr(src[2] as u8),
+            ),
+            8,
+        ));
+    }
     if first / 16777216 == 0xcc && matches!(opcode, 0 | 9) {
         let second = word(code, offset + 4)?;
         let src = [second % 512, (second / 512) % 512, (second / 262144) % 512];

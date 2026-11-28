@@ -1945,3 +1945,43 @@ cargo test --locked -p xenora-semantic-review --test packed_mad -- --include-ign
 cargo test --locked -p xenora-metal --features gpu-tests --test native_compute packed_mad_graphics
 cargo test --locked -p xenora-decoder --test packed_mad --test gfx1030 -- --include-ignored
 ```
+
+## Stage 3.1 batch: packed integer dot products
+
+Six forms now execute on compute and integer graphics: `V_DOT2_I32_I16`,
+`V_DOT2_U32_U16`, `V_DOT4_I32_I8`, `V_DOT4_U32_U8`, `V_DOT8_I32_I4` and
+`V_DOT8_U32_U4`. The public AMD RDNA2 guide §12.10 defines packed signed or
+unsigned components with a 32-bit accumulator. The initial subset admits only
+VGPR sources with canonical selection bits and no saturation or negation.
+Accumulation wraps modulo 2^32; inactive lanes retain the whole destination.
+Independent acceptance remains pending; this is not Xbox hardware validation.
+
+Local verification on Apple M4 Max:
+
+- Test-first regression failed on the missing opcode before implementation.
+- 720 native compute cases: six forms × ten fixed triples × four destinations
+  × full/sparse/empty EXEC, each spanning 35 invocations.
+- 240 native integer graphics readbacks with source aliasing and v255. Both
+  Metal validation layers enabled. Fixed answers distinguish signed/unsigned
+  components, 16-/8-/4-bit widths, accumulator overflow and mixed signs.
+- 18 exact LLVM encoding rows, exhaustive source-selector domains, truncation,
+  and modifier rejection. Production and both independently decoding references
+  reject unsupported modifier modes.
+- Affected CPU suites: 985 passed, zero failed, 82 ignored. Full LLVM fixture
+  oracle: 1,416 comparisons across 211 canonical IR mnemonics, 34 tests passed.
+- Disabling signed-component extension caused a native graphics readback
+  failure. Restoring it passed the native regression. All-feature Clippy passed.
+
+Logs: `artifacts/s31-dot/`. S3.1 now has **190/480 decoded forms** and **290
+undecoded forms**. These batches add executable subsets for 20 of the 310 forms
+remaining at the start of this run; operand modes and acceptance are additional
+work, so S3.1 remains open.
+
+```sh
+export CARGO_BUILD_TARGET=aarch64-apple-darwin CARGO_BUILD_JOBS=2
+export MTL_DEBUG_LAYER=1 MTL_SHADER_VALIDATION=1
+export MTL_SHADER_VALIDATION_REPORT_TO_STDERR=1 MTL_SHADER_VALIDATION_ABORT_ON_FAULT=1
+cargo test --locked -p xenora-semantic-review --test packed_dot -- --include-ignored
+cargo test --locked -p xenora-metal --features gpu-tests --test native_compute packed_dot_graphics
+cargo test --locked -p xenora-decoder --test packed_dot --test gfx1030 -- --include-ignored
+```

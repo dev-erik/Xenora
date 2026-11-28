@@ -309,6 +309,19 @@ impl VectorBitBinaryOp {
 /// Value-only three-source 32-bit vector operation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum VectorTernaryOp {
+    /// Packed signed 16-bit dot product with wrapping 32-bit accumulation.
+    DotI16,
+    /// Packed unsigned 16-bit dot product with wrapping 32-bit accumulation.
+    DotU16,
+    /// Packed signed 8-bit dot product with wrapping 32-bit accumulation.
+    DotI8,
+    /// Packed unsigned 8-bit dot product with wrapping 32-bit accumulation.
+    DotU8,
+    /// Packed signed 4-bit dot product with wrapping 32-bit accumulation.
+    DotI4,
+    /// Packed unsigned 4-bit dot product with wrapping 32-bit accumulation.
+    DotU4,
+
     /// Packed signed 16-bit multiply-add with wrapping halfword results.
     PackedMadI16,
     /// Packed unsigned 16-bit multiply-add with wrapping halfword results.
@@ -367,6 +380,12 @@ impl VectorTernaryOp {
     /// Returns the unmodified VOP3 mnemonic.
     pub const fn mnemonic(self) -> &'static str {
         match self {
+            Self::DotI16 => "v_dot2_i32_i16",
+            Self::DotU16 => "v_dot2_u32_u16",
+            Self::DotI8 => "v_dot4_i32_i8",
+            Self::DotU8 => "v_dot4_u32_u8",
+            Self::DotI4 => "v_dot8_i32_i4",
+            Self::DotU4 => "v_dot8_u32_u4",
             Self::PackedMadI16 => "v_pk_mad_i16",
             Self::PackedMadU16 => "v_pk_mad_u16",
             Self::BfiB32 => "v_bfi_b32",

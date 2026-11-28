@@ -46,7 +46,7 @@ const fn concat_forms<const N: usize>() -> [(&'static str, EncodingFamily); N] {
 }
 
 /// Decoded forms not yet described by the semantic registry.
-const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 153] = [
+const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 159] = [
     ("DS_PERMUTE_B32", EncodingFamily::Ds),
     ("DS_BPERMUTE_B32", EncodingFamily::Ds),
     ("DS_SWIZZLE_B32", EncodingFamily::Ds),
@@ -160,6 +160,12 @@ const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 153] = [
     ("V_BFI_B32", EncodingFamily::Vop3),
     ("V_ADD3_U32", EncodingFamily::Vop3),
     ("V_AND_OR_B32", EncodingFamily::Vop3),
+    ("V_DOT2_I32_I16", EncodingFamily::Vop3p),
+    ("V_DOT2_U32_U16", EncodingFamily::Vop3p),
+    ("V_DOT4_I32_I8", EncodingFamily::Vop3p),
+    ("V_DOT4_U32_U8", EncodingFamily::Vop3p),
+    ("V_DOT8_I32_I4", EncodingFamily::Vop3p),
+    ("V_DOT8_U32_U4", EncodingFamily::Vop3p),
     ("V_PK_MAD_I16", EncodingFamily::Vop3p),
     ("V_PK_MAD_U16", EncodingFamily::Vop3p),
     ("V_PK_MUL_LO_U16", EncodingFamily::Vop3p),
@@ -382,13 +388,19 @@ fn unsupported(mnemonic: &'static str, detail: &'static str) -> DecodeErrorKind 
 
 fn decode_gfx1030(bytes: &[u8], offset: usize) -> Result<(Instruction, u8), DecodeErrorKind> {
     let first = word(bytes, 4)?;
-    if matches!(first >> 16, 0xcc00 | 0xcc09) {
+    if matches!(first >> 16, 0xcc00 | 0xcc09 | 0xcc14..=0xcc19) {
         let second = word(bytes, 8)?;
         let sources = [second & 511, (second >> 9) & 511, (second >> 18) & 511];
-        let op = if first >> 16 == 0xcc00 {
-            VectorTernaryOp::PackedMadI16
-        } else {
-            VectorTernaryOp::PackedMadU16
+        let op = match first >> 16 {
+            0xcc00 => VectorTernaryOp::PackedMadI16,
+            0xcc09 => VectorTernaryOp::PackedMadU16,
+            0xcc14 => VectorTernaryOp::DotI16,
+            0xcc15 => VectorTernaryOp::DotU16,
+            0xcc16 => VectorTernaryOp::DotI8,
+            0xcc17 => VectorTernaryOp::DotU8,
+            0xcc18 => VectorTernaryOp::DotI4,
+            0xcc19 => VectorTernaryOp::DotU4,
+            _ => unreachable!("guard admits only packed ternary forms"),
         };
         if first & 0xff00 != 0x4000
             || second & 0xf8000000 != 0x18000000

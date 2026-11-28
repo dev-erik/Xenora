@@ -2742,3 +2742,75 @@ gpu = "acceptance pending"
 recognized = true
 decoded = true
 llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_dot2_i32_i16"
+encoding = "VOP3P; VGPR sources; default half selection; no clamp or negation"
+representation = "8 B; packed components accumulated into a wrapping 32-bit result"
+lowering = "MSL packed integer dot-product arithmetic; compute and integer graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_dot2_u32_u16"
+encoding = "VOP3P; VGPR sources; default half selection; no clamp or negation"
+representation = "8 B; packed components accumulated into a wrapping 32-bit result"
+lowering = "MSL packed integer dot-product arithmetic; compute and integer graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_dot4_i32_i8"
+encoding = "VOP3P; VGPR sources; default half selection; no clamp or negation"
+representation = "8 B; packed components accumulated into a wrapping 32-bit result"
+lowering = "MSL packed integer dot-product arithmetic; compute and integer graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_dot4_u32_u8"
+encoding = "VOP3P; VGPR sources; default half selection; no clamp or negation"
+representation = "8 B; packed components accumulated into a wrapping 32-bit result"
+lowering = "MSL packed integer dot-product arithmetic; compute and integer graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_dot8_i32_i4"
+encoding = "VOP3P; VGPR sources; default half selection; no clamp or negation"
+representation = "8 B; packed components accumulated into a wrapping 32-bit result"
+lowering = "MSL packed integer dot-product arithmetic; compute and integer graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_dot8_u32_u4"
+encoding = "VOP3P; VGPR sources; default half selection; no clamp or negation"
+representation = "8 B; packed components accumulated into a wrapping 32-bit result"
+lowering = "MSL packed integer dot-product arithmetic; compute and integer graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"

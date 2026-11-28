@@ -51,14 +51,14 @@ open. See the [packed arithmetic checkpoint](../testing/local-graphics-checkpoin
 
 | Stage | Decoded / inventoried | Undecoded | Remaining work | Relative effort |
 | --- | ---: | ---: | --- | --- |
-| S3.1 Arithmetic | 184 / 480 | 296 | Wider/packed arithmetic, floating point, conversions, source and modifier modes | XL |
+| S3.1 Arithmetic | 190 / 480 | 290 | Wider/packed arithmetic, floating point, conversions, source and modifier modes | XL |
 | S3.2 Control flow | 8 / 24 | 16 | Compute loops, calls/returns, divergence, debug/trap/halt and termination protocols | L–XL |
 | S3.3 Masks and comparisons | 12 / 419 | 407 | Comparison predicates/types, dynamic EXEC, divergent lane state and reconvergence | XL |
 | S3.4 Wave and lane | 11 / 11 | 0 | Broader operands, dynamic masks, partial populations, graphics/helper lanes and disputed semantics | L–XL |
 | S3.5 Memory and interfaces | 14 / 509 | 495 | Address spaces, descriptors, LDS, atomics, images, ordering and stage interfaces | XL |
 | S3.6 Numerical correctness | Cross-cutting | Not a separate instruction bucket | Rounding, special values, denormals, precision and differential tests | L–XL |
 | State operations awaiting assignment | 0 / 22 | 22 | Classify ownership, define state/runtime contracts and implement | Uncertain |
-| Inventory total | 229 / 1465 | 1236 | Includes the state bucket; excludes a second count for S3.6 | Not additive |
+| Inventory total | 235 / 1465 | 1230 | Includes the state bucket; excludes a second count for S3.6 | Not additive |
 
 Effort bands are planning judgments, not measured completion percentages or
 calendar promises. **L** means several substantial implementation-and-validation
@@ -87,12 +87,12 @@ control-flow forms and unresolved wave-operation semantics explicitly.
 
 ## What drives the workload
 
-The 1,236 undecoded forms share implementation prerequisites. Shared
+The 1,230 undecoded forms share implementation prerequisites. Shared
 semantics and representations can cover many variants, but their encoding and
 boundary tests still need evidence.
 
-- Arithmetic: 296 missing forms include 37 scalar, 71 VOP1, 23 VOP2, 146 VOP3,
-  15 packed VOP3P and 4 VOP3SDST forms. Paired registers, packed widths and mixed
+- Arithmetic: 290 missing forms include 37 scalar, 71 VOP1, 23 VOP2, 146 VOP3,
+  9 packed VOP3P and 4 VOP3SDST forms. Paired registers, packed widths and mixed
   outputs are prerequisites for some families.
 - Masks/comparisons: 178 missing VOPC and 191 VOP3 forms dominate the count.
   Shared comparison semantics help; dynamic EXEC and reconvergence are separate
@@ -147,3 +147,7 @@ listed above remain open.
 Packed signed and unsigned multiply-add now also lower to compute and integer
 graphics for default VGPR half selections, without clamp or negation. Local
 known-answer readbacks passed; independent acceptance remains pending.
+
+The six packed integer dot-product forms also have local compute and graphics
+readback evidence for default VGPR sources and wrapping accumulation. Saturation
+and other operand/modifier modes remain open, as does independent acceptance.

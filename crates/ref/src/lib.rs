@@ -163,6 +163,7 @@ pub enum BitBinary {
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum VectorTernary {
+    PackedDot { width: u8, signed: bool },
     PackedMadSigned,
     PackedMadUnsigned,
     MinimumSigned,
@@ -843,6 +844,31 @@ pub fn decode(code: &[u8]) -> Result<Vec<DecodedInstruction>, ReferenceError> {
                         src: *a,
                         index: Some(lane as u8),
                     },
+                    8,
+                )
+            }
+            [dst, flags, op @ 20..=25, 0xcc, a, b, c, d, ..] => {
+                let word = u32::from_le_bytes([*a, *b, *c, *d]);
+                let src = [word & 511, (word >> 9) & 511, (word >> 18) & 511];
+                if *flags != 64 || word & 0xf8000000 != 0x18000000 || src.iter().any(|x| *x < 256) {
+                    return Err(error(offset, "unsupported packed dot source/modifier"));
+                }
+                let width = match op {
+                    20 | 21 => 16,
+                    22 | 23 => 8,
+                    _ => 4,
+                };
+                (
+                    Op::VectorTernary(
+                        VectorTernary::PackedDot {
+                            width,
+                            signed: *op % 2 == 0,
+                        },
+                        *dst,
+                        CompareSource::Vector(src[0] as u8),
+                        CompareSource::Vector(src[1] as u8),
+                        CompareSource::Vector(src[2] as u8),
+                    ),
                     8,
                 )
             }
@@ -2504,6 +2530,22 @@ fn execute_wave(
                                 result |= (value & 65535) << shift;
                             }
                             result
+                        }
+                        Op::VectorTernary(VectorTernary::PackedDot { width, signed }, ..) => {
+                            let mut total = i64::from(c);
+                            let mask = (1u32 << width) - 1;
+                            for shift in (0..32).step_by(width as usize) {
+                                let extend = |word: u32| {
+                                    let bits = (word >> shift) & mask;
+                                    if signed && bits & (1 << (width - 1)) != 0 {
+                                        i64::from(bits) - (1i64 << width)
+                                    } else {
+                                        i64::from(bits)
+                                    }
+                                };
+                                total += extend(a) * extend(b);
+                            }
+                            total as u32
                         }
                         Op::VectorTernary(VectorTernary::AlignBytes, ..) => {
                             ((u64::from(a) << 32) | u64::from(b))

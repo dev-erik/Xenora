@@ -987,3 +987,105 @@ fn packed_mad_graphics() {
         }
     }
 }
+
+const DOT_ROWS: &[(u32, u32, u32, [u32; 6])] = &[
+    (
+        0x00000001,
+        0x00000001,
+        0x00000000,
+        [
+            0x00000001, 0x00000001, 0x00000001, 0x00000001, 0x00000001, 0x00000001,
+        ],
+    ),
+    (
+        0xffffffff,
+        0xffffffff,
+        0xffffffff,
+        [
+            0x00000001, 0xfffc0001, 0x00000003, 0x0003f803, 0x00000007, 0x00000707,
+        ],
+    ),
+    (
+        0x80008000,
+        0x80008000,
+        0x00000000,
+        [
+            0x80000000, 0x80000000, 0x00008000, 0x00008000, 0x00000080, 0x00000080,
+        ],
+    ),
+    (
+        0x80007fff,
+        0x7fff8000,
+        0x80000000,
+        [
+            0x00010000, 0xffff0000, 0x7fff8100, 0x80007f00, 0x7fffff90, 0x80000070,
+        ],
+    ),
+    (
+        0x80808080,
+        0x7f7f7f7f,
+        0x7fffffff,
+        [
+            0x01007eff, 0xfffe7eff, 0x7fff01ff, 0x8000fdff, 0x7fffff1f, 0x800000df,
+        ],
+    ),
+    (
+        0x88888888,
+        0x77777777,
+        0xffffffff,
+        [
+            0x907f5e6f, 0x7f6d5e6f, 0xffff20df, 0x0000fcdf, 0xfffffe3f, 0x000001bf,
+        ],
+    ),
+    (
+        0x1234abcd,
+        0xfedc5678,
+        0x13579bdf,
+        [
+            0xf6d23ea7, 0x5f7e3ea7, 0x13575ff5, 0x135873f5, 0x13579b81, 0x13579d91,
+        ],
+    ),
+    (
+        0x01020304,
+        0x05060708,
+        0x00000009,
+        [
+            0x001a4435, 0x001a4435, 0x0000004f, 0x0000004f, 0x0000000f, 0x0000004f,
+        ],
+    ),
+    (
+        0xffff0001,
+        0x0001ffff,
+        0x00000000,
+        [
+            0xfffffffe, 0x0001fffe, 0xfffffffe, 0x000001fe, 0xfffffffe, 0x0000001e,
+        ],
+    ),
+    (
+        0x00000000,
+        0xffffffff,
+        0x12345678,
+        [
+            0x12345678, 0x12345678, 0x12345678, 0x12345678, 0x12345678, 0x12345678,
+        ],
+    ),
+];
+
+#[test]
+fn packed_dot_graphics() {
+    let gpu = NativeCompute::new().unwrap();
+    for &(a, b, c, wants) in DOT_ROWS {
+        for (index, op) in (20u32..=25).enumerate() {
+            for dst in [8, 9, 10, 255] {
+                let mut ps = pixel(0, dst, [264, 265, 266], None, false);
+                ps[16..20].copy_from_slice(&(0xcc004000 | op << 16 | dst).to_le_bytes());
+                ps[20..24]
+                    .copy_from_slice(&(0x18000000u32 | 264 | 265 << 9 | 266 << 18).to_le_bytes());
+                assert_eq!(
+                    render(&gpu, &ps, [a, b, c, 0, 0, 0, 0, 0]),
+                    vec![wants[index].to_le_bytes().to_vec()]
+                );
+            }
+        }
+    }
+}
