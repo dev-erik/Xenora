@@ -4,19 +4,19 @@
 <rect width="1040" height="1630" fill="#0d1117"/>
 <g font-family="system-ui,sans-serif" fill="#e6edf3">
 <text x="24" y="30" font-size="20">RDNA2 conversion checklist · 1,465 forms</text>
-<text x="24" y="55" font-size="14">235 decoded · 1230 not converted · operand subsets only</text>
+<text x="24" y="55" font-size="14">245 decoded · 1220 not converted · operand subsets only</text>
 <rect x="24" y="68" width="10" height="10" fill="#238636"/>
 <text x="42" y="78" font-size="12">Converted subset; fixture accepted: 122</text>
 <rect x="524" y="68" width="10" height="10" fill="#bf8700"/>
-<text x="542" y="78" font-size="12">Converted subset; acceptance pending: 108</text>
+<text x="542" y="78" font-size="12">Converted subset; acceptance pending: 118</text>
 <rect x="24" y="90" width="10" height="10" fill="#1f6feb"/>
 <text x="42" y="100" font-size="12">Decoded; translation evidence unrecorded: 5</text>
 <rect x="524" y="90" width="10" height="10" fill="#6e7681"/>
-<text x="542" y="100" font-size="12">Not converted: 1230</text>
+<text x="542" y="100" font-size="12">Not converted: 1220</text>
 <text x="24" y="135" font-size="17">S3 workstreams · all stages open</text>
 <text x="24" y="158" font-size="12">Provisional desktop inventory · decoded counts are not completion percentages</text>
 <text x="24" y="184" font-size="13">S3.1 Arithmetic</text>
-<text x="330" y="184" font-size="13">190/480 decoded · 290 not decoded</text>
+<text x="330" y="184" font-size="13">200/480 decoded · 280 not decoded</text>
 <text x="24" y="210" font-size="13">S3.2 Control flow</text>
 <text x="330" y="210" font-size="13">8/24 decoded · 16 not decoded</text>
 <text x="24" y="236" font-size="13">S3.3 Masks / comparisons</text>
@@ -1228,21 +1228,21 @@
 <rect x="505" y="1404" width="10" height="10" fill="#6e7681"><title>VOP3 V_LSHLREV_B64 OP 767: Not converted</title></rect>
 <rect x="518" y="1404" width="10" height="10" fill="#6e7681"><title>VOP3 V_LSHRREV_B64 OP 768: Not converted</title></rect>
 <rect x="531" y="1404" width="10" height="10" fill="#6e7681"><title>VOP3 V_ASHRREV_I64 OP 769: Not converted</title></rect>
-<rect x="544" y="1404" width="10" height="10" fill="#6e7681"><title>VOP3 V_ADD_NC_U16 OP 771: Not converted</title></rect>
-<rect x="557" y="1404" width="10" height="10" fill="#6e7681"><title>VOP3 V_SUB_NC_U16 OP 772: Not converted</title></rect>
-<rect x="570" y="1404" width="10" height="10" fill="#6e7681"><title>VOP3 V_MUL_LO_U16 OP 773: Not converted</title></rect>
-<rect x="583" y="1404" width="10" height="10" fill="#6e7681"><title>VOP3 V_LSHRREV_B16 OP 775: Not converted</title></rect>
-<rect x="596" y="1404" width="10" height="10" fill="#6e7681"><title>VOP3 V_ASHRREV_I16 OP 776: Not converted</title></rect>
-<rect x="609" y="1404" width="10" height="10" fill="#6e7681"><title>VOP3 V_MAX_U16 OP 777: Not converted</title></rect>
-<rect x="622" y="1404" width="10" height="10" fill="#6e7681"><title>VOP3 V_MAX_I16 OP 778: Not converted</title></rect>
-<rect x="635" y="1404" width="10" height="10" fill="#6e7681"><title>VOP3 V_MIN_U16 OP 779: Not converted</title></rect>
-<rect x="648" y="1404" width="10" height="10" fill="#6e7681"><title>VOP3 V_MIN_I16 OP 780: Not converted</title></rect>
+<rect x="544" y="1404" width="10" height="10" fill="#bf8700"><title>VOP3 V_ADD_NC_U16 OP 771: Converted subset; acceptance pending</title></rect>
+<rect x="557" y="1404" width="10" height="10" fill="#bf8700"><title>VOP3 V_SUB_NC_U16 OP 772: Converted subset; acceptance pending</title></rect>
+<rect x="570" y="1404" width="10" height="10" fill="#bf8700"><title>VOP3 V_MUL_LO_U16 OP 773: Converted subset; acceptance pending</title></rect>
+<rect x="583" y="1404" width="10" height="10" fill="#bf8700"><title>VOP3 V_LSHRREV_B16 OP 775: Converted subset; acceptance pending</title></rect>
+<rect x="596" y="1404" width="10" height="10" fill="#bf8700"><title>VOP3 V_ASHRREV_I16 OP 776: Converted subset; acceptance pending</title></rect>
+<rect x="609" y="1404" width="10" height="10" fill="#bf8700"><title>VOP3 V_MAX_U16 OP 777: Converted subset; acceptance pending</title></rect>
+<rect x="622" y="1404" width="10" height="10" fill="#bf8700"><title>VOP3 V_MAX_I16 OP 778: Converted subset; acceptance pending</title></rect>
+<rect x="635" y="1404" width="10" height="10" fill="#bf8700"><title>VOP3 V_MIN_U16 OP 779: Converted subset; acceptance pending</title></rect>
+<rect x="648" y="1404" width="10" height="10" fill="#bf8700"><title>VOP3 V_MIN_I16 OP 780: Converted subset; acceptance pending</title></rect>
 <rect x="661" y="1404" width="10" height="10" fill="#6e7681"><title>VOP3 V_ADD_NC_I16 OP 781: Not converted</title></rect>
 <rect x="674" y="1404" width="10" height="10" fill="#6e7681"><title>VOP3 V_SUB_NC_I16 OP 782: Not converted</title></rect>
 <rect x="687" y="1404" width="10" height="10" fill="#6e7681"><title>VOP3 V_PACK_B32_F16 OP 785: Not converted</title></rect>
 <rect x="700" y="1404" width="10" height="10" fill="#6e7681"><title>VOP3 V_CVT_PKNORM_I16_F16 OP 786: Not converted</title></rect>
 <rect x="713" y="1404" width="10" height="10" fill="#6e7681"><title>VOP3 V_CVT_PKNORM_U16_F16 OP 787: Not converted</title></rect>
-<rect x="726" y="1404" width="10" height="10" fill="#6e7681"><title>VOP3 V_LSHLREV_B16 OP 788: Not converted</title></rect>
+<rect x="726" y="1404" width="10" height="10" fill="#bf8700"><title>VOP3 V_LSHLREV_B16 OP 788: Converted subset; acceptance pending</title></rect>
 <rect x="739" y="1404" width="10" height="10" fill="#6e7681"><title>VOP3 V_MAD_U16 OP 832: Not converted</title></rect>
 <rect x="752" y="1404" width="10" height="10" fill="#6e7681"><title>VOP3 V_INTERP_P1LL_F16 OP 834: Not converted</title></rect>
 <rect x="765" y="1404" width="10" height="10" fill="#6e7681"><title>VOP3 V_INTERP_P1LV_F16 OP 835: Not converted</title></rect>

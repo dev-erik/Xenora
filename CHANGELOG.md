@@ -10,6 +10,9 @@ Guest execution uses original, purpose-built test programs. Commercial Xbox game
 remains unsupported.
 
 ### Changed
+- Added ten low-half 16-bit integer arithmetic forms for compute and graphics,
+  preserving the destination high half through a captured register read.
+  Non-default operands/modifiers and independent acceptance remain open.
 - Added six packed integer dot-product forms for signed/unsigned 16-, 8- and
   4-bit components with wrapping 32-bit accumulation in compute and graphics.
   The initial VGPR-only subset rejects clamp and other modifier modes; independent

@@ -46,7 +46,7 @@ const fn concat_forms<const N: usize>() -> [(&'static str, EncodingFamily); N] {
 }
 
 /// Decoded forms not yet described by the semantic registry.
-const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 159] = [
+const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 169] = [
     ("DS_PERMUTE_B32", EncodingFamily::Ds),
     ("DS_BPERMUTE_B32", EncodingFamily::Ds),
     ("DS_SWIZZLE_B32", EncodingFamily::Ds),
@@ -160,6 +160,16 @@ const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 159] = [
     ("V_BFI_B32", EncodingFamily::Vop3),
     ("V_ADD3_U32", EncodingFamily::Vop3),
     ("V_AND_OR_B32", EncodingFamily::Vop3),
+    ("V_ADD_NC_U16", EncodingFamily::Vop3),
+    ("V_SUB_NC_U16", EncodingFamily::Vop3),
+    ("V_MUL_LO_U16", EncodingFamily::Vop3),
+    ("V_LSHRREV_B16", EncodingFamily::Vop3),
+    ("V_ASHRREV_I16", EncodingFamily::Vop3),
+    ("V_MAX_U16", EncodingFamily::Vop3),
+    ("V_MAX_I16", EncodingFamily::Vop3),
+    ("V_MIN_U16", EncodingFamily::Vop3),
+    ("V_MIN_I16", EncodingFamily::Vop3),
+    ("V_LSHLREV_B16", EncodingFamily::Vop3),
     ("V_DOT2_I32_I16", EncodingFamily::Vop3p),
     ("V_DOT2_U32_U16", EncodingFamily::Vop3p),
     ("V_DOT4_I32_I8", EncodingFamily::Vop3p),
@@ -388,6 +398,41 @@ fn unsupported(mnemonic: &'static str, detail: &'static str) -> DecodeErrorKind 
 
 fn decode_gfx1030(bytes: &[u8], offset: usize) -> Result<(Instruction, u8), DecodeErrorKind> {
     let first = word(bytes, 4)?;
+    if first >> 26 == 53 && matches!((first >> 16) & 1023, 771 | 772 | 773 | 775..=780 | 788) {
+        let second = word(bytes, 8)?;
+        let op = match (first >> 16) & 1023 {
+            771 => PackedBinaryOp::AddU16,
+            772 => PackedBinaryOp::SubU16,
+            773 => PackedBinaryOp::MulU16,
+            775 => PackedBinaryOp::LshrB16,
+            776 => PackedBinaryOp::AshrI16,
+            777 => PackedBinaryOp::MaxU16,
+            778 => PackedBinaryOp::MaxI16,
+            779 => PackedBinaryOp::MinU16,
+            780 => PackedBinaryOp::MinI16,
+            788 => PackedBinaryOp::LshlB16,
+            _ => unreachable!("guard admits only halfword binary forms"),
+        };
+        let src0 = second & 511;
+        let src1 = (second >> 9) & 511;
+        if first & 0xff00 != 0 || second >> 18 != 128 || src0 < 256 || src1 < 256 {
+            return Err(unsupported(
+                VectorTernaryOp::Halfword(op).mnemonic(),
+                "expected unmodified low-half VGPR operands",
+            ));
+        }
+        let dst = first as u8;
+        return Ok((
+            Instruction::VectorTernary {
+                op: VectorTernaryOp::Halfword(op),
+                dst,
+                src0: VectorSource::Register(src0 as u8),
+                src1: VectorSource::Register(src1 as u8),
+                src2: VectorSource::Register(dst),
+            },
+            8,
+        ));
+    }
     if matches!(first >> 16, 0xcc00 | 0xcc09 | 0xcc14..=0xcc19) {
         let second = word(bytes, 8)?;
         let sources = [second & 511, (second >> 9) & 511, (second >> 18) & 511];

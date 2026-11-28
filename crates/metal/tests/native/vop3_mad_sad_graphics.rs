@@ -1089,3 +1089,35 @@ fn packed_dot_graphics() {
         }
     }
 }
+
+#[test]
+fn halfword_binary_graphics() {
+    let gpu = NativeCompute::new().unwrap();
+    let ops = [771u32, 772, 773, 775, 776, 777, 778, 779, 780, 788];
+    let answer_index = [8, 9, 0, 4, 5, 10, 6, 11, 7, 3];
+    for &(a, b, wants) in PACKED_ROWS {
+        for (index, op) in ops.into_iter().enumerate() {
+            for dst in [8, 9, 10, 255] {
+                let mut ps = pixel(op, dst, [264, 265, 128], None, false);
+                let old = if dst == 8 {
+                    a
+                } else if dst == 9 {
+                    b
+                } else {
+                    0x13579bdf
+                };
+                if dst == 255 {
+                    ps.splice(
+                        16..16,
+                        [0x7ffe02ffu32, old].into_iter().flat_map(u32::to_le_bytes),
+                    );
+                }
+                let want = (old & 0xffff0000) | (wants[answer_index[index]] & 65535);
+                assert_eq!(
+                    render(&gpu, &ps, [a, b, 0x13579bdf, 0, 0, 0, 0, 0]),
+                    vec![want.to_le_bytes().to_vec()]
+                );
+            }
+        }
+    }
+}

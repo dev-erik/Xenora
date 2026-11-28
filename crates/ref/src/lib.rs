@@ -163,6 +163,7 @@ pub enum BitBinary {
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum VectorTernary {
+    Halfword(u16),
     PackedDot { width: u8, signed: bool },
     PackedMadSigned,
     PackedMadUnsigned,
@@ -708,6 +709,35 @@ pub fn decode(code: &[u8]) -> Result<Vec<DecodedInstruction>, ReferenceError> {
     let mut offset = 0;
     while let Some(bytes) = code.get(offset..).filter(|bytes| !bytes.is_empty()) {
         let (op, length) = match bytes {
+            [
+                dst,
+                flags,
+                opcode @ (3..=5 | 7..=12 | 20),
+                0xd7,
+                a,
+                b,
+                c,
+                d,
+                ..,
+            ] => {
+                let word = u32::from_le_bytes([*a, *b, *c, *d]);
+                let x = word & 511;
+                let y = (word >> 9) & 511;
+                if *flags != 0 || word >> 18 != 128 || x < 256 || y < 256 {
+                    return Err(error(offset, "unsupported halfword operands/modifiers"));
+                }
+                (
+                    Op::VectorTernary(
+                        VectorTernary::Halfword(768 + u16::from(*opcode)),
+                        *dst,
+                        CompareSource::Vector(x as u8),
+                        CompareSource::Vector(y as u8),
+                        CompareSource::Vector(*dst),
+                    ),
+                    8,
+                )
+            }
+
             [
                 lo,
                 hi,
@@ -2546,6 +2576,24 @@ fn execute_wave(
                                 total += extend(a) * extend(b);
                             }
                             total as u32
+                        }
+                        Op::VectorTernary(VectorTernary::Halfword(opcode), ..) => {
+                            let x = a & 65535;
+                            let y = b & 65535;
+                            let value = match opcode {
+                                771 => x + y,
+                                772 => x.wrapping_sub(y),
+                                773 => x * y,
+                                775 => y >> (x & 15),
+                                776 => ((y as i16 as i32) >> (x & 15)) as u32,
+                                777 => x.max(y),
+                                778 => (x as i16).max(y as i16) as u16 as u32,
+                                779 => x.min(y),
+                                780 => (x as i16).min(y as i16) as u16 as u32,
+                                788 => y << (x & 15),
+                                _ => unreachable!("decoded halfword operation"),
+                            };
+                            (value & 65535) | (c & 0xffff0000)
                         }
                         Op::VectorTernary(VectorTernary::AlignBytes, ..) => {
                             ((u64::from(a) << 32) | u64::from(b))

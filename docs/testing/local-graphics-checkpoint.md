@@ -1985,3 +1985,47 @@ cargo test --locked -p xenora-semantic-review --test packed_dot -- --include-ign
 cargo test --locked -p xenora-metal --features gpu-tests --test native_compute packed_dot_graphics
 cargo test --locked -p xenora-decoder --test packed_dot --test gfx1030 -- --include-ignored
 ```
+
+## Stage 3.1 batch: retained-half integer arithmetic
+
+Ten VOP3 forms now execute for low-half VGPR operands: `V_ADD_NC_U16`,
+`V_SUB_NC_U16`, `V_MUL_LO_U16`, `V_LSHLREV_B16`, `V_LSHRREV_B16`,
+`V_ASHRREV_I16`, `V_MAX_U16`, `V_MAX_I16`, `V_MIN_U16` and `V_MIN_I16`.
+The destination's existing high16 bits are retained, including source aliases;
+inactive EXEC lanes retain the whole word. An uninitialized destination is
+rejected because its high half is required. See the
+[operand and source contract](../shaders/vop3-integer.md#low-half-binary-arithmetic).
+
+The initial subset rejects scalar/literal sources, high-half selection,
+saturation and other modifiers. It requires the LLVM-canonical unused source
+field. Independent semantic acceptance remains pending; no AMD/Xbox hardware
+validation is claimed.
+
+Local Apple M4 Max evidence:
+
+- Test-first fixed-answer regression failed on the missing forms before implementation.
+- 960 native compute cases: ten forms × eight fixed operand pairs × four
+  destination choices × full/sparse/empty masks, each spanning 35 invocations.
+- 320 native integer graphics readbacks, including source aliases, a separate
+  initialized destination and v255. Both Metal validation layers enabled.
+- Thirty exact LLVM encoding rows, exhaustive 9-bit source-selector checks,
+  truncation, modifier rejection in all three decoders, and rejection of an
+  uninitialized retained destination. The full fixture oracle passed 1,433
+  instruction comparisons across 221 canonical IR mnemonics (34 tests).
+- Affected CPU suites: 993 passed, zero failed, 84 ignored. Ignored tests are
+  not native GPU evidence. All-feature Clippy passed.
+- Deliberately dropping the preserved high half caused a native graphics
+  readback failure. The restored implementation passed the same regression.
+
+Logs: `artifacts/s31-halfword/`. S3.1 is **200/480 decoded**, with **280 forms
+still undecoded**, plus operand-mode and acceptance work. This batch does not
+close S3.1 or establish commercial game compatibility.
+
+```sh
+export CARGO_BUILD_TARGET=aarch64-apple-darwin CARGO_BUILD_JOBS=2
+export MTL_DEBUG_LAYER=1 MTL_SHADER_VALIDATION=1
+export MTL_SHADER_VALIDATION_REPORT_TO_STDERR=1 MTL_SHADER_VALIDATION_ABORT_ON_FAULT=1
+cargo test --locked -p xenora-semantic-review --test halfword_binary -- --include-ignored
+cargo test --locked -p xenora-metal --features gpu-tests --test native_compute halfword_binary_graphics
+cargo test --locked -p xenora-decoder --test halfword_binary --test gfx1030 -- --include-ignored
+```

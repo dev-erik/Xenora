@@ -165,6 +165,7 @@ enum Insn {
     VInt(u32, u8, CmpSrc, u8),
     VUnary(Unary, u8, CmpSrc),
     VPackedDot(u8, bool, u8, CmpSrc, CmpSrc, CmpSrc),
+    VHalfword(u16, u8, CmpSrc, CmpSrc, CmpSrc),
     VPackedMad(u8, CmpSrc, CmpSrc, CmpSrc),
     VPacked(u8, u8, CmpSrc, CmpSrc),
     VAddF(u8, u8, u8),
@@ -826,7 +827,8 @@ fn lane_step(
         | Insn::VMask(d, a, b)
         | Insn::VCountAdd(d, a, b)
         | Insn::VMulHighSigned(d, a, b) => Some((d, [a, b, CmpSrc::Imm(0)])),
-        Insn::VPackedDot(_, _, d, a, b, c)
+        Insn::VHalfword(_, d, a, b, c)
+        | Insn::VPackedDot(_, _, d, a, b, c)
         | Insn::VPackedMad(d, a, b, c)
         | Insn::VMadSad(_, _, d, a, b, c)
         | Insn::VLeastSigned(d, a, b, c)
@@ -895,6 +897,25 @@ fn lane_step(
                     right /= radix;
                 }
                 total.rem_euclid(4294967296) as u32
+            }
+            Insn::VHalfword(opcode, ..) => {
+                let x = i64::from(a % 65536);
+                let y = i64::from(b % 65536);
+                let signed = |v: i64| if v >= 32768 { v - 65536 } else { v };
+                let value = match opcode {
+                    771 => x + y,
+                    772 => x - y,
+                    773 => x * y,
+                    775 => y / 2i64.pow((x % 16) as u32),
+                    776 => signed(y).div_euclid(2i64.pow((x % 16) as u32)),
+                    777 => x.max(y),
+                    778 => signed(x).max(signed(y)),
+                    779 => x.min(y),
+                    780 => signed(x).min(signed(y)),
+                    788 => y * 2i64.pow((x % 16) as u32),
+                    _ => unreachable!("halfword opcode"),
+                };
+                (c / 65536) * 65536 + value.rem_euclid(65536) as u32
             }
             Insn::VPackedMad(..) => {
                 let mut result = 0;
@@ -1655,6 +1676,26 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
     let first = word(code, offset)?;
     let fail = |detail: &str| format!("{offset:#x}: {detail}");
     let opcode = (first / 65536) % 1024;
+    if first / 67108864 == 53 && matches!(opcode,771..=773|775..=780|788) {
+        let next = word(code, offset + 4)?;
+        let x = next % 512;
+        let y = (next / 512) % 512;
+        if (first / 256) % 256 != 0 || next / 262144 != 128 || x < 256 || y < 256 {
+            return Err(fail("unsupported halfword operand/modifier"));
+        }
+        let dst = first as u8;
+        return Ok((
+            Insn::VHalfword(
+                opcode as u16,
+                dst,
+                CmpSrc::Vgpr(x as u8),
+                CmpSrc::Vgpr(y as u8),
+                CmpSrc::Vgpr(dst),
+            ),
+            8,
+        ));
+    }
+
     if first / 16777216 == 0xcc && (20..=25).contains(&opcode) {
         let word = word(code, offset + 4)?;
         let src = [word % 512, (word / 512) % 512, (word / 262144) % 512];

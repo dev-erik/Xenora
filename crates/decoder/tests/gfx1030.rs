@@ -646,6 +646,21 @@ fn reference_op(instruction: Instruction) -> Op {
                 xenora_decoder::VectorTernaryOp::BfeU32 => {
                     xenora_ref::VectorTernary::ExtractUnsigned
                 }
+                xenora_decoder::VectorTernaryOp::Halfword(op) => {
+                    xenora_ref::VectorTernary::Halfword(match op {
+                        xenora_decoder::PackedBinaryOp::AddU16 => 771,
+                        xenora_decoder::PackedBinaryOp::SubU16 => 772,
+                        xenora_decoder::PackedBinaryOp::MulU16 => 773,
+                        xenora_decoder::PackedBinaryOp::LshrB16 => 775,
+                        xenora_decoder::PackedBinaryOp::AshrI16 => 776,
+                        xenora_decoder::PackedBinaryOp::MaxU16 => 777,
+                        xenora_decoder::PackedBinaryOp::MaxI16 => 778,
+                        xenora_decoder::PackedBinaryOp::MinU16 => 779,
+                        xenora_decoder::PackedBinaryOp::MinI16 => 780,
+                        xenora_decoder::PackedBinaryOp::LshlB16 => 788,
+                        _ => unreachable!("only decoded halfword forms"),
+                    })
+                }
                 xenora_decoder::VectorTernaryOp::DotI16 => xenora_ref::VectorTernary::PackedDot {
                     width: 16,
                     signed: true,
@@ -910,6 +925,7 @@ fn compares_fixture_instructions_against_llvm() {
         include_bytes!("../../../fixtures/rdna2/vop3p-integer.bin"),
         include_bytes!("../../../fixtures/rdna2/vop3p-mad.bin"),
         include_bytes!("../../../fixtures/rdna2/vop3p-dot.bin"),
+        include_bytes!("../../../fixtures/rdna2/vop3-halfword.bin"),
         include_bytes!("../../../fixtures/rdna2/vector-compare.bin"),
         high_registers,
         &matrix,
@@ -929,7 +945,7 @@ fn compares_fixture_instructions_against_llvm() {
         count += compare_against_llvm(fixture, &mut forms);
     }
     // VOP3 move canonicalizes to the existing e32 move IR mnemonic.
-    assert_eq!(forms.len(), 211, "forms compared: {forms:?}");
+    assert_eq!(forms.len(), 221, "forms compared: {forms:?}");
     eprintln!(
         "{count} three-way instruction comparisons across {} forms",
         forms.len()

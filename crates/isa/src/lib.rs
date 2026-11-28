@@ -309,6 +309,8 @@ impl VectorBitBinaryOp {
 /// Value-only three-source 32-bit vector operation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum VectorTernaryOp {
+    /// Low-half binary arithmetic; the third IR source snapshots the old destination.
+    Halfword(PackedBinaryOp),
     /// Packed signed 16-bit dot product with wrapping 32-bit accumulation.
     DotI16,
     /// Packed unsigned 16-bit dot product with wrapping 32-bit accumulation.
@@ -380,6 +382,20 @@ impl VectorTernaryOp {
     /// Returns the unmodified VOP3 mnemonic.
     pub const fn mnemonic(self) -> &'static str {
         match self {
+            Self::Halfword(op) => match op {
+                PackedBinaryOp::AddU16 => "v_add_nc_u16",
+                PackedBinaryOp::SubU16 => "v_sub_nc_u16",
+                PackedBinaryOp::MulU16 => "v_mul_lo_u16",
+                PackedBinaryOp::LshrB16 => "v_lshrrev_b16",
+                PackedBinaryOp::AshrI16 => "v_ashrrev_i16",
+                PackedBinaryOp::MaxU16 => "v_max_u16",
+                PackedBinaryOp::MaxI16 => "v_max_i16",
+                PackedBinaryOp::MinU16 => "v_min_u16",
+                PackedBinaryOp::MinI16 => "v_min_i16",
+                PackedBinaryOp::LshlB16 => "v_lshlrev_b16",
+                PackedBinaryOp::AddI16 => "v_add_nc_i16",
+                PackedBinaryOp::SubI16 => "v_sub_nc_i16",
+            },
             Self::DotI16 => "v_dot2_i32_i16",
             Self::DotU16 => "v_dot2_u32_u16",
             Self::DotI8 => "v_dot4_i32_i8",
@@ -1119,6 +1135,13 @@ impl fmt::Display for Instruction {
             }
             | Self::VectorBitBinary {
                 dst, src0, src1, ..
+            } => write!(formatter, " v{dst}, {src0}, {src1}"),
+            Self::VectorTernary {
+                op: VectorTernaryOp::Halfword(_),
+                dst,
+                src0,
+                src1,
+                ..
             } => write!(formatter, " v{dst}, {src0}, {src1}"),
             Self::VectorTernary {
                 dst,

@@ -289,3 +289,25 @@ arithmetic and a separate ripple subtractor. This differs from unsigned subtract
 clamp, which floors underflow at zero. Independent review of the clamp increment
 remains pending. Broader source/modifier and execution
 contracts remain S3.1 work. See AMD RDNA2 section 12.12, printed page 185.
+
+## Low-half binary arithmetic
+
+The bounded subset supports `V_ADD_NC_U16`, `V_SUB_NC_U16`, `V_MUL_LO_U16`,
+`V_LSHLREV_B16`, `V_LSHRREV_B16`, `V_ASHRREV_I16`, `V_MAX_U16`, `V_MAX_I16`,
+`V_MIN_U16` and `V_MIN_I16`. Two VGPR sources supply their low16 bits. The result
+replaces the destination low16 bits, retaining its existing high16 bits; inactive
+lanes retain the full destination. Reading an uninitialized retained half is
+rejected. The IR records the old destination as an explicit third value source,
+so source/destination aliases and later register overwrites use captured values.
+
+Arithmetic wraps to 16 bits, shifts mask the first source to four bits, and signed
+min/max and arithmetic shift interpret the low half as a signed integer. The
+implementation admits only default low-half selection, no clamp/ABS/NEG/OMOD,
+VGPR sources and the canonical unused SRC2 encoding (inline zero, selector128).
+Scalar/literal sources and other modifiers are rejected. This subset has local
+native readback evidence; independent acceptance remains pending.
+
+Sources: [AMD RDNA2 ISA guide, §12.12 and §13.3](https://docs.amd.com/v/u/en-US/rdna2-shader-instruction-set-architecture)
+defines operations and operand fields; the [LLVM GCN subtarget's 16-bit result contract](https://llvm.org/doxygen/GCNSubtarget_8cpp_source.html)
+corroborates preservation of the unused high half on GFX10. No Xbox hardware
+validation is implied.

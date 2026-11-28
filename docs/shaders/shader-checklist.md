@@ -11,11 +11,11 @@ For the Xbox Series X|S target and non-shader requirements, see the [master comp
 | Status | Forms | Meaning |
 | --- | ---: | --- |
 | Converted subset; fixture accepted | 122 | Translation is recorded and the status registry records accepted native fixture evidence; only the documented operand subset is covered. |
-| Converted subset; acceptance pending | 108 | Translation is recorded, but the registry does not record accepted native fixture evidence. This may reflect pending acceptance or documentation lag. |
+| Converted subset; acceptance pending | 118 | Translation is recorded, but the registry does not record accepted native fixture evidence. This may reflect pending acceptance or documentation lag. |
 | Decoded; translation evidence unrecorded | 5 | The decoder lists the form, but no translation evidence row is recorded. This is an evidence gap, not proof that lowering is absent. |
-| Not converted | 1230 | No supported decoder identity exists. Opcode recognition from metadata alone does not implement execution. |
+| Not converted | 1220 | No supported decoder identity exists. Opcode recognition from metadata alone does not implement execution. |
 
-**Decoder coverage: 235/1465. Not yet decoded: 1230.**
+**Decoder coverage: 245/1465. Not yet decoded: 1220.**
 
 No row means “all operand modes complete.” Sources, literals, modifiers, register widths, execution masks, graphics versus compute applicability, control-flow interactions and numerical behavior still require their own contracts and tests. This list covers the pinned inventory, not every future AMD instruction or every Xbox graphics method.
 
@@ -29,14 +29,14 @@ The partition below includes SOPP control flow and memory families alongside ari
 
 | Workstream | Total forms | Decoded | Not decoded |
 | --- | ---: | ---: | ---: |
-| S3.1 Arithmetic | 480 | 190 | 290 |
+| S3.1 Arithmetic | 480 | 200 | 280 |
 | S3.2 Control flow | 24 | 8 | 16 |
 | S3.3 Masks / comparisons | 419 | 12 | 407 |
 | S3.4 Wave / lane | 11 | 11 | 0 |
 | S3.5 Memory / interfaces | 509 | 14 | 495 |
 | State / assignment pending | 22 | 0 | 22 |
 
-**190/480 arithmetic forms decoded is not 190 accepted or fully converted forms.** This distinction corrects the earlier shorthand used in progress updates.
+**200/480 arithmetic forms decoded is not 200 accepted or fully converted forms.** This distinction corrects the earlier shorthand used in progress updates.
 
 ## Families
 
@@ -59,7 +59,7 @@ The partition below includes SOPP control flow and memory families alongside ari
 | [VINTRP](#vintrp) | 3 | 0 | 0 | 2 | 1 |
 | [VOP1](#vop1) | 81 | 7 | 0 | 0 | 74 |
 | [VOP2](#vop2) | 47 | 7 | 13 | 0 | 27 |
-| [VOP3](#vop3) | 416 | 64 | 6 | 0 | 346 |
+| [VOP3](#vop3) | 416 | 64 | 16 | 0 | 336 |
 | [VOP3P](#vop3p) | 29 | 0 | 20 | 0 | 9 |
 | [VOP3SDST](#vop3sdst) | 10 | 0 | 0 | 0 | 10 |
 | [VOPC](#vopc) | 190 | 0 | 12 | 0 | 178 |
@@ -1344,21 +1344,21 @@ Update the implementation and its evidence in `docs/status.toml`, then regenerat
 | 767 | `V_LSHLREV_B64` | Not converted | — | — | — |
 | 768 | `V_LSHRREV_B64` | Not converted | — | — | — |
 | 769 | `V_ASHRREV_I64` | Not converted | — | — | — |
-| 771 | `V_ADD_NC_U16` | Not converted | — | — | — |
-| 772 | `V_SUB_NC_U16` | Not converted | — | — | — |
-| 773 | `V_MUL_LO_U16` | Not converted | — | — | — |
-| 775 | `V_LSHRREV_B16` | Not converted | — | — | — |
-| 776 | `V_ASHRREV_I16` | Not converted | — | — | — |
-| 777 | `V_MAX_U16` | Not converted | — | — | — |
-| 778 | `V_MAX_I16` | Not converted | — | — | — |
-| 779 | `V_MIN_U16` | Not converted | — | — | — |
-| 780 | `V_MIN_I16` | Not converted | — | — | — |
+| 771 | `V_ADD_NC_U16` | Converted subset; acceptance pending | MSL halfword arithmetic with old-destination snapshot; compute and graphics | local known-answer test passed | acceptance pending |
+| 772 | `V_SUB_NC_U16` | Converted subset; acceptance pending | MSL halfword arithmetic with old-destination snapshot; compute and graphics | local known-answer test passed | acceptance pending |
+| 773 | `V_MUL_LO_U16` | Converted subset; acceptance pending | MSL halfword arithmetic with old-destination snapshot; compute and graphics | local known-answer test passed | acceptance pending |
+| 775 | `V_LSHRREV_B16` | Converted subset; acceptance pending | MSL halfword arithmetic with old-destination snapshot; compute and graphics | local known-answer test passed | acceptance pending |
+| 776 | `V_ASHRREV_I16` | Converted subset; acceptance pending | MSL halfword arithmetic with old-destination snapshot; compute and graphics | local known-answer test passed | acceptance pending |
+| 777 | `V_MAX_U16` | Converted subset; acceptance pending | MSL halfword arithmetic with old-destination snapshot; compute and graphics | local known-answer test passed | acceptance pending |
+| 778 | `V_MAX_I16` | Converted subset; acceptance pending | MSL halfword arithmetic with old-destination snapshot; compute and graphics | local known-answer test passed | acceptance pending |
+| 779 | `V_MIN_U16` | Converted subset; acceptance pending | MSL halfword arithmetic with old-destination snapshot; compute and graphics | local known-answer test passed | acceptance pending |
+| 780 | `V_MIN_I16` | Converted subset; acceptance pending | MSL halfword arithmetic with old-destination snapshot; compute and graphics | local known-answer test passed | acceptance pending |
 | 781 | `V_ADD_NC_I16` | Not converted | — | — | — |
 | 782 | `V_SUB_NC_I16` | Not converted | — | — | — |
 | 785 | `V_PACK_B32_F16` | Not converted | — | — | — |
 | 786 | `V_CVT_PKNORM_I16_F16` | Not converted | — | — | — |
 | 787 | `V_CVT_PKNORM_U16_F16` | Not converted | — | — | — |
-| 788 | `V_LSHLREV_B16` | Not converted | — | — | — |
+| 788 | `V_LSHLREV_B16` | Converted subset; acceptance pending | MSL halfword arithmetic with old-destination snapshot; compute and graphics | local known-answer test passed | acceptance pending |
 | 832 | `V_MAD_U16` | Not converted | — | — | — |
 | 834 | `V_INTERP_P1LL_F16` | Not converted | — | — | — |
 | 835 | `V_INTERP_P1LV_F16` | Not converted | — | — | — |
