@@ -3174,3 +3174,123 @@ gpu = "acceptance pending"
 recognized = true
 decoded = true
 llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_cvt_off_f32_i4_e32"
+encoding = "VOP1; VGPR source; modifiers rejected"
+representation = "4 B; raw IEEE float bits; fixed synthetic numerical mode"
+lowering = "MSL integer rounding or exact signed-nibble scaling; compute and graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_cvt_off_f32_i4_e64"
+encoding = "VOP3; VGPR source; modifiers rejected"
+representation = "8 B; raw IEEE float bits; fixed synthetic numerical mode"
+lowering = "MSL integer rounding or exact signed-nibble scaling; compute and graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_trunc_f32_e32"
+encoding = "VOP1; VGPR source; modifiers rejected"
+representation = "4 B; raw IEEE float bits; fixed synthetic numerical mode"
+lowering = "MSL integer rounding or exact signed-nibble scaling; compute and graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_trunc_f32_e64"
+encoding = "VOP3; VGPR source; modifiers rejected"
+representation = "8 B; raw IEEE float bits; fixed synthetic numerical mode"
+lowering = "MSL integer rounding or exact signed-nibble scaling; compute and graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_ceil_f32_e32"
+encoding = "VOP1; VGPR source; modifiers rejected"
+representation = "4 B; raw IEEE float bits; fixed synthetic numerical mode"
+lowering = "MSL integer rounding or exact signed-nibble scaling; compute and graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_ceil_f32_e64"
+encoding = "VOP3; VGPR source; modifiers rejected"
+representation = "8 B; raw IEEE float bits; fixed synthetic numerical mode"
+lowering = "MSL integer rounding or exact signed-nibble scaling; compute and graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_rndne_f32_e32"
+encoding = "VOP1; VGPR source; modifiers rejected"
+representation = "4 B; raw IEEE float bits; fixed synthetic numerical mode"
+lowering = "MSL integer rounding or exact signed-nibble scaling; compute and graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_rndne_f32_e64"
+encoding = "VOP3; VGPR source; modifiers rejected"
+representation = "8 B; raw IEEE float bits; fixed synthetic numerical mode"
+lowering = "MSL integer rounding or exact signed-nibble scaling; compute and graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_floor_f32_e32"
+encoding = "VOP1; VGPR source; modifiers rejected"
+representation = "4 B; raw IEEE float bits; fixed synthetic numerical mode"
+lowering = "MSL integer rounding or exact signed-nibble scaling; compute and graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_floor_f32_e64"
+encoding = "VOP3; VGPR source; modifiers rejected"
+representation = "8 B; raw IEEE float bits; fixed synthetic numerical mode"
+lowering = "MSL integer rounding or exact signed-nibble scaling; compute and graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"

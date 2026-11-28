@@ -2119,3 +2119,60 @@ export MTL_SHADER_VALIDATION_REPORT_TO_STDERR=1 MTL_SHADER_VALIDATION_ABORT_ON_F
 cargo test -p xenora-semantic-review --test halfword_ternary -- --include-ignored
 cargo test -p xenora-metal --features gpu-tests --test native_compute halfword_ternary_graphics
 ```
+
+## Stage 3.1 batch: FP32 rounding and signed-nibble conversion
+
+28 November 2026. Implemented VOP1/e32 and VOP3/e64 forms of `V_TRUNC_F32`,
+`V_CEIL_F32`, `V_RNDNE_F32`, `V_FLOOR_F32` and `V_CVT_OFF_F32_I4`:
+five operations, ten encoding forms. S3.1 now has **230/480** decoded and
+**250 undecoded** forms; the complete inventory has **275/1465** decoded.
+
+The [numerical contract](../shaders/msl.md#fixed-mode-fp32-rounding-and-signed-nibble-conversion)
+fixes denormal preservation and IEEE NaN quieting/propagation for this synthetic
+ABI. It does not implement arbitrary guest MODE state or exception flags.
+Inputs are VGPR-only, with default unused fields and no modifiers. Compiler and
+both references reject guest round/denormal-mode instructions explicitly.
+
+Evidence for this batch:
+
+- The new decoder test failed before implementation on the unsupported forms.
+- Literal expected IEEE words cover positive/negative zero, normal/subnormal
+  boundaries, values around half-integer ties, integral boundaries, infinities,
+  quiet/signaling NaNs with payloads, and all 16 signed nibble values.
+- The primary reference uses host FP32 rounding primitives; the secondary
+  independently reconstructs exact rational magnitudes and integer quotients.
+  Metal uses unsigned bit arithmetic. The fixed-answer tests do not obtain
+  expected values from either interpreter.
+- **98 native compute dispatches** passed under Metal API and shader validation:
+  90 cases across destination aliasing, high registers, both encodings and
+  empty/sparse/full EXEC, plus eight exponent-sweep dispatches. Each sweep
+  checks 3,584 words covering every exponent, both signs and seven mantissa
+  boundaries. The smaller cases include partial final waves.
+- **640 exact R32Uint pixel readbacks** passed across both encodings and aliased
+  or high destinations. Unsupported encoding/modifier tests run separately.
+- **40 exact LLVM encoding rows** and the full **34-test LLVM oracle** passed;
+  the original fixtures now cover 251 canonical instruction names.
+- Five-package CPU regression: **1,025 passed, 0 failed, 93 ignored**.
+  Ignored tests are not counted as native evidence.
+- Workspace all-target/all-feature Clippy, formatting, generated documentation,
+  fixture assembly, claims and dependency checks passed.
+- An intentional nearest-even parity inversion failed an exact native pixel
+  assertion for opcode 35. The source was restored byte-for-byte before final
+  native reruns.
+
+Independent semantic acceptance remains pending. This is public-specification
+synthetic validation, not Xbox hardware evidence or exhaustive mode support.
+The full workspace test suite and full GPU wrapper were not run for this batch.
+Raw logs remain local under `artifacts/s31-float-round/`.
+
+Reproduce from the repository root:
+
+```sh
+export CARGO_BUILD_TARGET=aarch64-apple-darwin CARGO_BUILD_JOBS=2
+cargo test -p xenora-decoder --test float_round -- --include-ignored
+cargo test -p xenora-semantic-review --test float_round
+export MTL_DEBUG_LAYER=1 MTL_SHADER_VALIDATION=1
+export MTL_SHADER_VALIDATION_REPORT_TO_STDERR=1 MTL_SHADER_VALIDATION_ABORT_ON_FAULT=1
+cargo test -p xenora-semantic-review --test float_round -- --include-ignored --test-threads=1
+cargo test -p xenora-metal --features gpu-tests --test native_compute float_round_graphics
+```

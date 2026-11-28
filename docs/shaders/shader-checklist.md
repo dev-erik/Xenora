@@ -11,11 +11,11 @@ For the Xbox Series X|S target and non-shader requirements, see the [master comp
 | Status | Forms | Meaning |
 | --- | ---: | --- |
 | Converted subset; fixture accepted | 122 | Translation is recorded and the status registry records accepted native fixture evidence; only the documented operand subset is covered. |
-| Converted subset; acceptance pending | 138 | Translation is recorded, but the registry does not record accepted native fixture evidence. This may reflect pending acceptance or documentation lag. |
+| Converted subset; acceptance pending | 148 | Translation is recorded, but the registry does not record accepted native fixture evidence. This may reflect pending acceptance or documentation lag. |
 | Decoded; translation evidence unrecorded | 5 | The decoder lists the form, but no translation evidence row is recorded. This is an evidence gap, not proof that lowering is absent. |
-| Not converted | 1200 | No supported decoder identity exists. Opcode recognition from metadata alone does not implement execution. |
+| Not converted | 1190 | No supported decoder identity exists. Opcode recognition from metadata alone does not implement execution. |
 
-**Decoder coverage: 265/1465. Not yet decoded: 1200.**
+**Decoder coverage: 275/1465. Not yet decoded: 1190.**
 
 No row means “all operand modes complete.” Sources, literals, modifiers, register widths, execution masks, graphics versus compute applicability, control-flow interactions and numerical behavior still require their own contracts and tests. This list covers the pinned inventory, not every future AMD instruction or every Xbox graphics method.
 
@@ -29,14 +29,14 @@ The partition below includes SOPP control flow and memory families alongside ari
 
 | Workstream | Total forms | Decoded | Not decoded |
 | --- | ---: | ---: | ---: |
-| S3.1 Arithmetic | 480 | 220 | 260 |
+| S3.1 Arithmetic | 480 | 230 | 250 |
 | S3.2 Control flow | 24 | 8 | 16 |
 | S3.3 Masks / comparisons | 419 | 12 | 407 |
 | S3.4 Wave / lane | 11 | 11 | 0 |
 | S3.5 Memory / interfaces | 509 | 14 | 495 |
 | State / assignment pending | 22 | 0 | 22 |
 
-**220/480 arithmetic forms decoded is not 220 accepted or fully converted forms.** This distinction corrects the earlier shorthand used in progress updates.
+**230/480 arithmetic forms decoded is not 230 accepted or fully converted forms.** This distinction corrects the earlier shorthand used in progress updates.
 
 ## Families
 
@@ -57,9 +57,9 @@ The partition below includes SOPP control flow and memory families alongside ari
 | [SOPK](#sopk) | 27 | 18 | 0 | 0 | 9 |
 | [SOPP](#sopp) | 36 | 7 | 2 | 0 | 27 |
 | [VINTRP](#vintrp) | 3 | 0 | 0 | 2 | 1 |
-| [VOP1](#vop1) | 81 | 7 | 4 | 0 | 70 |
+| [VOP1](#vop1) | 81 | 7 | 9 | 0 | 65 |
 | [VOP2](#vop2) | 47 | 7 | 13 | 0 | 27 |
-| [VOP3](#vop3) | 416 | 64 | 32 | 0 | 320 |
+| [VOP3](#vop3) | 416 | 64 | 37 | 0 | 315 |
 | [VOP3P](#vop3p) | 29 | 0 | 20 | 0 | 9 |
 | [VOP3SDST](#vop3sdst) | 10 | 0 | 0 | 0 | 10 |
 | [VOPC](#vopc) | 190 | 0 | 12 | 0 | 178 |
@@ -859,7 +859,7 @@ Update the implementation and its evidence in `docs/status.toml`, then regenerat
 | 11 | `V_CVT_F32_F16` | Not converted | — | — | — |
 | 12 | `V_CVT_RPI_I32_F32` | Not converted | — | — | — |
 | 13 | `V_CVT_FLR_I32_F32` | Not converted | — | — | — |
-| 14 | `V_CVT_OFF_F32_I4` | Not converted | — | — | — |
+| 14 | `V_CVT_OFF_F32_I4` | Converted subset; acceptance pending | MSL integer rounding or exact signed-nibble scaling; compute and graphics | local known-answer test passed | acceptance pending |
 | 15 | `V_CVT_F32_F64` | Not converted | — | — | — |
 | 16 | `V_CVT_F64_F32` | Not converted | — | — | — |
 | 17 | `V_CVT_F32_UBYTE0` | Converted subset; acceptance pending | MSL exact byte-to-float conversion carried as uint bits; compute and graphics | local known-answer test passed | acceptance pending |
@@ -874,10 +874,10 @@ Update the implementation and its evidence in `docs/status.toml`, then regenerat
 | 26 | `V_FLOOR_F64` | Not converted | — | — | — |
 | 27 | `V_PIPEFLUSH` | Not converted | — | — | — |
 | 32 | `V_FRACT_F32` | Not converted | — | — | — |
-| 33 | `V_TRUNC_F32` | Not converted | — | — | — |
-| 34 | `V_CEIL_F32` | Not converted | — | — | — |
-| 35 | `V_RNDNE_F32` | Not converted | — | — | — |
-| 36 | `V_FLOOR_F32` | Not converted | — | — | — |
+| 33 | `V_TRUNC_F32` | Converted subset; acceptance pending | MSL integer rounding or exact signed-nibble scaling; compute and graphics | local known-answer test passed | acceptance pending |
+| 34 | `V_CEIL_F32` | Converted subset; acceptance pending | MSL integer rounding or exact signed-nibble scaling; compute and graphics | local known-answer test passed | acceptance pending |
+| 35 | `V_RNDNE_F32` | Converted subset; acceptance pending | MSL integer rounding or exact signed-nibble scaling; compute and graphics | local known-answer test passed | acceptance pending |
+| 36 | `V_FLOOR_F32` | Converted subset; acceptance pending | MSL integer rounding or exact signed-nibble scaling; compute and graphics | local known-answer test passed | acceptance pending |
 | 37 | `V_EXP_F32` | Not converted | — | — | — |
 | 39 | `V_LOG_F32` | Not converted | — | — | — |
 | 42 | `V_RCP_F32` | Not converted | — | — | — |
@@ -1272,7 +1272,7 @@ Update the implementation and its evidence in `docs/status.toml`, then regenerat
 | 395 | `V_CVT_F32_F16` | Not converted | — | — | — |
 | 396 | `V_CVT_RPI_I32_F32` | Not converted | — | — | — |
 | 397 | `V_CVT_FLR_I32_F32` | Not converted | — | — | — |
-| 398 | `V_CVT_OFF_F32_I4` | Not converted | — | — | — |
+| 398 | `V_CVT_OFF_F32_I4` | Converted subset; acceptance pending | MSL integer rounding or exact signed-nibble scaling; compute and graphics | local known-answer test passed | acceptance pending |
 | 399 | `V_CVT_F32_F64` | Not converted | — | — | — |
 | 400 | `V_CVT_F64_F32` | Not converted | — | — | — |
 | 401 | `V_CVT_F32_UBYTE0` | Converted subset; acceptance pending | MSL exact byte-to-float conversion carried as uint bits; compute and graphics | local known-answer test passed | acceptance pending |
@@ -1287,10 +1287,10 @@ Update the implementation and its evidence in `docs/status.toml`, then regenerat
 | 410 | `V_FLOOR_F64` | Not converted | — | — | — |
 | 411 | `V_PIPEFLUSH` | Not converted | — | — | — |
 | 416 | `V_FRACT_F32` | Not converted | — | — | — |
-| 417 | `V_TRUNC_F32` | Not converted | — | — | — |
-| 418 | `V_CEIL_F32` | Not converted | — | — | — |
-| 419 | `V_RNDNE_F32` | Not converted | — | — | — |
-| 420 | `V_FLOOR_F32` | Not converted | — | — | — |
+| 417 | `V_TRUNC_F32` | Converted subset; acceptance pending | MSL integer rounding or exact signed-nibble scaling; compute and graphics | local known-answer test passed | acceptance pending |
+| 418 | `V_CEIL_F32` | Converted subset; acceptance pending | MSL integer rounding or exact signed-nibble scaling; compute and graphics | local known-answer test passed | acceptance pending |
+| 419 | `V_RNDNE_F32` | Converted subset; acceptance pending | MSL integer rounding or exact signed-nibble scaling; compute and graphics | local known-answer test passed | acceptance pending |
+| 420 | `V_FLOOR_F32` | Converted subset; acceptance pending | MSL integer rounding or exact signed-nibble scaling; compute and graphics | local known-answer test passed | acceptance pending |
 | 421 | `V_EXP_F32` | Not converted | — | — | — |
 | 423 | `V_LOG_F32` | Not converted | — | — | — |
 | 426 | `V_RCP_F32` | Not converted | — | — | — |

@@ -679,6 +679,21 @@ fn reference_op(instruction: Instruction) -> Op {
                 xenora_decoder::VectorTernaryOp::PackI16 => {
                     xenora_ref::VectorTernary::PackInteger(true)
                 }
+                xenora_decoder::VectorTernaryOp::OffsetF32I4 { .. } => {
+                    xenora_ref::VectorTernary::FloatUnary(14)
+                }
+                xenora_decoder::VectorTernaryOp::TruncF32 { .. } => {
+                    xenora_ref::VectorTernary::FloatUnary(33)
+                }
+                xenora_decoder::VectorTernaryOp::CeilF32 { .. } => {
+                    xenora_ref::VectorTernary::FloatUnary(34)
+                }
+                xenora_decoder::VectorTernaryOp::RoundEvenF32 { .. } => {
+                    xenora_ref::VectorTernary::FloatUnary(35)
+                }
+                xenora_decoder::VectorTernaryOp::FloorF32 { .. } => {
+                    xenora_ref::VectorTernary::FloatUnary(36)
+                }
                 xenora_decoder::VectorTernaryOp::Halfword(op) => {
                     xenora_ref::VectorTernary::Halfword(match op {
                         xenora_decoder::PackedBinaryOp::AddI16 => 781,
@@ -962,6 +977,7 @@ fn compares_fixture_instructions_against_llvm() {
         include_bytes!("../../../fixtures/rdna2/vop3-halfword.bin"),
         include_bytes!("../../../fixtures/rdna2/byte-float-signed-halfword.bin"),
         include_bytes!("../../../fixtures/rdna2/halfword-ternary.bin"),
+        include_bytes!("../../../fixtures/rdna2/float-round.bin"),
         include_bytes!("../../../fixtures/rdna2/vector-compare.bin"),
         high_registers,
         &matrix,
@@ -981,7 +997,7 @@ fn compares_fixture_instructions_against_llvm() {
         count += compare_against_llvm(fixture, &mut forms);
     }
     // VOP3 move canonicalizes to the existing e32 move IR mnemonic.
-    assert_eq!(forms.len(), 241, "forms compared: {forms:?}");
+    assert_eq!(forms.len(), 251, "forms compared: {forms:?}");
     eprintln!(
         "{count} three-way instruction comparisons across {} forms",
         forms.len()

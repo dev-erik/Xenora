@@ -51,18 +51,22 @@ The latest [halfword ternary and integer packing batch](../testing/local-graphic
 adds ten VGPR-only arithmetic forms with native compute/graphics evidence.
 Broader modes and independent acceptance remain open.
 
+The [FP32 rounding and signed-nibble conversion batch](../testing/local-graphics-checkpoint.md#stage-31-batch-fp32-rounding-and-signed-nibble-conversion)
+adds ten encoding forms under an explicit fixed numerical contract. Native
+bit-exact readbacks passed; guest MODE changes and independent acceptance remain open.
+
 ## Whole-stage map
 
 | Stage | Decoded / inventoried | Undecoded | Remaining work | Relative effort |
 | --- | ---: | ---: | --- | --- |
-| S3.1 Arithmetic | 220 / 480 | 260 | Wider/packed arithmetic, floating point, conversions, source and modifier modes | XL |
+| S3.1 Arithmetic | 230 / 480 | 250 | Wider/packed arithmetic, floating point, conversions, source and modifier modes | XL |
 | S3.2 Control flow | 8 / 24 | 16 | Compute loops, calls/returns, divergence, debug/trap/halt and termination protocols | L–XL |
 | S3.3 Masks and comparisons | 12 / 419 | 407 | Comparison predicates/types, dynamic EXEC, divergent lane state and reconvergence | XL |
 | S3.4 Wave and lane | 11 / 11 | 0 | Broader operands, dynamic masks, partial populations, graphics/helper lanes and disputed semantics | L–XL |
 | S3.5 Memory and interfaces | 14 / 509 | 495 | Address spaces, descriptors, LDS, atomics, images, ordering and stage interfaces | XL |
 | S3.6 Numerical correctness | Cross-cutting | Not a separate instruction bucket | Rounding, special values, denormals, precision and differential tests | L–XL |
 | State operations awaiting assignment | 0 / 22 | 22 | Classify ownership, define state/runtime contracts and implement | Uncertain |
-| Inventory total | 265 / 1465 | 1200 | Includes the state bucket; excludes a second count for S3.6 | Not additive |
+| Inventory total | 275 / 1465 | 1190 | Includes the state bucket; excludes a second count for S3.6 | Not additive |
 
 Effort bands are planning judgments, not measured completion percentages or
 calendar promises. **L** means several substantial implementation-and-validation
@@ -91,11 +95,11 @@ control-flow forms and unresolved wave-operation semantics explicitly.
 
 ## What drives the workload
 
-The 1,200 undecoded forms share implementation prerequisites. Shared
+The 1,190 undecoded forms share implementation prerequisites. Shared
 semantics and representations can cover many variants, but their encoding and
 boundary tests still need evidence.
 
-- Arithmetic: 260 missing forms include 37 scalar, 67 VOP1, 23 VOP2, 120 VOP3,
+- Arithmetic: 250 missing forms include 37 scalar, 62 VOP1, 23 VOP2, 115 VOP3,
   9 packed VOP3P and 4 VOP3SDST forms. Paired registers, packed widths and mixed
   outputs are prerequisites for some families.
 - Masks/comparisons: 178 missing VOPC and 191 VOP3 forms dominate the count.

@@ -64,6 +64,11 @@ remains unsupported.
 
 ### Added
 
+- Added FP32 truncation, ceiling, nearest-even rounding, floor and exact
+  signed-nibble conversion in both short and long encodings. Compute and
+  graphics use a documented fixed numerical mode; guest mode changes and
+  independent acceptance remain open.
+
 - Added eight low-half 16-bit multiply-add/min/max/median forms and two
   saturating integer packing forms in compute and graphics. Default VGPR
   operands preserve aliasing and retained destination bits; broader modes

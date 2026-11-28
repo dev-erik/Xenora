@@ -165,6 +165,7 @@ enum Insn {
     VInt(u32, u8, CmpSrc, u8),
     VUnary(Unary, u8, CmpSrc),
     VPackedDot(u8, bool, u8, CmpSrc, CmpSrc, CmpSrc),
+    VFloatUnary(u8, u8, CmpSrc),
     VByteFloat(u8, u8, CmpSrc),
     VHalfwordThree(u16, u8, CmpSrc, CmpSrc, CmpSrc),
     VPackInteger(bool, u8, CmpSrc, CmpSrc, CmpSrc),
@@ -822,7 +823,9 @@ fn lane_step(
     let read_vcc = || sgpr[106].ok_or_else(|| format!("{offset:#x}: uninitialized vcc_lo"));
     // New VOP3 forms capture every source before committing, including SRC2.
     let vop3 = match insn {
-        Insn::VByteFloat(_, d, a) => Some((d, [a, CmpSrc::Imm(0), CmpSrc::Imm(0)])),
+        Insn::VFloatUnary(_, d, a) | Insn::VByteFloat(_, d, a) => {
+            Some((d, [a, CmpSrc::Imm(0), CmpSrc::Imm(0)]))
+        }
         Insn::VPacked(_, d, a, b)
         | Insn::VSaturate(_, d, a, b)
         | Insn::VAlias(_, d, a, b)
@@ -953,6 +956,43 @@ fn lane_step(
                     _ => x + y + z - x.min(y).min(z) - x.max(y).max(z),
                 };
                 (read_vgpr(lane, dst, offset)? / 65536) * 65536 + value.rem_euclid(65536) as u32
+            }
+            Insn::VFloatUnary(opcode, ..) => {
+                if opcode == 14 {
+                    const BITS: [u32; 16] = [
+                        0, 0x3d800000, 0x3e000000, 0x3e400000, 0x3e800000, 0x3ea00000, 0x3ec00000,
+                        0x3ee00000, 0xbf000000, 0xbee00000, 0xbec00000, 0xbea00000, 0xbe800000,
+                        0xbe400000, 0xbe000000, 0xbd800000,
+                    ];
+                    BITS[(a % 16) as usize]
+                } else if a & 0x7fffffff > 0x7f800000 {
+                    a | 0x400000
+                } else if a & 0x7fffffff >= 0x4b000000 {
+                    a
+                } else {
+                    // Decode the exact rational magnitude, then round its integer quotient.
+                    let exponent = (a / 8388608) % 256;
+                    let significand = if exponent == 0 {
+                        a % 8388608
+                    } else {
+                        8388608 + a % 8388608
+                    };
+                    let power = if exponent == 0 { 149 } else { 150 - exponent };
+                    let denominator = 2f64.powi(power as i32);
+                    let magnitude = f64::from(significand) / denominator;
+                    let whole = magnitude as u32;
+                    let fraction = magnitude - f64::from(whole);
+                    let negative = a >= 2147483648;
+                    let increment = match opcode {
+                        33 => false,
+                        34 => !negative && fraction > 0.0,
+                        36 => negative && fraction > 0.0,
+                        35 => fraction > 0.5 || (fraction == 0.5 && !whole.is_multiple_of(2)),
+                        _ => unreachable!(),
+                    };
+                    let result = (whole + u32::from(increment)) as f32;
+                    result.to_bits() | (if negative { 0x80000000 } else { 0 })
+                }
             }
             Insn::VHalfword(opcode, ..) => {
                 let x = i64::from(a % 65536);
@@ -1765,6 +1805,23 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
             },
             8,
         ));
+    }
+    let short = (first / 512) % 256;
+    let wide = first / 67108864 == 53 && matches!(opcode, 398 | 417..=420);
+    if wide || (first / 33554432 == 63 && matches!(short, 14 | 33..=36)) {
+        let (op, dst, src, len) = if wide {
+            let second = word(code, offset + 4)?;
+            if (first / 256) % 256 != 0 || second / 512 != 65664 {
+                return Err(fail("unsupported float unary fields"));
+            }
+            ((opcode - 384) as u8, first as u8, second % 512, 8)
+        } else {
+            (short as u8, ((first / 131072) % 256) as u8, first % 512, 4)
+        };
+        if src < 256 {
+            return Err(fail("float unary requires VGPR"));
+        }
+        return Ok((Insn::VFloatUnary(op, dst, CmpSrc::Vgpr(src as u8)), len));
     }
     let narrow = first / 33554432 == 63 && (17..=20).contains(&((first / 512) % 256));
     let wide = first / 67108864 == 53 && (401..=404).contains(&opcode);

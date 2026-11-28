@@ -1323,3 +1323,40 @@ fn halfword_ternary_graphics_requires_initialized_retained_half() {
         );
     }
 }
+
+#[path = "../../../../fixtures/rdna2/float-round-cases.rs"]
+mod float_round_cases;
+#[test]
+fn float_round_graphics() {
+    let gpu = NativeCompute::new().unwrap();
+    for op in [14u32, 33, 34, 35, 36] {
+        for wide in [false, true] {
+            for dst in [8, 255] {
+                let rows: Vec<(u32, u32)> = if op == 14 {
+                    (0..16)
+                        .map(|i| (0xa5963cc0 | i, float_round_cases::OFFSET_BITS[i as usize]))
+                        .collect()
+                } else {
+                    float_round_cases::ROUND_ROWS
+                        .iter()
+                        .map(|r| (r.0, r.1[(op - 33) as usize]))
+                        .collect()
+                };
+                for (a, want) in rows {
+                    let mut ps = pixel(op + 384, dst, [264, 128, 128], None, false);
+                    if !wide {
+                        ps.splice(
+                            16..24,
+                            (0x7e000000u32 | dst << 17 | op << 9 | 264).to_le_bytes(),
+                        );
+                    }
+                    assert_eq!(
+                        render(&gpu, &ps, [a, 0, 0, 0, 0, 0, 0, 0]),
+                        vec![want.to_le_bytes().to_vec()],
+                        "op={op} wide={wide} a={a:x}"
+                    );
+                }
+            }
+        }
+    }
+}

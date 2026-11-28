@@ -551,6 +551,13 @@ fn compile_graphics_core(
     });
     let has_sampling = sampled_pairs != 0;
 
+    let float_round = if !super::float_round_helper(&vertex_decoded).is_empty()
+        || !super::float_round_helper(&pixel_decoded).is_empty()
+    {
+        super::FLOAT_ROUND_MSL
+    } else {
+        ""
+    };
     let mut disassembly = String::new();
     for (name, instructions) in [("vertex", vertex_decoded), ("pixel", pixel_decoded)] {
         let _ = writeln!(disassembly, "{name}:");
@@ -560,10 +567,9 @@ fn compile_graphics_core(
     }
 
     let mut ir = String::from("vertex:\n");
-    let mut msl = String::from(
-        "#include <metal_stdlib>\nusing namespace metal;\n\n\
-         struct VertexOutput {\n    float4 position [[position]];\n",
-    );
+    let mut msl = String::from("#include <metal_stdlib>\nusing namespace metal;\n\n");
+    msl.push_str(float_round);
+    msl.push_str("struct VertexOutput {\n    float4 position [[position]];\n");
     if array_layers.iter().any(|layers| !layers.is_empty()) {
         msl.insert_str(0, "// Host precondition: validate CompiledGraphics.array_layers for every draw.\n// Uniform layer bits must be finite nonnegative integers within the bound array view.\n");
     }

@@ -1939,3 +1939,12 @@ preserved. Only optional CLAMP and canonical unused SRC2 selector 128 are
 supported. CLAMP saturates to the signed 32-bit range before narrowing; the
 new mode awaits independent review. The [operand contract](shaders/vop3-integer.md#signed-subtraction-without-carry)
 records the admitted subset; this is not a claim of complete signed arithmetic.
+
+### Fixed-mode unary FP32 operations
+
+The synthetic shader ABI supports truncation, ceiling, nearest-even rounding,
+floor and signed-nibble-to-float conversion with VGPR sources in both e32/e64
+encodings. The [numerical contract](shaders/msl.md#fixed-mode-fp32-rounding-and-signed-nibble-conversion)
+fixes denormal preservation and IEEE NaN quieting/propagation; guest MODE writes,
+exceptions and operand modifiers remain outside this subset. This is separate
+from the exact-normal restriction on FP32 addition/multiplication.

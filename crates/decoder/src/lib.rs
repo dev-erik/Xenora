@@ -46,7 +46,17 @@ const fn concat_forms<const N: usize>() -> [(&'static str, EncodingFamily); N] {
 }
 
 /// Decoded forms not yet described by the semantic registry.
-const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 189] = [
+const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 199] = [
+    ("V_CVT_OFF_F32_I4", EncodingFamily::Vop1),
+    ("V_CVT_OFF_F32_I4", EncodingFamily::Vop3),
+    ("V_TRUNC_F32", EncodingFamily::Vop1),
+    ("V_TRUNC_F32", EncodingFamily::Vop3),
+    ("V_CEIL_F32", EncodingFamily::Vop1),
+    ("V_CEIL_F32", EncodingFamily::Vop3),
+    ("V_RNDNE_F32", EncodingFamily::Vop1),
+    ("V_RNDNE_F32", EncodingFamily::Vop3),
+    ("V_FLOOR_F32", EncodingFamily::Vop1),
+    ("V_FLOOR_F32", EncodingFamily::Vop3),
     ("V_MAD_U16", EncodingFamily::Vop3),
     ("V_MIN3_I16", EncodingFamily::Vop3),
     ("V_MIN3_U16", EncodingFamily::Vop3),
@@ -466,6 +476,44 @@ fn decode_gfx1030(bytes: &[u8], offset: usize) -> Result<(Instruction, u8), Deco
                 },
             },
             8,
+        ));
+    }
+    let short_op = (first >> 9) & 255;
+    let is_short = first >> 25 == 63 && matches!(short_op, 14 | 33..=36);
+    let is_wide = first >> 26 == 53 && matches!(opcode, 398 | 417..=420);
+    if is_short || is_wide {
+        let (op, dst, src, len) = if is_wide {
+            let second = word(bytes, 8)?;
+            if first & 0xff00 != 0 || second & !511 != 0x02010000 {
+                return Err(unsupported(
+                    "float unary",
+                    "non-default modifiers/unused fields",
+                ));
+            }
+            (opcode - 384, first as u8, second & 511, 8)
+        } else {
+            (short_op, ((first >> 17) & 255) as u8, first & 511, 4)
+        };
+        if src < 256 {
+            return Err(unsupported("float unary", "requires VGPR source"));
+        }
+        let op = match op {
+            14 => VectorTernaryOp::OffsetF32I4 { wide: is_wide },
+            33 => VectorTernaryOp::TruncF32 { wide: is_wide },
+            34 => VectorTernaryOp::CeilF32 { wide: is_wide },
+            35 => VectorTernaryOp::RoundEvenF32 { wide: is_wide },
+            36 => VectorTernaryOp::FloorF32 { wide: is_wide },
+            _ => unreachable!(),
+        };
+        return Ok((
+            Instruction::VectorTernary {
+                op,
+                dst,
+                src0: VectorSource::Register(src as u8),
+                src1: VectorSource::Immediate(0),
+                src2: VectorSource::Immediate(0),
+            },
+            len,
         ));
     }
     let short_byte = first >> 25 == 0x3f && (17..=20).contains(&((first >> 9) & 255));

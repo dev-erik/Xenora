@@ -309,6 +309,17 @@ impl VectorBitBinaryOp {
 /// Value-only three-source 32-bit vector operation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum VectorTernaryOp {
+    /// `v_cvt_off_f32_i4` under the fixed IEEE-preserving numerical contract.
+    OffsetF32I4 { wide: bool },
+    /// `v_trunc_f32` under the fixed IEEE-preserving numerical contract.
+    TruncF32 { wide: bool },
+    /// `v_ceil_f32` under the fixed IEEE-preserving numerical contract.
+    CeilF32 { wide: bool },
+    /// `v_rndne_f32` under the fixed IEEE-preserving numerical contract.
+    RoundEvenF32 { wide: bool },
+    /// `v_floor_f32` under the fixed IEEE-preserving numerical contract.
+    FloorF32 { wide: bool },
+
     /// `v_mad_u16`; default VGPR operands.
     MadU16,
     /// `v_min3_i16`; default VGPR operands.
@@ -442,6 +453,16 @@ impl VectorTernaryOp {
             Self::MadI16 => "v_mad_i16",
             Self::PackU16 => "v_cvt_pk_u16_u32",
             Self::PackI16 => "v_cvt_pk_i16_i32",
+            Self::OffsetF32I4 { wide: false } => "v_cvt_off_f32_i4_e32",
+            Self::OffsetF32I4 { wide: true } => "v_cvt_off_f32_i4_e64",
+            Self::TruncF32 { wide: false } => "v_trunc_f32_e32",
+            Self::TruncF32 { wide: true } => "v_trunc_f32_e64",
+            Self::CeilF32 { wide: false } => "v_ceil_f32_e32",
+            Self::CeilF32 { wide: true } => "v_ceil_f32_e64",
+            Self::RoundEvenF32 { wide: false } => "v_rndne_f32_e32",
+            Self::RoundEvenF32 { wide: true } => "v_rndne_f32_e64",
+            Self::FloorF32 { wide: false } => "v_floor_f32_e32",
+            Self::FloorF32 { wide: true } => "v_floor_f32_e64",
             Self::Halfword(op) => match op {
                 PackedBinaryOp::AddU16 => "v_add_nc_u16",
                 PackedBinaryOp::SubU16 => "v_sub_nc_u16",
@@ -1197,7 +1218,13 @@ impl fmt::Display for Instruction {
                 dst, src0, src1, ..
             } => write!(formatter, " v{dst}, {src0}, {src1}"),
             Self::VectorTernary {
-                op: VectorTernaryOp::ByteToFloat { .. },
+                op:
+                    VectorTernaryOp::ByteToFloat { .. }
+                    | VectorTernaryOp::OffsetF32I4 { .. }
+                    | VectorTernaryOp::TruncF32 { .. }
+                    | VectorTernaryOp::CeilF32 { .. }
+                    | VectorTernaryOp::RoundEvenF32 { .. }
+                    | VectorTernaryOp::FloorF32 { .. },
                 dst,
                 src0,
                 ..

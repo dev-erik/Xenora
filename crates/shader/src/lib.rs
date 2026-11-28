@@ -692,8 +692,54 @@ fn vector_bit_binary_expression(op: VectorBitBinaryOp, a: &str, b: &str, lane: &
         VectorBitBinaryOp::MbcntHiU32B32 => format!("({b})"),
     }
 }
+// Bit-exact FP32 integral rounding: preserved subnormals, signed zero and infinity;
+// IEEE NaNs retain sign/payload and are quieted. No host floating-point mode dependence.
+fn float_round_helper(decoded: &[DecodedInstruction]) -> &'static str {
+    if decoded.iter().any(|i| {
+        matches!(
+            i.instruction,
+            Instruction::VectorTernary {
+                op: VectorTernaryOp::TruncF32 { .. }
+                    | VectorTernaryOp::CeilF32 { .. }
+                    | VectorTernaryOp::RoundEvenF32 { .. }
+                    | VectorTernaryOp::FloorF32 { .. },
+                ..
+            }
+        )
+    }) {
+        FLOAT_ROUND_MSL
+    } else {
+        ""
+    }
+}
+const FLOAT_ROUND_MSL: &str = r#"
+inline uint xenora_round_f32(uint x, uint mode) {
+    uint sign = x & 0x80000000u, mag = x & 0x7fffffffu;
+    if (mag > 0x7f800000u) return x | 0x00400000u;
+    if (mag >= 0x4b000000u) return x;
+    if (mag < 0x3f800000u) {
+        bool one = (mode == 1u && sign == 0u && mag != 0u)
+                || (mode == 3u && sign != 0u && mag != 0u)
+                || (mode == 2u && mag > 0x3f000000u);
+        return sign | (one ? 0x3f800000u : 0u);
+    }
+    uint step = 1u << (150u - (mag >> 23u));
+    uint fraction = mag & (step - 1u), base = mag & ~(step - 1u);
+    bool up = (mode == 1u && sign == 0u && fraction != 0u)
+           || (mode == 3u && sign != 0u && fraction != 0u)
+           || (mode == 2u && (fraction > step / 2u
+               || (fraction == step / 2u && (base & step) != 0u)));
+    return sign | (base + (up ? step : 0u));
+}
+"#;
+
 fn vector_ternary_expression(op: VectorTernaryOp, a: &str, b: &str, c: &str) -> String {
     match op {
+        VectorTernaryOp::OffsetF32I4 {..} => format!("as_type<uint>(float(int(({a}) & 15u) - ((({a}) & 8u) != 0u ? 16 : 0)) * 0.0625f)"),
+        VectorTernaryOp::TruncF32 {..} => format!("xenora_round_f32({a}, 0u)"),
+        VectorTernaryOp::CeilF32 {..} => format!("xenora_round_f32({a}, 1u)"),
+        VectorTernaryOp::RoundEvenF32 {..} => format!("xenora_round_f32({a}, 2u)"),
+        VectorTernaryOp::FloorF32 {..} => format!("xenora_round_f32({a}, 3u)"),
         VectorTernaryOp::PackU16 => format!("min(({a}), 65535u) | (min(({b}), 65535u) << 16u)"),
         VectorTernaryOp::PackI16 => format!("(uint(clamp(as_type<int>({a}), -32768, 32767)) & 65535u) | ((uint(clamp(as_type<int>({b}), -32768, 32767)) & 65535u) << 16u)"),
         VectorTernaryOp::MadU16 | VectorTernaryOp::MadI16 => format!("((({a}) & 65535u) * (({b}) & 65535u) + (({c}) & 65535u)) & 65535u"),
@@ -1054,8 +1100,9 @@ pub fn compile_with_wave_config(
     } else {
         ""
     };
+    let float_round = float_round_helper(&decoded);
     let mut msl = format!(
-        "#include <metal_stdlib>\nusing namespace metal;\nkernel void {ENTRY_POINT}(\n    device const uint* input [[buffer(0)]],\n    device uint* output [[buffer(1)]],\n    uint index [[thread_position_in_grid]]{grid}) {{\n"
+        "#include <metal_stdlib>\nusing namespace metal;\n{float_round}kernel void {ENTRY_POINT}(\n    device const uint* input [[buffer(0)]],\n    device uint* output [[buffer(1)]],\n    uint index [[thread_position_in_grid]]{grid}) {{\n"
     );
     if config.launch == WaveLaunch::FullWavesRequired {
         append_msl(

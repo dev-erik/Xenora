@@ -163,6 +163,7 @@ pub enum BitBinary {
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum VectorTernary {
+    FloatUnary(u8),
     HalfwordThree(u16),
     PackInteger(bool),
     ByteToFloat(u8),
@@ -711,7 +712,44 @@ pub fn decode(code: &[u8]) -> Result<Vec<DecodedInstruction>, ReferenceError> {
     let mut program = Vec::new();
     let mut offset = 0;
     while let Some(bytes) = code.get(offset..).filter(|bytes| !bytes.is_empty()) {
+        let unary_word = bytes
+            .get(..4)
+            .map(|b| u32::from_le_bytes(b.try_into().unwrap()));
         let (op, length) = match bytes {
+            _ if unary_word.is_some_and(|w| {
+                (w >> 25 == 63 && matches!((w >> 9) & 255, 14 | 33..=36))
+                    || (w >> 26 == 53 && matches!((w >> 16) & 1023, 398 | 417..=420))
+            }) =>
+            {
+                let w = unary_word.unwrap();
+                let wide = w >> 26 == 53;
+                let (opcode, dst, src, len) = if wide {
+                    let tail = bytes
+                        .get(4..8)
+                        .ok_or_else(|| error(offset, "truncated float unary"))?;
+                    let tail = u32::from_le_bytes(tail.try_into().unwrap());
+                    if w & 0xff00 != 0 || tail & !511 != 0x02010000 {
+                        return Err(error(offset, "unsupported float unary fields"));
+                    }
+                    ((((w >> 16) & 1023) - 384) as u8, w as u8, tail & 511, 8)
+                } else {
+                    (((w >> 9) & 255) as u8, ((w >> 17) & 255) as u8, w & 511, 4)
+                };
+                if src < 256 {
+                    return Err(error(offset, "float unary requires VGPR"));
+                }
+                (
+                    Op::VectorTernary(
+                        VectorTernary::FloatUnary(opcode),
+                        dst,
+                        CompareSource::Vector(src as u8),
+                        CompareSource::Immediate(0),
+                        CompareSource::Immediate(0),
+                    ),
+                    len,
+                )
+            }
+
             [
                 dst,
                 flags,
@@ -2656,6 +2694,27 @@ fn execute_wave(
                                 total += extend(a) * extend(b);
                             }
                             total as u32
+                        }
+                        Op::VectorTernary(VectorTernary::FloatUnary(opcode), ..) => {
+                            if opcode == 14 {
+                                let nibble = (a & 15) as i32;
+                                ((if nibble >= 8 { nibble - 16 } else { nibble }) as f32 / 16.0)
+                                    .to_bits()
+                            } else {
+                                let x = f32::from_bits(a);
+                                if x.is_nan() {
+                                    a | 0x00400000
+                                } else {
+                                    match opcode {
+                                        33 => x.trunc(),
+                                        34 => x.ceil(),
+                                        35 => x.round_ties_even(),
+                                        36 => x.floor(),
+                                        _ => unreachable!(),
+                                    }
+                                    .to_bits()
+                                }
+                            }
                         }
                         Op::VectorTernary(VectorTernary::ByteToFloat(byte), ..) => {
                             (((a >> (8 * byte)) & 255) as f32).to_bits()
