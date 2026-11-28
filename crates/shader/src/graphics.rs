@@ -1409,10 +1409,24 @@ fn lift(
                         }
                     };
                 }
+                let old = if op.retains_high_half() {
+                    Some(read(dst)?)
+                } else {
+                    None
+                };
                 let result = ir.push(
                     Some(offset),
                     Op::IntegerTernary(op, values[0], values[1], values[2]),
                 );
+                let result = if let Some(old) = old {
+                    let mask = ir.push(Some(offset), Op::ScalarBits(ScalarValue::Constant(65535)));
+                    ir.push(
+                        Some(offset),
+                        Op::IntegerTernary(VectorTernaryOp::BfiB32, mask, result, old),
+                    )
+                } else {
+                    result
+                };
                 registers[usize::from(dst)] = Some(result);
             }
             Instruction::VectorMadSad {

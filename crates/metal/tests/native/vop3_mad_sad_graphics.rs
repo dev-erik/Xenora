@@ -1188,3 +1188,138 @@ fn byte_float_graphics() {
         }
     }
 }
+
+#[test]
+fn halfword_ternary_graphics() {
+    let gpu = NativeCompute::new().unwrap();
+    let ops = [832u32, 850, 851, 853, 854, 856, 857, 862, 874, 875];
+    let rows: &[(u32, u32, u32, [u32; 10])] = &[
+        (
+            0x11110002,
+            0x22220003,
+            0x33330004,
+            [
+                0x0000000a, 0x00000002, 0x00000002, 0x00000004, 0x00000004, 0x00000003, 0x00000003,
+                0x0000000a, 0xffffffff, 0x7fff7fff,
+            ],
+        ),
+        (
+            0xaaaaffff,
+            0x55550001,
+            0x98760000,
+            [
+                0x0000ffff, 0x0000ffff, 0x00000000, 0x00000001, 0x0000ffff, 0x00000000, 0x00000001,
+                0x0000ffff, 0xffffffff, 0x7fff8000,
+            ],
+        ),
+        (
+            0x12348000,
+            0xabcd7fff,
+            0xfeedffff,
+            [
+                0x00007fff, 0x00008000, 0x00007fff, 0x00007fff, 0x0000ffff, 0x0000ffff, 0x00008000,
+                0x00007fff, 0xffffffff, 0x80007fff,
+            ],
+        ),
+        (
+            0xffff7fff,
+            0x00008000,
+            0x00000001,
+            [
+                0x00008001, 0x00008000, 0x00000001, 0x00007fff, 0x00008000, 0x00000001, 0x00007fff,
+                0x00008001, 0x8000ffff, 0x7fff8000,
+            ],
+        ),
+        (
+            0x80000000,
+            0x7fffffff,
+            0xffffffff,
+            [
+                0x0000ffff, 0x0000ffff, 0x00000000, 0x00000000, 0x0000ffff, 0x0000ffff, 0x0000ffff,
+                0x0000ffff, 0xffffffff, 0x7fff8000,
+            ],
+        ),
+        (
+            0x00010000,
+            0xffff7fff,
+            0x80000000,
+            [
+                0x00000000, 0x00000000, 0x00000000, 0x00007fff, 0x00007fff, 0x00000000, 0x00000000,
+                0x00000000, 0xffffffff, 0x80007fff,
+            ],
+        ),
+        (
+            0xffffffff,
+            0xffffffff,
+            0xffffffff,
+            [
+                0x00000000, 0x0000ffff, 0x0000ffff, 0x0000ffff, 0x0000ffff, 0x0000ffff, 0x0000ffff,
+                0x00000000, 0xffffffff, 0xffffffff,
+            ],
+        ),
+        (
+            0x00007fff,
+            0xffff8000,
+            0x00008000,
+            [
+                0x00000000, 0x00008000, 0x00007fff, 0x00007fff, 0x00008000, 0x00008000, 0x00008000,
+                0x00000000, 0xffff7fff, 0x80007fff,
+            ],
+        ),
+    ];
+    for &(a, b, c, wants) in rows {
+        for (i, op) in ops.into_iter().enumerate() {
+            for dst in [8, 9, 10, 255] {
+                let mut ps = pixel(
+                    op,
+                    dst,
+                    [264, 265, if op >= 874 { 128 } else { 266 }],
+                    None,
+                    false,
+                );
+                let old = match dst {
+                    8 => a,
+                    9 => b,
+                    10 => c,
+                    _ => 0x13579bdf,
+                };
+                if dst == 255 {
+                    ps.splice(
+                        16..16,
+                        [0x7ffe02ffu32, old].into_iter().flat_map(u32::to_le_bytes),
+                    );
+                }
+                let want = if op >= 874 {
+                    wants[i]
+                } else {
+                    (old & 0xffff0000) | wants[i]
+                };
+                assert_eq!(
+                    render(&gpu, &ps, [a, b, c, 0, 0, 0, 0, 0]),
+                    vec![want.to_le_bytes().to_vec()],
+                    "op={op}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn halfword_ternary_graphics_requires_initialized_retained_half() {
+    let mut types = GraphicsPipelineTypes::default();
+    types.colors[0] = GraphicsExportType::Uint;
+    for op in [832, 850, 851, 853, 854, 856, 857, 862, 874, 875] {
+        let ps = pixel(
+            op,
+            255,
+            [264, 265, if op >= 874 { 128 } else { 266 }],
+            None,
+            false,
+        );
+        assert_eq!(
+            compile_graphics_pipeline_typed(Architecture::Gfx1030, VS, &ps, types).is_ok(),
+            op >= 874,
+            "op={op}"
+        );
+    }
+}

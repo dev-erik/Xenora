@@ -63,6 +63,11 @@ remains unsupported.
 - Extended the read-only RDNA2 planning CLI (`python3 -m qa rdna2`) with family/status filters, compact summaries, Codex-ready manifests under `artifacts/`, active-claim exclusion (family claims exclude those families; path-only claims block overlapping permitted files), coverage reconcile against `semantic_coverage` without inflating counts, and inventory diffs. Covered by `tests/qa/test_rdna2_plan.py`; planning only, no GPU production edits.
 
 ### Added
+
+- Added eight low-half 16-bit multiply-add/min/max/median forms and two
+  saturating integer packing forms in compute and graphics. Default VGPR
+  operands preserve aliasing and retained destination bits; broader modes
+  and independent acceptance remain pending.
 - Decode the unmodified VOP3 form of `V_MOV_B32` into the existing bit-preserving
   move operation, with canonical padding and literal-length checks. Independent
   acceptance remains pending.

@@ -2071,3 +2071,51 @@ cargo test --locked -p xenora-metal --features gpu-tests --test native_compute b
 cargo test --locked -p xenora-metal --features gpu-tests --test native_compute signed_halfword_graphics
 cargo test --locked -p xenora-decoder --test byte_float --test signed_halfword --test gfx1030 -- --include-ignored
 ```
+
+## Stage 3.1 batch: halfword ternaries and integer packing
+
+28 November 2026. Added eight retained-half 16-bit ternaries (`V_MAD`,
+`V_MIN3`, `V_MAX3`, `V_MED3`, signed and unsigned) and two saturating
+32-to-16 integer packing forms. Default VGPR operands only; unsupported
+modifiers and alternate source selections fail explicitly. The
+[operand contract and public sources](../shaders/vop3-integer.md#retained-half-ternaries-and-saturating-integer-packing)
+describe the limits. S3.1 is now **220/480** decoded, **260 undecoded**;
+the full inventory is **265/1465**. Independent acceptance remains pending.
+
+Validation for this batch:
+
+- New decoder and semantic tests failed on unsupported instructions before implementation.
+- Fixed literal answers cover signed extrema, saturation, wraparound, median ties,
+  retained upper bits, all three destination/source aliases, VGPR255,
+  empty/sparse/full EXEC and a 35-word partial final wave.
+- **960 native compute dispatches** and **320 R32Uint graphics readbacks** passed
+  with Metal API and shader validation enabled. Graphics additionally checks that
+  the eight retained-half forms reject uninitialized destinations while packing
+  accepts them at full execution.
+- The first graphics run exposed a missing retained-half merge; the graphics
+  compiler now captures the old destination and explicitly merges the low result.
+  The complete graphics cases passed after the fix.
+- **30 exact LLVM encoding samples** and the full **34-test LLVM oracle** passed.
+  The fixture oracle now covers 241 canonical instruction names.
+- A deliberate unsigned packing saturation-to-truncation mutation failed the
+  native pixel assertion for opcode 874. The source was restored byte-for-byte;
+  both graphics tests passed afterward.
+- Final five-package CPU regression: **1,016 passed, 0 failed, 90 ignored**.
+- Workspace all-target, all-feature Clippy passed. Raw logs are local under
+  `artifacts/s31-halfword-ternary/`; ignored tests are not GPU evidence.
+
+This is synthetic public-specification validation, not Xbox hardware equivalence
+or complete operand coverage. No independent review acceptance is asserted.
+The full workspace test suite and full GPU wrapper were not rerun for this batch.
+
+Reproduce from the repository root:
+
+```sh
+export CARGO_BUILD_TARGET=aarch64-apple-darwin CARGO_BUILD_JOBS=2
+cargo test -p xenora-decoder --test halfword_ternary -- --include-ignored
+cargo test -p xenora-semantic-review --test halfword_ternary
+export MTL_DEBUG_LAYER=1 MTL_SHADER_VALIDATION=1
+export MTL_SHADER_VALIDATION_REPORT_TO_STDERR=1 MTL_SHADER_VALIDATION_ABORT_ON_FAULT=1
+cargo test -p xenora-semantic-review --test halfword_ternary -- --include-ignored
+cargo test -p xenora-metal --features gpu-tests --test native_compute halfword_ternary_graphics
+```

@@ -163,6 +163,8 @@ pub enum BitBinary {
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum VectorTernary {
+    HalfwordThree(u16),
+    PackInteger(bool),
     ByteToFloat(u8),
     Halfword(u16),
     PackedDot { width: u8, signed: bool },
@@ -710,6 +712,47 @@ pub fn decode(code: &[u8]) -> Result<Vec<DecodedInstruction>, ReferenceError> {
     let mut offset = 0;
     while let Some(bytes) = code.get(offset..).filter(|bytes| !bytes.is_empty()) {
         let (op, length) = match bytes {
+            [
+                dst,
+                flags,
+                opcode @ (64 | 82 | 83 | 85 | 86 | 88 | 89 | 94 | 106 | 107),
+                0xd7,
+                a,
+                b,
+                c,
+                d,
+                ..,
+            ] => {
+                let bits = u32::from_le_bytes([*a, *b, *c, *d]);
+                let sources = [bits & 511, (bits >> 9) & 511, (bits >> 18) & 511];
+                let pack = *opcode >= 106;
+                if *flags != 0
+                    || bits >> 27 != 0
+                    || sources[..if pack { 2 } else { 3 }].iter().any(|x| *x < 256)
+                    || (pack && sources[2] != 128)
+                {
+                    return Err(error(offset, "unsupported halfword ternary/pack operands"));
+                }
+                (
+                    Op::VectorTernary(
+                        if pack {
+                            VectorTernary::PackInteger(*opcode == 107)
+                        } else {
+                            VectorTernary::HalfwordThree(768 + u16::from(*opcode))
+                        },
+                        *dst,
+                        CompareSource::Vector(sources[0] as u8),
+                        CompareSource::Vector(sources[1] as u8),
+                        if pack {
+                            CompareSource::Immediate(0)
+                        } else {
+                            CompareSource::Vector(sources[2] as u8)
+                        },
+                    ),
+                    8,
+                )
+            }
+
             [a, b, c, tag @ (0x7e | 0x7f), ..]
                 if c & 1 == 0 && (17..=20).contains(&((u16::from(*b) >> 1) & 127)) =>
             {
@@ -2616,6 +2659,36 @@ fn execute_wave(
                         }
                         Op::VectorTernary(VectorTernary::ByteToFloat(byte), ..) => {
                             (((a >> (8 * byte)) & 255) as f32).to_bits()
+                        }
+                        Op::VectorTernary(VectorTernary::PackInteger(signed), ..) => {
+                            let pack = |v: u32| {
+                                if signed {
+                                    (v as i32).clamp(-32768, 32767) as u16 as u32
+                                } else {
+                                    v.min(65535)
+                                }
+                            };
+                            pack(a) | (pack(b) << 16)
+                        }
+                        Op::VectorTernary(VectorTernary::HalfwordThree(opcode), ..) => {
+                            let mut values = [a, b, c].map(|v| {
+                                if matches!(opcode, 850 | 853 | 856) {
+                                    i64::from(v as i16)
+                                } else {
+                                    i64::from(v & 65535)
+                                }
+                            });
+                            let low = if matches!(opcode, 832 | 862) {
+                                values[0] * values[1] + values[2]
+                            } else {
+                                values.sort_unstable();
+                                values[match opcode {
+                                    850 | 851 => 0,
+                                    853 | 854 => 2,
+                                    _ => 1,
+                                }]
+                            };
+                            (read(lane, dst)? & 0xffff0000) | (low as u32 & 65535)
                         }
                         Op::VectorTernary(VectorTernary::Halfword(opcode), ..) => {
                             let x = a & 65535;

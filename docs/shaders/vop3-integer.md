@@ -329,3 +329,28 @@ integer graphics. No destination initialization is needed for full EXEC; sparse
 EXEC retains inactive destinations as usual. Wide modifiers and noncanonical
 unused fields are rejected. Semantics follow the public AMD RDNA2 guide §12.8
 (opcodes17–20); the e64 aliases use the VOP1-plus384 opcode mapping.
+
+## Retained-half ternaries and saturating integer packing
+
+`V_MAD_U16`, `V_MAD_I16`, and signed/unsigned `V_MIN3`, `V_MAX3`,
+`V_MED3` with 16-bit inputs consume low halves, write the low16 result, and
+retain the original destination's high16. MAD wraps modulo 65536. The
+compiler snapshots the old destination before any aliased write and merges
+it through a bit-select IR operation. EXEC still gates the complete write.
+
+`V_CVT_PK_U16_U32` saturates two unsigned inputs to 0..65535;
+`V_CVT_PK_I16_I32` saturates signed inputs to -32768..32767. SRC0 occupies
+the low half and SRC1 the high half; neither reads the old destination at
+full EXEC. Partial EXEC retains inactive destination words.
+
+This initial compute/graphics subset accepts VGPR inputs, default low-half
+selection, no modifiers, and canonical unused SRC2=128 for packing.
+Scalar, inline/literal, alternate half-selection, clamp and other modifier
+encodings remain rejected. Decoded inventory entries do not imply all modes
+or independent acceptance.
+
+The public [RDNA2 ISA guide](https://docs.amd.com/v/u/en-US/rdna2-shader-instruction-set-architecture)
+defines the ten forms (VOP3 opcodes 832, 850–857 excluding floating forms,
+862, 874, 875). Saturating integer-conversion limits are explicit in AMD's
+[Southern Islands ISA guide, pages 11-72 and 11-73](https://docs.amd.com/api/khub/documents/J4foK5jvufN9rTHf_DlCPw/content).
+These are public specification-derived semantics, not Xbox hardware evidence.

@@ -3054,3 +3054,123 @@ gpu = "acceptance pending"
 recognized = true
 decoded = true
 llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_mad_u16"
+encoding = "VOP3; default VGPR operands; modifiers rejected"
+representation = "8 B; low16 result with retained destination high16"
+lowering = "MSL integer expressions in compute and graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_min3_i16"
+encoding = "VOP3; default VGPR operands; modifiers rejected"
+representation = "8 B; low16 result with retained destination high16"
+lowering = "MSL integer expressions in compute and graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_min3_u16"
+encoding = "VOP3; default VGPR operands; modifiers rejected"
+representation = "8 B; low16 result with retained destination high16"
+lowering = "MSL integer expressions in compute and graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_max3_i16"
+encoding = "VOP3; default VGPR operands; modifiers rejected"
+representation = "8 B; low16 result with retained destination high16"
+lowering = "MSL integer expressions in compute and graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_max3_u16"
+encoding = "VOP3; default VGPR operands; modifiers rejected"
+representation = "8 B; low16 result with retained destination high16"
+lowering = "MSL integer expressions in compute and graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_med3_i16"
+encoding = "VOP3; default VGPR operands; modifiers rejected"
+representation = "8 B; low16 result with retained destination high16"
+lowering = "MSL integer expressions in compute and graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_med3_u16"
+encoding = "VOP3; default VGPR operands; modifiers rejected"
+representation = "8 B; low16 result with retained destination high16"
+lowering = "MSL integer expressions in compute and graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_mad_i16"
+encoding = "VOP3; default VGPR operands; modifiers rejected"
+representation = "8 B; low16 result with retained destination high16"
+lowering = "MSL integer expressions in compute and graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_cvt_pk_u16_u32"
+encoding = "VOP3; default VGPR operands; modifiers rejected"
+representation = "8 B; two saturating 32-to-16 conversions"
+lowering = "MSL integer expressions in compute and graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_cvt_pk_i16_i32"
+encoding = "VOP3; default VGPR operands; modifiers rejected"
+representation = "8 B; two saturating 32-to-16 conversions"
+lowering = "MSL integer expressions in compute and graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"

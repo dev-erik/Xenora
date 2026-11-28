@@ -88,6 +88,7 @@ either path. The [changelog](../CHANGELOG.md) records notable changes.
 
 - [Engineering progress](progress.md) — Verification commands, metric definitions, and open release gates.
 - [Integrated Stage 2 acceptance](testing/stage2-integrated-acceptance.md) — Seven resource contracts, cross-workstream evidence and final acceptance limits.
+- [Halfword ternaries and integer packing](testing/local-graphics-checkpoint.md#stage-31-batch-halfword-ternaries-and-integer-packing) — Ten arithmetic forms, retained destination bits, saturation and native validation.
 - [Byte conversions and signed-halfword validation](testing/local-graphics-checkpoint.md#stage-31-batch-byte-conversions-and-signed-halfwords) — Exhaustive byte values, exact FP32 bits and native evidence for ten forms.
 - [Retained-half integer arithmetic validation](testing/local-graphics-checkpoint.md#stage-31-batch-retained-half-integer-arithmetic) — Ten low-half forms, retained destination bits and native Metal evidence.
 - [Packed integer dot-product validation](testing/local-graphics-checkpoint.md#stage-31-batch-packed-integer-dot-products) — Signed-width, wrapping and native Metal evidence for six forms.

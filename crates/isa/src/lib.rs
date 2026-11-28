@@ -309,6 +309,27 @@ impl VectorBitBinaryOp {
 /// Value-only three-source 32-bit vector operation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum VectorTernaryOp {
+    /// `v_mad_u16`; default VGPR operands.
+    MadU16,
+    /// `v_min3_i16`; default VGPR operands.
+    Min3I16,
+    /// `v_min3_u16`; default VGPR operands.
+    Min3U16,
+    /// `v_max3_i16`; default VGPR operands.
+    Max3I16,
+    /// `v_max3_u16`; default VGPR operands.
+    Max3U16,
+    /// `v_med3_i16`; default VGPR operands.
+    Med3I16,
+    /// `v_med3_u16`; default VGPR operands.
+    Med3U16,
+    /// `v_mad_i16`; default VGPR operands.
+    MadI16,
+    /// `v_cvt_pk_u16_u32`; default VGPR operands.
+    PackU16,
+    /// `v_cvt_pk_i16_i32`; default VGPR operands.
+    PackI16,
+
     /// Exact unsigned-byte conversion; unused IR inputs are immediate zero.
     ByteToFloat { byte: u8, wide: bool },
     /// Low-half binary arithmetic; the third IR source snapshots the old destination.
@@ -381,6 +402,22 @@ pub enum VectorTernaryOp {
 }
 
 impl VectorTernaryOp {
+    /// These low16 writes retain the destination's upper half.
+    #[must_use]
+    pub const fn retains_high_half(self) -> bool {
+        matches!(
+            self,
+            Self::MadU16
+                | Self::Min3I16
+                | Self::Min3U16
+                | Self::Max3I16
+                | Self::Max3U16
+                | Self::Med3I16
+                | Self::Med3U16
+                | Self::MadI16
+        )
+    }
+
     /// Returns the unmodified VOP3 mnemonic.
     pub const fn mnemonic(self) -> &'static str {
         match self {
@@ -395,6 +432,16 @@ impl VectorTernaryOp {
                 (3, true) => "v_cvt_f32_ubyte3_e64",
                 _ => panic!("decoder validates byte position"),
             },
+            Self::MadU16 => "v_mad_u16",
+            Self::Min3I16 => "v_min3_i16",
+            Self::Min3U16 => "v_min3_u16",
+            Self::Max3I16 => "v_max3_i16",
+            Self::Max3U16 => "v_max3_u16",
+            Self::Med3I16 => "v_med3_i16",
+            Self::Med3U16 => "v_med3_u16",
+            Self::MadI16 => "v_mad_i16",
+            Self::PackU16 => "v_cvt_pk_u16_u32",
+            Self::PackI16 => "v_cvt_pk_i16_i32",
             Self::Halfword(op) => match op {
                 PackedBinaryOp::AddU16 => "v_add_nc_u16",
                 PackedBinaryOp::SubU16 => "v_sub_nc_u16",
@@ -1156,7 +1203,8 @@ impl fmt::Display for Instruction {
                 ..
             } => write!(formatter, " v{dst}, {src0}"),
             Self::VectorTernary {
-                op: VectorTernaryOp::Halfword(_),
+                op:
+                    VectorTernaryOp::Halfword(_) | VectorTernaryOp::PackU16 | VectorTernaryOp::PackI16,
                 dst,
                 src0,
                 src1,

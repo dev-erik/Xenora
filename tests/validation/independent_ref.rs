@@ -166,6 +166,8 @@ enum Insn {
     VUnary(Unary, u8, CmpSrc),
     VPackedDot(u8, bool, u8, CmpSrc, CmpSrc, CmpSrc),
     VByteFloat(u8, u8, CmpSrc),
+    VHalfwordThree(u16, u8, CmpSrc, CmpSrc, CmpSrc),
+    VPackInteger(bool, u8, CmpSrc, CmpSrc, CmpSrc),
     VHalfword(u16, u8, CmpSrc, CmpSrc, CmpSrc),
     VPackedMad(u8, CmpSrc, CmpSrc, CmpSrc),
     VPacked(u8, u8, CmpSrc, CmpSrc),
@@ -829,7 +831,9 @@ fn lane_step(
         | Insn::VMask(d, a, b)
         | Insn::VCountAdd(d, a, b)
         | Insn::VMulHighSigned(d, a, b) => Some((d, [a, b, CmpSrc::Imm(0)])),
-        Insn::VHalfword(_, d, a, b, c)
+        Insn::VHalfwordThree(_, d, a, b, c)
+        | Insn::VPackInteger(_, d, a, b, c)
+        | Insn::VHalfword(_, d, a, b, c)
         | Insn::VPackedDot(_, _, d, a, b, c)
         | Insn::VPackedMad(d, a, b, c)
         | Insn::VMadSad(_, _, d, a, b, c)
@@ -912,6 +916,43 @@ fn lane_step(
                     }
                     power * 8388608 + significand % 8388608
                 }
+            }
+            Insn::VPackInteger(signed, ..) => {
+                let convert = |v: u32| {
+                    let v = if signed && v >= 2147483648 {
+                        i64::from(v) - 4294967296
+                    } else {
+                        i64::from(v)
+                    };
+                    let (lo, hi) = if signed { (-32768, 32767) } else { (0, 65535) };
+                    let v = if v < lo {
+                        lo
+                    } else if v > hi {
+                        hi
+                    } else {
+                        v
+                    };
+                    v.rem_euclid(65536) as u32
+                };
+                convert(a) + 65536 * convert(b)
+            }
+            Insn::VHalfwordThree(opcode, ..) => {
+                let val = |v: u32| {
+                    let n = i64::from(v % 65536);
+                    if matches!(opcode, 850 | 853 | 856) && n >= 32768 {
+                        n - 65536
+                    } else {
+                        n
+                    }
+                };
+                let (x, y, z) = (val(a), val(b), val(c));
+                let value = match opcode {
+                    832 | 862 => x * y + z,
+                    850 | 851 => x.min(y).min(z),
+                    853 | 854 => x.max(y).max(z),
+                    _ => x + y + z - x.min(y).min(z) - x.max(y).max(z),
+                };
+                (read_vgpr(lane, dst, offset)? / 65536) * 65536 + value.rem_euclid(65536) as u32
             }
             Insn::VHalfword(opcode, ..) => {
                 let x = i64::from(a % 65536);
@@ -1691,6 +1732,40 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
     let first = word(code, offset)?;
     let fail = |detail: &str| format!("{offset:#x}: {detail}");
     let opcode = (first / 65536) % 1024;
+    if first / 67108864 == 53
+        && matches!(
+            opcode,
+            832 | 850 | 851 | 853 | 854 | 856 | 857 | 862 | 874 | 875
+        )
+    {
+        let next = word(code, offset + 4)?;
+        let src = [next % 512, (next / 512) % 512, (next / 262144) % 512];
+        let packing = opcode >= 874;
+        if (first / 256) % 256 != 0
+            || next / 134217728 != 0
+            || src[..if packing { 2 } else { 3 }].iter().any(|v| *v < 256)
+            || (packing && src[2] != 128)
+        {
+            return Err(fail("unsupported halfword/pack fields"));
+        }
+        let (a, b, c) = (
+            CmpSrc::Vgpr(src[0] as u8),
+            CmpSrc::Vgpr(src[1] as u8),
+            if packing {
+                CmpSrc::Imm(0)
+            } else {
+                CmpSrc::Vgpr(src[2] as u8)
+            },
+        );
+        return Ok((
+            if packing {
+                Insn::VPackInteger(opcode == 875, first as u8, a, b, c)
+            } else {
+                Insn::VHalfwordThree(opcode as u16, first as u8, a, b, c)
+            },
+            8,
+        ));
+    }
     let narrow = first / 33554432 == 63 && (17..=20).contains(&((first / 512) % 256));
     let wide = first / 67108864 == 53 && (401..=404).contains(&opcode);
     if narrow || wide {

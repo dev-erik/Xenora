@@ -46,7 +46,17 @@ const fn concat_forms<const N: usize>() -> [(&'static str, EncodingFamily); N] {
 }
 
 /// Decoded forms not yet described by the semantic registry.
-const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 179] = [
+const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 189] = [
+    ("V_MAD_U16", EncodingFamily::Vop3),
+    ("V_MIN3_I16", EncodingFamily::Vop3),
+    ("V_MIN3_U16", EncodingFamily::Vop3),
+    ("V_MAX3_I16", EncodingFamily::Vop3),
+    ("V_MAX3_U16", EncodingFamily::Vop3),
+    ("V_MED3_I16", EncodingFamily::Vop3),
+    ("V_MED3_U16", EncodingFamily::Vop3),
+    ("V_MAD_I16", EncodingFamily::Vop3),
+    ("V_CVT_PK_U16_U32", EncodingFamily::Vop3),
+    ("V_CVT_PK_I16_I32", EncodingFamily::Vop3),
     ("DS_PERMUTE_B32", EncodingFamily::Ds),
     ("DS_BPERMUTE_B32", EncodingFamily::Ds),
     ("DS_SWIZZLE_B32", EncodingFamily::Ds),
@@ -408,6 +418,56 @@ fn unsupported(mnemonic: &'static str, detail: &'static str) -> DecodeErrorKind 
 
 fn decode_gfx1030(bytes: &[u8], offset: usize) -> Result<(Instruction, u8), DecodeErrorKind> {
     let first = word(bytes, 4)?;
+    let opcode = (first >> 16) & 1023;
+    if first >> 26 == 53
+        && matches!(
+            opcode,
+            832 | 850 | 851 | 853 | 854 | 856 | 857 | 862 | 874 | 875
+        )
+    {
+        let second = word(bytes, 8)?;
+        let fields = [second & 511, (second >> 9) & 511, (second >> 18) & 511];
+        let packing = opcode >= 874;
+        if first & 0xff00 != 0
+            || second >> 27 != 0
+            || fields[..if packing { 2 } else { 3 }]
+                .iter()
+                .any(|s| *s < 256)
+            || (packing && fields[2] != 128)
+        {
+            return Err(unsupported(
+                "16-bit integer VOP3",
+                "requires default VGPR operands and no modifiers",
+            ));
+        }
+        let op = match opcode {
+            832 => VectorTernaryOp::MadU16,
+            850 => VectorTernaryOp::Min3I16,
+            851 => VectorTernaryOp::Min3U16,
+            853 => VectorTernaryOp::Max3I16,
+            854 => VectorTernaryOp::Max3U16,
+            856 => VectorTernaryOp::Med3I16,
+            857 => VectorTernaryOp::Med3U16,
+            862 => VectorTernaryOp::MadI16,
+            874 => VectorTernaryOp::PackU16,
+            875 => VectorTernaryOp::PackI16,
+            _ => unreachable!(),
+        };
+        return Ok((
+            Instruction::VectorTernary {
+                op,
+                dst: first as u8,
+                src0: VectorSource::Register(fields[0] as u8),
+                src1: VectorSource::Register(fields[1] as u8),
+                src2: if packing {
+                    VectorSource::Immediate(0)
+                } else {
+                    VectorSource::Register(fields[2] as u8)
+                },
+            },
+            8,
+        ));
+    }
     let short_byte = first >> 25 == 0x3f && (17..=20).contains(&((first >> 9) & 255));
     let wide_byte = first >> 26 == 53 && (401..=404).contains(&((first >> 16) & 1023));
     if short_byte || wide_byte {

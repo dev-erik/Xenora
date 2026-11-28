@@ -694,6 +694,20 @@ fn vector_bit_binary_expression(op: VectorBitBinaryOp, a: &str, b: &str, lane: &
 }
 fn vector_ternary_expression(op: VectorTernaryOp, a: &str, b: &str, c: &str) -> String {
     match op {
+        VectorTernaryOp::PackU16 => format!("min(({a}), 65535u) | (min(({b}), 65535u) << 16u)"),
+        VectorTernaryOp::PackI16 => format!("(uint(clamp(as_type<int>({a}), -32768, 32767)) & 65535u) | ((uint(clamp(as_type<int>({b}), -32768, 32767)) & 65535u) << 16u)"),
+        VectorTernaryOp::MadU16 | VectorTernaryOp::MadI16 => format!("((({a}) & 65535u) * (({b}) & 65535u) + (({c}) & 65535u)) & 65535u"),
+        VectorTernaryOp::Min3I16 | VectorTernaryOp::Min3U16 | VectorTernaryOp::Max3I16 | VectorTernaryOp::Max3U16 | VectorTernaryOp::Med3I16 | VectorTernaryOp::Med3U16 => {
+            let signed = matches!(op,VectorTernaryOp::Min3I16 | VectorTernaryOp::Max3I16 | VectorTernaryOp::Med3I16);
+            let val=|v:&str| if signed {format!("as_type<int>(((({v}) & 65535u) ^ 32768u) - 32768u)")}else{format!("(({v}) & 65535u)")};
+            let (x,y,z)=(val(a),val(b),val(c));
+            let result=match op {
+                VectorTernaryOp::Min3I16 | VectorTernaryOp::Min3U16 => format!("min(min({x},{y}),{z})"),
+                VectorTernaryOp::Max3I16 | VectorTernaryOp::Max3U16 => format!("max(max({x},{y}),{z})"),
+                _ => format!("max(min({x},{y}), min(max({x},{y}),{z}))"),
+            };
+            format!("uint({result}) & 65535u")
+        }
         VectorTernaryOp::ByteToFloat {byte,..} => format!("as_type<uint>(float((({a}) >> {}u) & 255u))",u32::from(byte)*8),
         VectorTernaryOp::Halfword(op) => format!("(({}) & 65535u) | (({c}) & 4294901760u)", packed_expression(op,a,b)),
         VectorTernaryOp::DotI16 | VectorTernaryOp::DotU16 | VectorTernaryOp::DotI8 | VectorTernaryOp::DotU8 | VectorTernaryOp::DotI4 | VectorTernaryOp::DotU4 => {
@@ -2749,7 +2763,20 @@ fn lift(
                         }
                     };
                 }
-                (Some(dst), Op::Ternary(op, values[0], values[1], values[2]))
+                if op.retains_high_half() {
+                    // Snapshot the fourth logical input before committing aliased sources.
+                    let old = read(dst)?;
+                    let low = Value(operations.len());
+                    operations.push((offset, Op::Ternary(op, values[0], values[1], values[2])));
+                    facts.push(KnownBits::UNKNOWN);
+                    let mask = constant(&mut operations, &mut facts, offset, 65535);
+                    (
+                        Some(dst),
+                        Op::Ternary(VectorTernaryOp::BfiB32, mask, low, old),
+                    )
+                } else {
+                    (Some(dst), Op::Ternary(op, values[0], values[1], values[2]))
+                }
             }
             Instruction::VectorMadSad {
                 op,

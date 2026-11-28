@@ -11,11 +11,11 @@ For the Xbox Series X|S target and non-shader requirements, see the [master comp
 | Status | Forms | Meaning |
 | --- | ---: | --- |
 | Converted subset; fixture accepted | 122 | Translation is recorded and the status registry records accepted native fixture evidence; only the documented operand subset is covered. |
-| Converted subset; acceptance pending | 128 | Translation is recorded, but the registry does not record accepted native fixture evidence. This may reflect pending acceptance or documentation lag. |
+| Converted subset; acceptance pending | 138 | Translation is recorded, but the registry does not record accepted native fixture evidence. This may reflect pending acceptance or documentation lag. |
 | Decoded; translation evidence unrecorded | 5 | The decoder lists the form, but no translation evidence row is recorded. This is an evidence gap, not proof that lowering is absent. |
-| Not converted | 1210 | No supported decoder identity exists. Opcode recognition from metadata alone does not implement execution. |
+| Not converted | 1200 | No supported decoder identity exists. Opcode recognition from metadata alone does not implement execution. |
 
-**Decoder coverage: 255/1465. Not yet decoded: 1210.**
+**Decoder coverage: 265/1465. Not yet decoded: 1200.**
 
 No row means “all operand modes complete.” Sources, literals, modifiers, register widths, execution masks, graphics versus compute applicability, control-flow interactions and numerical behavior still require their own contracts and tests. This list covers the pinned inventory, not every future AMD instruction or every Xbox graphics method.
 
@@ -29,14 +29,14 @@ The partition below includes SOPP control flow and memory families alongside ari
 
 | Workstream | Total forms | Decoded | Not decoded |
 | --- | ---: | ---: | ---: |
-| S3.1 Arithmetic | 480 | 210 | 270 |
+| S3.1 Arithmetic | 480 | 220 | 260 |
 | S3.2 Control flow | 24 | 8 | 16 |
 | S3.3 Masks / comparisons | 419 | 12 | 407 |
 | S3.4 Wave / lane | 11 | 11 | 0 |
 | S3.5 Memory / interfaces | 509 | 14 | 495 |
 | State / assignment pending | 22 | 0 | 22 |
 
-**210/480 arithmetic forms decoded is not 210 accepted or fully converted forms.** This distinction corrects the earlier shorthand used in progress updates.
+**220/480 arithmetic forms decoded is not 220 accepted or fully converted forms.** This distinction corrects the earlier shorthand used in progress updates.
 
 ## Families
 
@@ -59,7 +59,7 @@ The partition below includes SOPP control flow and memory families alongside ari
 | [VINTRP](#vintrp) | 3 | 0 | 0 | 2 | 1 |
 | [VOP1](#vop1) | 81 | 7 | 4 | 0 | 70 |
 | [VOP2](#vop2) | 47 | 7 | 13 | 0 | 27 |
-| [VOP3](#vop3) | 416 | 64 | 22 | 0 | 330 |
+| [VOP3](#vop3) | 416 | 64 | 32 | 0 | 320 |
 | [VOP3P](#vop3p) | 29 | 0 | 20 | 0 | 9 |
 | [VOP3SDST](#vop3sdst) | 10 | 0 | 0 | 0 | 10 |
 | [VOPC](#vopc) | 190 | 0 | 12 | 0 | 178 |
@@ -1359,7 +1359,7 @@ Update the implementation and its evidence in `docs/status.toml`, then regenerat
 | 786 | `V_CVT_PKNORM_I16_F16` | Not converted | — | — | — |
 | 787 | `V_CVT_PKNORM_U16_F16` | Not converted | — | — | — |
 | 788 | `V_LSHLREV_B16` | Converted subset; acceptance pending | MSL halfword arithmetic with old-destination snapshot; compute and graphics | local known-answer test passed | acceptance pending |
-| 832 | `V_MAD_U16` | Not converted | — | — | — |
+| 832 | `V_MAD_U16` | Converted subset; acceptance pending | MSL integer expressions in compute and graphics | local known-answer test passed | acceptance pending |
 | 834 | `V_INTERP_P1LL_F16` | Not converted | — | — | — |
 | 835 | `V_INTERP_P1LV_F16` | Not converted | — | — | — |
 | 836 | `V_PERM_B32` | Converted subset; acceptance pending | MSL byte selection, sign expansion and constant selectors; compute and graphics | local known-answer test passed | acceptance pending |
@@ -1368,16 +1368,16 @@ Update the implementation and its evidence in `docs/status.toml`, then regenerat
 | 839 | `V_ADD_LSHL_U32` | Converted subset; fixture accepted | MSL wrapping addition then masked shift; compute and graphics | fixture verified | fixture verified |
 | 843 | `V_FMA_F16` | Not converted | — | — | — |
 | 849 | `V_MIN3_F16` | Not converted | — | — | — |
-| 850 | `V_MIN3_I16` | Not converted | — | — | — |
-| 851 | `V_MIN3_U16` | Not converted | — | — | — |
+| 850 | `V_MIN3_I16` | Converted subset; acceptance pending | MSL integer expressions in compute and graphics | local known-answer test passed | acceptance pending |
+| 851 | `V_MIN3_U16` | Converted subset; acceptance pending | MSL integer expressions in compute and graphics | local known-answer test passed | acceptance pending |
 | 852 | `V_MAX3_F16` | Not converted | — | — | — |
-| 853 | `V_MAX3_I16` | Not converted | — | — | — |
-| 854 | `V_MAX3_U16` | Not converted | — | — | — |
+| 853 | `V_MAX3_I16` | Converted subset; acceptance pending | MSL integer expressions in compute and graphics | local known-answer test passed | acceptance pending |
+| 854 | `V_MAX3_U16` | Converted subset; acceptance pending | MSL integer expressions in compute and graphics | local known-answer test passed | acceptance pending |
 | 855 | `V_MED3_F16` | Not converted | — | — | — |
-| 856 | `V_MED3_I16` | Not converted | — | — | — |
-| 857 | `V_MED3_U16` | Not converted | — | — | — |
+| 856 | `V_MED3_I16` | Converted subset; acceptance pending | MSL integer expressions in compute and graphics | local known-answer test passed | acceptance pending |
+| 857 | `V_MED3_U16` | Converted subset; acceptance pending | MSL integer expressions in compute and graphics | local known-answer test passed | acceptance pending |
 | 858 | `V_INTERP_P2_F16` | Not converted | — | — | — |
-| 862 | `V_MAD_I16` | Not converted | — | — | — |
+| 862 | `V_MAD_I16` | Converted subset; acceptance pending | MSL integer expressions in compute and graphics | local known-answer test passed | acceptance pending |
 | 863 | `V_DIV_FIXUP_F16` | Not converted | — | — | — |
 | 864 | `V_READLANE_B32` | Converted subset; fixture accepted | MSL selected-lane snapshot replay independent of EXEC; runtime selector and destination snapshots preserved | fixture verified | fixture verified |
 | 865 | `V_WRITELANE_B32` | Converted subset; fixture accepted | MSL selected-lane merge independent of EXEC, retaining every other destination lane and captured scalar source | fixture verified | fixture verified |
@@ -1388,8 +1388,8 @@ Update the implementation and its evidence in `docs/status.toml`, then regenerat
 | 870 | `V_MBCNT_HI_U32_B32` | Converted subset; fixture accepted | MSL copy SRC1 under Wave32 or add high-half prefix count under Wave64; EXEC destination retention and lane-aware replay | fixture verified | fixture verified |
 | 872 | `V_CVT_PKNORM_I16_F32` | Not converted | — | — | — |
 | 873 | `V_CVT_PKNORM_U16_F32` | Not converted | — | — | — |
-| 874 | `V_CVT_PK_U16_U32` | Not converted | — | — | — |
-| 875 | `V_CVT_PK_I16_I32` | Not converted | — | — | — |
+| 874 | `V_CVT_PK_U16_U32` | Converted subset; acceptance pending | MSL integer expressions in compute and graphics | local known-answer test passed | acceptance pending |
+| 875 | `V_CVT_PK_I16_I32` | Converted subset; acceptance pending | MSL integer expressions in compute and graphics | local known-answer test passed | acceptance pending |
 | 877 | `V_ADD3_U32` | Converted subset; fixture accepted | MSL uint wrapping three-input addition; compute lane retention and graphics raw-word carrier | fixture verified | fixture verified |
 | 879 | `V_LSHL_OR_B32` | Converted subset; fixture accepted | MSL masked shift then bitwise OR; compute and graphics | fixture verified | fixture verified |
 | 881 | `V_AND_OR_B32` | Converted subset; fixture accepted | MSL uint (a & b) OR c; compute lane retention and graphics raw-word carrier | fixture verified | fixture verified |
