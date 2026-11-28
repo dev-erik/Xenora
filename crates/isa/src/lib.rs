@@ -309,6 +309,8 @@ impl VectorBitBinaryOp {
 /// Value-only three-source 32-bit vector operation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum VectorTernaryOp {
+    /// Exact unsigned-byte conversion; unused IR inputs are immediate zero.
+    ByteToFloat { byte: u8, wide: bool },
     /// Low-half binary arithmetic; the third IR source snapshots the old destination.
     Halfword(PackedBinaryOp),
     /// Packed signed 16-bit dot product with wrapping 32-bit accumulation.
@@ -382,6 +384,17 @@ impl VectorTernaryOp {
     /// Returns the unmodified VOP3 mnemonic.
     pub const fn mnemonic(self) -> &'static str {
         match self {
+            Self::ByteToFloat { byte, wide } => match (byte, wide) {
+                (0, false) => "v_cvt_f32_ubyte0_e32",
+                (0, true) => "v_cvt_f32_ubyte0_e64",
+                (1, false) => "v_cvt_f32_ubyte1_e32",
+                (1, true) => "v_cvt_f32_ubyte1_e64",
+                (2, false) => "v_cvt_f32_ubyte2_e32",
+                (2, true) => "v_cvt_f32_ubyte2_e64",
+                (3, false) => "v_cvt_f32_ubyte3_e32",
+                (3, true) => "v_cvt_f32_ubyte3_e64",
+                _ => panic!("decoder validates byte position"),
+            },
             Self::Halfword(op) => match op {
                 PackedBinaryOp::AddU16 => "v_add_nc_u16",
                 PackedBinaryOp::SubU16 => "v_sub_nc_u16",
@@ -1136,6 +1149,12 @@ impl fmt::Display for Instruction {
             | Self::VectorBitBinary {
                 dst, src0, src1, ..
             } => write!(formatter, " v{dst}, {src0}, {src1}"),
+            Self::VectorTernary {
+                op: VectorTernaryOp::ByteToFloat { .. },
+                dst,
+                src0,
+                ..
+            } => write!(formatter, " v{dst}, {src0}"),
             Self::VectorTernary {
                 op: VectorTernaryOp::Halfword(_),
                 dst,

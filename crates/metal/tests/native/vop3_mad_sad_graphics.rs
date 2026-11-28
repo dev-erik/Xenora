@@ -1121,3 +1121,70 @@ fn halfword_binary_graphics() {
         }
     }
 }
+
+#[test]
+fn signed_halfword_graphics() {
+    let gpu = NativeCompute::new().unwrap();
+    let ops = [781u32, 782];
+    let answer_index = [1, 2];
+    for &(a, b, wants) in PACKED_ROWS {
+        for (index, op) in ops.into_iter().enumerate() {
+            for dst in [8, 9, 10, 255] {
+                let mut ps = pixel(op, dst, [264, 265, 128], None, false);
+                let old = if dst == 8 {
+                    a
+                } else if dst == 9 {
+                    b
+                } else {
+                    0x13579bdf
+                };
+                if dst == 255 {
+                    ps.splice(
+                        16..16,
+                        [0x7ffe02ffu32, old].into_iter().flat_map(u32::to_le_bytes),
+                    );
+                }
+                let want = (old & 0xffff0000) | (wants[answer_index[index]] & 65535);
+                assert_eq!(
+                    render(&gpu, &ps, [a, b, 0x13579bdf, 0, 0, 0, 0, 0]),
+                    vec![want.to_le_bytes().to_vec()]
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn byte_float_graphics() {
+    let gpu = NativeCompute::new().unwrap();
+    let cases = [
+        (0u32, 0u32),
+        (1, 0x3f800000),
+        (2, 0x40000000),
+        (3, 0x40400000),
+        (127, 0x42fe0000),
+        (128, 0x43000000),
+        (254, 0x437e0000),
+        (255, 0x437f0000),
+    ];
+    for byte in 0..4 {
+        for wide in [false, true] {
+            for dst in [8, 10, 255] {
+                for (value, want) in cases {
+                    let mut ps = pixel(0, dst, [264, 128, 128], None, false);
+                    let words = if wide {
+                        vec![0xd4000000 | (401 + byte) << 16 | dst, 0x02010000 | 264]
+                    } else {
+                        vec![0x7e000000 | dst << 17 | (17 + byte) << 9 | 264]
+                    };
+                    ps.splice(16..24, words.into_iter().flat_map(u32::to_le_bytes));
+                    let a = (0xa5963cc3 & !(255 << (byte * 8))) | (value << (byte * 8));
+                    assert_eq!(
+                        render(&gpu, &ps, [a, 0, 0, 0, 0, 0, 0, 0]),
+                        vec![want.to_le_bytes().to_vec()]
+                    );
+                }
+            }
+        }
+    }
+}

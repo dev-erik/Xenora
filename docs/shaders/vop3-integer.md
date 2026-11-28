@@ -311,3 +311,21 @@ Sources: [AMD RDNA2 ISA guide, §12.12 and §13.3](https://docs.amd.com/v/u/en-U
 defines operations and operand fields; the [LLVM GCN subtarget's 16-bit result contract](https://llvm.org/doxygen/GCNSubtarget_8cpp_source.html)
 corroborates preservation of the unused high half on GFX10. No Xbox hardware
 validation is implied.
+
+### Signed low-half arithmetic and byte conversion
+
+`V_ADD_NC_I16` and `V_SUB_NC_I16` also support the low-half contract above,
+with wrapping signed results and the original high half retained. Saturation
+remains rejected.
+
+`V_CVT_F32_UBYTE0` through `V_CVT_F32_UBYTE3` are admitted in both VOP1 and
+VOP3 encodings, with VGPR sources only. Each selects one unsigned byte and
+produces its exact FP32 representation, including positive zero. The selected
+0–255 range has no rounding ambiguity. This is not support for general FP32
+conversion, arbitrary floating inputs, or additional numerical modes. The
+lowering uses the existing value-operation IR with zero unused inputs, emits a
+Metal float conversion, and carries the output as uint bits through compute and
+integer graphics. No destination initialization is needed for full EXEC; sparse
+EXEC retains inactive destinations as usual. Wide modifiers and noncanonical
+unused fields are rejected. Semantics follow the public AMD RDNA2 guide §12.8
+(opcodes17–20); the e64 aliases use the VOP1-plus384 opcode mapping.

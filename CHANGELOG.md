@@ -10,6 +10,10 @@ Guest execution uses original, purpose-built test programs. Commercial Xbox game
 remains unsupported.
 
 ### Changed
+- Added signed low-half add/subtract and eight byte-to-FP32 conversion forms
+  across VOP1/VOP3, with exact byte conversion and retained-half integer results.
+  The initial VGPR-only subsets have local Metal evidence; wider operand modes
+  and independent acceptance remain open.
 - Added ten low-half 16-bit integer arithmetic forms for compute and graphics,
   preserving the destination high half through a captured register read.
   Non-default operands/modifiers and independent acceptance remain open.

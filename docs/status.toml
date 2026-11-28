@@ -2934,3 +2934,123 @@ gpu = "acceptance pending"
 recognized = true
 decoded = true
 llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_add_nc_i16"
+encoding = "VOP3; VGPR sources; low-half selection; no clamp or modifiers"
+representation = "8 B; low 16-bit result with preserved high destination half"
+lowering = "MSL wrapping signed halfword arithmetic with retained destination; compute and graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_sub_nc_i16"
+encoding = "VOP3; VGPR sources; low-half selection; no clamp or modifiers"
+representation = "8 B; low 16-bit result with preserved high destination half"
+lowering = "MSL wrapping signed halfword arithmetic with retained destination; compute and graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_cvt_f32_ubyte0_e32"
+encoding = "VOP1; VGPR source; canonical unused fields; modifiers rejected"
+representation = "4 B; exact unsigned byte to FP32 bits"
+lowering = "MSL exact byte-to-float conversion carried as uint bits; compute and graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_cvt_f32_ubyte0_e64"
+encoding = "VOP3; VGPR source; canonical unused fields; modifiers rejected"
+representation = "8 B; exact unsigned byte to FP32 bits"
+lowering = "MSL exact byte-to-float conversion carried as uint bits; compute and graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_cvt_f32_ubyte1_e32"
+encoding = "VOP1; VGPR source; canonical unused fields; modifiers rejected"
+representation = "4 B; exact unsigned byte to FP32 bits"
+lowering = "MSL exact byte-to-float conversion carried as uint bits; compute and graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_cvt_f32_ubyte1_e64"
+encoding = "VOP3; VGPR source; canonical unused fields; modifiers rejected"
+representation = "8 B; exact unsigned byte to FP32 bits"
+lowering = "MSL exact byte-to-float conversion carried as uint bits; compute and graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_cvt_f32_ubyte2_e32"
+encoding = "VOP1; VGPR source; canonical unused fields; modifiers rejected"
+representation = "4 B; exact unsigned byte to FP32 bits"
+lowering = "MSL exact byte-to-float conversion carried as uint bits; compute and graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_cvt_f32_ubyte2_e64"
+encoding = "VOP3; VGPR source; canonical unused fields; modifiers rejected"
+representation = "8 B; exact unsigned byte to FP32 bits"
+lowering = "MSL exact byte-to-float conversion carried as uint bits; compute and graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_cvt_f32_ubyte3_e32"
+encoding = "VOP1; VGPR source; canonical unused fields; modifiers rejected"
+representation = "4 B; exact unsigned byte to FP32 bits"
+lowering = "MSL exact byte-to-float conversion carried as uint bits; compute and graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_cvt_f32_ubyte3_e64"
+encoding = "VOP3; VGPR source; canonical unused fields; modifiers rejected"
+representation = "8 B; exact unsigned byte to FP32 bits"
+lowering = "MSL exact byte-to-float conversion carried as uint bits; compute and graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"

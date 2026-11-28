@@ -2029,3 +2029,45 @@ cargo test --locked -p xenora-semantic-review --test halfword_binary -- --includ
 cargo test --locked -p xenora-metal --features gpu-tests --test native_compute halfword_binary_graphics
 cargo test --locked -p xenora-decoder --test halfword_binary --test gfx1030 -- --include-ignored
 ```
+
+## Stage 3.1 batch: byte conversions and signed halfwords
+
+This batch adds ten encoding forms: `V_ADD_NC_I16`, `V_SUB_NC_I16` and
+`V_CVT_F32_UBYTE0` through `V_CVT_F32_UBYTE3` in both VOP1 and VOP3.
+Signed arithmetic wraps the low16 result and preserves the old high16 bits.
+Byte conversions produce exact FP32 bits for the selected unsigned byte, including
+positive zero. All forms retain inactive destinations. The new subsets accept
+VGPR sources only and reject non-default modifiers; independent acceptance
+remains pending. General FP32 conversion and Xbox hardware validation are not
+established by this work.
+
+Local Apple M4 Max evidence:
+
+- Test-first regressions failed on both missing opcode groups.
+- 264 native compute dispatches: 72 byte-conversion dispatches, each covering all
+  256 byte values, plus 192 signed-halfword cases. Source aliases, v255 and
+  full/sparse/empty EXEC are included; halfword cases span 35 invocations.
+- 256 native integer graphics readbacks: 192 conversions across exact boundary
+  values and 64 signed-halfword cases. Both Metal validation layers enabled.
+- 38 exact LLVM encoding rows, exhaustive source-selector checks, truncation,
+  modifier rejection in all three decoders, high destination registers and
+  rejection of an uninitialized retained halfword destination.
+- Affected CPU suites: 1,008 passed, zero failed, 88 ignored. Ignored tests are
+  not native GPU evidence. The full fixture oracle passed 1,450 instruction
+  comparisons across 231 canonical IR mnemonics (34 tests).
+- All-feature Clippy passed. A deliberate seven-bit input mask caused a native
+  conversion readback failure; restoring the eight-bit mask passed the same test.
+
+Logs: `artifacts/s31-byte-float/`. Current S3.1 inventory: **210/480 decoded**,
+**270 undecoded**, plus unsupported operand modes and independent acceptance.
+The conversion count is eight encoding forms representing four byte positions.
+
+```sh
+export CARGO_BUILD_TARGET=aarch64-apple-darwin CARGO_BUILD_JOBS=2
+export MTL_DEBUG_LAYER=1 MTL_SHADER_VALIDATION=1
+export MTL_SHADER_VALIDATION_REPORT_TO_STDERR=1 MTL_SHADER_VALIDATION_ABORT_ON_FAULT=1
+cargo test --locked -p xenora-semantic-review --test byte_float --test signed_halfword -- --include-ignored
+cargo test --locked -p xenora-metal --features gpu-tests --test native_compute byte_float_graphics
+cargo test --locked -p xenora-metal --features gpu-tests --test native_compute signed_halfword_graphics
+cargo test --locked -p xenora-decoder --test byte_float --test signed_halfword --test gfx1030 -- --include-ignored
+```

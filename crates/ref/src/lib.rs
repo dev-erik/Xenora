@@ -163,6 +163,7 @@ pub enum BitBinary {
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum VectorTernary {
+    ByteToFloat(u8),
     Halfword(u16),
     PackedDot { width: u8, signed: bool },
     PackedMadSigned,
@@ -709,10 +710,46 @@ pub fn decode(code: &[u8]) -> Result<Vec<DecodedInstruction>, ReferenceError> {
     let mut offset = 0;
     while let Some(bytes) = code.get(offset..).filter(|bytes| !bytes.is_empty()) {
         let (op, length) = match bytes {
+            [a, b, c, tag @ (0x7e | 0x7f), ..]
+                if c & 1 == 0 && (17..=20).contains(&((u16::from(*b) >> 1) & 127)) =>
+            {
+                let instruction = u32::from_le_bytes([*a, *b, *c, *tag]);
+                let source = instruction & 511;
+                if source < 256 {
+                    return Err(error(offset, "byte conversion requires VGPR"));
+                }
+                (
+                    Op::VectorTernary(
+                        VectorTernary::ByteToFloat((((instruction >> 9) & 255) - 17) as u8),
+                        ((instruction >> 17) & 255) as u8,
+                        CompareSource::Vector(source as u8),
+                        CompareSource::Immediate(0),
+                        CompareSource::Immediate(0),
+                    ),
+                    4,
+                )
+            }
+            [dst, flags, opcode @ 0x91..=0x94, 0xd5, a, b, c, d, ..] => {
+                let word = u32::from_le_bytes([*a, *b, *c, *d]);
+                if *flags != 0 || word & !511 != 0x02010000 || word & 511 < 256 {
+                    return Err(error(offset, "unsupported byte conversion source/modifier"));
+                }
+                (
+                    Op::VectorTernary(
+                        VectorTernary::ByteToFloat(*opcode - 0x91),
+                        *dst,
+                        CompareSource::Vector(word as u8),
+                        CompareSource::Immediate(0),
+                        CompareSource::Immediate(0),
+                    ),
+                    8,
+                )
+            }
+
             [
                 dst,
                 flags,
-                opcode @ (3..=5 | 7..=12 | 20),
+                opcode @ (3..=5 | 7..=14 | 20),
                 0xd7,
                 a,
                 b,
@@ -2577,12 +2614,15 @@ fn execute_wave(
                             }
                             total as u32
                         }
+                        Op::VectorTernary(VectorTernary::ByteToFloat(byte), ..) => {
+                            (((a >> (8 * byte)) & 255) as f32).to_bits()
+                        }
                         Op::VectorTernary(VectorTernary::Halfword(opcode), ..) => {
                             let x = a & 65535;
                             let y = b & 65535;
                             let value = match opcode {
-                                771 => x + y,
-                                772 => x.wrapping_sub(y),
+                                771 | 781 => x + y,
+                                772 | 782 => x.wrapping_sub(y),
                                 773 => x * y,
                                 775 => y >> (x & 15),
                                 776 => ((y as i16 as i32) >> (x & 15)) as u32,

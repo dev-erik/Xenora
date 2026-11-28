@@ -46,7 +46,7 @@ const fn concat_forms<const N: usize>() -> [(&'static str, EncodingFamily); N] {
 }
 
 /// Decoded forms not yet described by the semantic registry.
-const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 169] = [
+const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 179] = [
     ("DS_PERMUTE_B32", EncodingFamily::Ds),
     ("DS_BPERMUTE_B32", EncodingFamily::Ds),
     ("DS_SWIZZLE_B32", EncodingFamily::Ds),
@@ -160,6 +160,16 @@ const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 169] = [
     ("V_BFI_B32", EncodingFamily::Vop3),
     ("V_ADD3_U32", EncodingFamily::Vop3),
     ("V_AND_OR_B32", EncodingFamily::Vop3),
+    ("V_CVT_F32_UBYTE0", EncodingFamily::Vop1),
+    ("V_CVT_F32_UBYTE1", EncodingFamily::Vop1),
+    ("V_CVT_F32_UBYTE2", EncodingFamily::Vop1),
+    ("V_CVT_F32_UBYTE3", EncodingFamily::Vop1),
+    ("V_CVT_F32_UBYTE0", EncodingFamily::Vop3),
+    ("V_CVT_F32_UBYTE1", EncodingFamily::Vop3),
+    ("V_CVT_F32_UBYTE2", EncodingFamily::Vop3),
+    ("V_CVT_F32_UBYTE3", EncodingFamily::Vop3),
+    ("V_ADD_NC_I16", EncodingFamily::Vop3),
+    ("V_SUB_NC_I16", EncodingFamily::Vop3),
     ("V_ADD_NC_U16", EncodingFamily::Vop3),
     ("V_SUB_NC_U16", EncodingFamily::Vop3),
     ("V_MUL_LO_U16", EncodingFamily::Vop3),
@@ -398,9 +408,54 @@ fn unsupported(mnemonic: &'static str, detail: &'static str) -> DecodeErrorKind 
 
 fn decode_gfx1030(bytes: &[u8], offset: usize) -> Result<(Instruction, u8), DecodeErrorKind> {
     let first = word(bytes, 4)?;
-    if first >> 26 == 53 && matches!((first >> 16) & 1023, 771 | 772 | 773 | 775..=780 | 788) {
+    let short_byte = first >> 25 == 0x3f && (17..=20).contains(&((first >> 9) & 255));
+    let wide_byte = first >> 26 == 53 && (401..=404).contains(&((first >> 16) & 1023));
+    if short_byte || wide_byte {
+        let (byte, dst, source, len) = if wide_byte {
+            let second = word(bytes, 8)?;
+            if first & 0xff00 != 0 || second & !511 != 0x02010000 {
+                return Err(unsupported(
+                    "v_cvt_f32_ubyte_e64",
+                    "unsupported modifiers or unused source fields",
+                ));
+            }
+            (
+                (((first >> 16) & 1023) - 401) as u8,
+                first as u8,
+                second & 511,
+                8,
+            )
+        } else {
+            (
+                (((first >> 9) & 255) - 17) as u8,
+                ((first >> 17) & 255) as u8,
+                first & 511,
+                4,
+            )
+        };
+        if source < 256 {
+            return Err(unsupported("v_cvt_f32_ubyte", "expected VGPR source"));
+        }
+        return Ok((
+            Instruction::VectorTernary {
+                op: VectorTernaryOp::ByteToFloat {
+                    byte,
+                    wide: wide_byte,
+                },
+                dst,
+                src0: VectorSource::Register(source as u8),
+                src1: VectorSource::Immediate(0),
+                src2: VectorSource::Immediate(0),
+            },
+            len,
+        ));
+    }
+
+    if first >> 26 == 53 && matches!((first >> 16) & 1023, 771 | 772 | 773 | 775..=782 | 788) {
         let second = word(bytes, 8)?;
         let op = match (first >> 16) & 1023 {
+            781 => PackedBinaryOp::AddI16,
+            782 => PackedBinaryOp::SubI16,
             771 => PackedBinaryOp::AddU16,
             772 => PackedBinaryOp::SubU16,
             773 => PackedBinaryOp::MulU16,

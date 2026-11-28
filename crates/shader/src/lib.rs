@@ -694,6 +694,7 @@ fn vector_bit_binary_expression(op: VectorBitBinaryOp, a: &str, b: &str, lane: &
 }
 fn vector_ternary_expression(op: VectorTernaryOp, a: &str, b: &str, c: &str) -> String {
     match op {
+        VectorTernaryOp::ByteToFloat {byte,..} => format!("as_type<uint>(float((({a}) >> {}u) & 255u))",u32::from(byte)*8),
         VectorTernaryOp::Halfword(op) => format!("(({}) & 65535u) | (({c}) & 4294901760u)", packed_expression(op,a,b)),
         VectorTernaryOp::DotI16 | VectorTernaryOp::DotU16 | VectorTernaryOp::DotI8 | VectorTernaryOp::DotU8 | VectorTernaryOp::DotI4 | VectorTernaryOp::DotU4 => {
             let width = match op {

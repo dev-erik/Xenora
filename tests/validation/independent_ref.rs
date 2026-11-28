@@ -165,6 +165,7 @@ enum Insn {
     VInt(u32, u8, CmpSrc, u8),
     VUnary(Unary, u8, CmpSrc),
     VPackedDot(u8, bool, u8, CmpSrc, CmpSrc, CmpSrc),
+    VByteFloat(u8, u8, CmpSrc),
     VHalfword(u16, u8, CmpSrc, CmpSrc, CmpSrc),
     VPackedMad(u8, CmpSrc, CmpSrc, CmpSrc),
     VPacked(u8, u8, CmpSrc, CmpSrc),
@@ -819,6 +820,7 @@ fn lane_step(
     let read_vcc = || sgpr[106].ok_or_else(|| format!("{offset:#x}: uninitialized vcc_lo"));
     // New VOP3 forms capture every source before committing, including SRC2.
     let vop3 = match insn {
+        Insn::VByteFloat(_, d, a) => Some((d, [a, CmpSrc::Imm(0), CmpSrc::Imm(0)])),
         Insn::VPacked(_, d, a, b)
         | Insn::VSaturate(_, d, a, b)
         | Insn::VAlias(_, d, a, b)
@@ -898,13 +900,26 @@ fn lane_step(
                 }
                 total.rem_euclid(4294967296) as u32
             }
+            Insn::VByteFloat(byte, ..) => {
+                let mut significand = (a / 256u32.pow(u32::from(byte))) % 256;
+                if significand == 0 {
+                    0
+                } else {
+                    let mut power = 150;
+                    while significand < 8388608 {
+                        significand *= 2;
+                        power -= 1;
+                    }
+                    power * 8388608 + significand % 8388608
+                }
+            }
             Insn::VHalfword(opcode, ..) => {
                 let x = i64::from(a % 65536);
                 let y = i64::from(b % 65536);
                 let signed = |v: i64| if v >= 32768 { v - 65536 } else { v };
                 let value = match opcode {
-                    771 => x + y,
-                    772 => x - y,
+                    771 | 781 => x + y,
+                    772 | 782 => x - y,
                     773 => x * y,
                     775 => y / 2i64.pow((x % 16) as u32),
                     776 => signed(y).div_euclid(2i64.pow((x % 16) as u32)),
@@ -1676,7 +1691,33 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
     let first = word(code, offset)?;
     let fail = |detail: &str| format!("{offset:#x}: {detail}");
     let opcode = (first / 65536) % 1024;
-    if first / 67108864 == 53 && matches!(opcode,771..=773|775..=780|788) {
+    let narrow = first / 33554432 == 63 && (17..=20).contains(&((first / 512) % 256));
+    let wide = first / 67108864 == 53 && (401..=404).contains(&opcode);
+    if narrow || wide {
+        let (byte, dst, source, size) = if wide {
+            let next = word(code, offset + 4)?;
+            if (first / 256) % 256 != 0 || next / 512 != 65664 {
+                return Err(fail("unsupported conversion fields"));
+            }
+            ((opcode - 401) as u8, first as u8, next % 512, 8)
+        } else {
+            (
+                ((first / 512) % 256 - 17) as u8,
+                ((first / 131072) % 256) as u8,
+                first % 512,
+                4,
+            )
+        };
+        if source < 256 {
+            return Err(fail("conversion source must be VGPR"));
+        }
+        return Ok((
+            Insn::VByteFloat(byte, dst, CmpSrc::Vgpr(source as u8)),
+            size,
+        ));
+    }
+
+    if first / 67108864 == 53 && matches!(opcode,771..=773|775..=782|788) {
         let next = word(code, offset + 4)?;
         let x = next % 512;
         let y = (next / 512) % 512;
