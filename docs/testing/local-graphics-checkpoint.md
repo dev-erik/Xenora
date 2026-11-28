@@ -1710,3 +1710,47 @@ cargo test --locked -p xenora-semantic-review --test mad16_independent -- --incl
 cargo test --locked -p xenora-metal --features gpu-tests --test native_compute mad16_
 LLVM_BIN="$(brew --prefix llvm)/bin" cargo test --locked -p xenora-decoder --test vop3_mad16 -- --include-ignored
 ```
+
+
+## Stage 3.1 increment: VOP3 bit-preserving move
+
+28 November 2026. The unmodified VOP3 encoding of `V_MOV_B32` (opcode 385)
+now decodes to the existing move operation. Both references decode the encoding
+independently. The canonical IR/display retains the existing move spelling;
+original offsets and 8-byte/12-byte instruction lengths remain intact. Unused
+SRC1/SRC2 must encode zero, and unsupported modifiers fail explicitly.
+
+Local validation:
+
+- CPU regressions: **926 passed, 0 failed, 69 ignored**. Ignored tests do not
+  establish native verification.
+- **216 native compute cases** cover raw floating-point special-value bit patterns,
+  VGPR/scalar/literal sources, three destination aliases and full/sparse/empty
+  Wave32 masks, with 35 invocations per case.
+- **36 native integer graphics readbacks** cover VGPR and finite-literal moves.
+  Five paired rejection checks establish parity with the existing e32 encoding:
+  direct runtime scalar uniforms need validation metadata, and non-finite
+  immediate values remain unsupported in this graphics path. Non-finite words
+  copied from integer VGPRs are included in passing readbacks.
+- Decoder tests cover every source selector and register boundaries, truncated
+  instructions, modifiers and canonical unused operands; four exact encodings
+  agree with native LLVM. The full fixture oracle passed **1,363 instruction
+  comparisons across 190 canonical IR mnemonics**. The extra encoding shares a
+  mnemonic with the existing move and must not inflate that mnemonic count.
+- A floating-point graphics fixture compiles to identical MSL for both encodings.
+- A deliberate production mutation replacing the move source with zero failed at
+  native readback. After restoring the source, both graphics tests passed again.
+
+Both Metal validation layers were enabled. Logs are under ignored
+`artifacts/s31-move-e64/`. The lead implemented and tested this increment;
+independent acceptance remains pending. S3.1 is **167/480 decoded**, with
+**313 undecoded** forms, plus operand modes and numerical/stage acceptance work.
+
+```sh
+export CARGO_BUILD_TARGET=aarch64-apple-darwin CARGO_BUILD_JOBS=2
+export MTL_DEBUG_LAYER=1 MTL_SHADER_VALIDATION=1
+export MTL_SHADER_VALIDATION_REPORT_TO_STDERR=1 MTL_SHADER_VALIDATION_ABORT_ON_FAULT=1
+cargo test --locked -p xenora-semantic-review --test move_e64 -- --include-ignored
+cargo test --locked -p xenora-metal --features gpu-tests --test native_compute move_e64
+LLVM_BIN="$(brew --prefix llvm)/bin" cargo test --locked -p xenora-decoder --test gfx1030 --test move_e64 -- --include-ignored --nocapture
+```

@@ -761,3 +761,67 @@ fn mad16_full_word_shared_literals_and_aliases() {
     }
     assert_eq!(count, 280);
 }
+
+fn e32_move_pixel(dst: u32, source: u32, literal: Option<u32>) -> Vec<u8> {
+    let e64 = pixel(385, dst, [source, 128, 128], literal, false);
+    let mut result = e64[..16].to_vec();
+    result.extend_from_slice(&(0x7e000200u32 | dst << 17 | source).to_le_bytes());
+    if let Some(bits) = literal {
+        result.extend_from_slice(&bits.to_le_bytes());
+    }
+    result.extend_from_slice(&e64[24 + usize::from(literal.is_some()) * 4..]);
+    result
+}
+#[test]
+fn move_e64_keeps_supported_graphics_word_patterns() {
+    let gpu = NativeCompute::new().unwrap();
+    let mut count = 0;
+    for bits in [
+        0u32, 1, 0x80000000, 0xffffffff, 0x7f800000, 0xff800000, 0x7fa12345, 0x007fffff,
+    ] {
+        for dst in [8, 11, 255] {
+            for source in [264, 255] {
+                // The existing immediate move contract requires finite FP32 bits.
+                if source == 255 && bits & 0x7f800000 == 0x7f800000 {
+                    continue;
+                }
+                assert_eq!(
+                    render(
+                        &gpu,
+                        &pixel(
+                            385,
+                            dst,
+                            [source, 128, 128],
+                            (source == 255).then_some(bits),
+                            false
+                        ),
+                        [bits, 0, 0, 0, 0, 0, 0, 0]
+                    ),
+                    vec![bits.to_le_bytes().to_vec()]
+                );
+                count += 1;
+            }
+        }
+    }
+    assert_eq!(count, 36);
+}
+#[test]
+fn move_e64_retains_existing_graphics_rejections() {
+    let mut types = GraphicsPipelineTypes::default();
+    types.colors[0] = GraphicsExportType::Uint;
+    for (source, literal) in [
+        (24, None),
+        (255, Some(0x7f800000)),
+        (255, Some(0xff800000)),
+        (255, Some(0x7fa12345)),
+        (255, Some(0xffffffff)),
+    ] {
+        let e64 = pixel(385, 11, [source, 128, 128], literal, false);
+        let e32 = e32_move_pixel(11, source, literal);
+        let a =
+            compile_graphics_pipeline_typed(Architecture::Gfx1030, VS, &e64, types).unwrap_err();
+        let b =
+            compile_graphics_pipeline_typed(Architecture::Gfx1030, VS, &e32, types).unwrap_err();
+        assert_eq!(a.to_string(), b.to_string());
+    }
+}

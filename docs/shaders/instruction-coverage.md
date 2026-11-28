@@ -221,6 +221,7 @@ The wider LLVM operand matrix exercises decoding only. ABI means application bin
 | `v_sub_nc_i32` | VOP3; two checked sources, canonical unused SRC2; optional signed clamp awaits independent review | 8 B or 12 B with shared literal | yes | yes | three-way passed | MSL wrapping or signed-saturating 32-bit subtraction; compute and graphics | implemented | fixture verified | fixture verified |
 | `v_add_nc_i32` | VOP3; checked sources and canonical unused SRC2; optional signed clamp | 8 B or 12 B with shared literal | yes | yes | local exact encoding checks passed | MSL wrapping or signed-saturating 32-bit addition; compute and graphics | implemented | local known-answer test passed | acceptance pending |
 | `v_perm_b32` | VOP3; three checked sources; modifiers rejected | 8 B or 12 B with shared literal | yes | yes | local exact encoding checks passed | MSL byte selection, sign expansion and constant selectors; compute and graphics | implemented | local known-answer test passed | acceptance pending |
+| `v_mov_b32_e64` | VOP3; checked source and canonical unused SRC1/SRC2; modifiers rejected | 8 B or 12 B with literal; canonical move IR/display | yes | yes | local exact encoding checks passed | MSL bit-preserving move; existing compute and graphics lowering | implemented | local known-answer test passed | acceptance pending |
 <!-- status:instructions:end -->
 
 ## Automated three-way comparison

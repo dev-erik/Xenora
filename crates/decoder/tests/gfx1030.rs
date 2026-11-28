@@ -868,6 +868,7 @@ fn compares_fixture_instructions_against_llvm() {
         include_bytes!("../../../fixtures/rdna2/vop3-mad16.bin"),
         include_bytes!("../../../fixtures/rdna2/vop3-sub-nc-i32.bin"),
         include_bytes!("../../../fixtures/rdna2/vop3-word-arithmetic.bin"),
+        include_bytes!("../../../fixtures/rdna2/vop3-move.bin"),
         include_bytes!("../../../fixtures/rdna2/vector-compare.bin"),
         high_registers,
         &matrix,
@@ -886,6 +887,7 @@ fn compares_fixture_instructions_against_llvm() {
     ] {
         count += compare_against_llvm(fixture, &mut forms);
     }
+    // VOP3 move canonicalizes to the existing e32 move IR mnemonic.
     assert_eq!(forms.len(), 190, "forms compared: {forms:?}");
     eprintln!(
         "{count} three-way instruction comparisons across {} forms",
@@ -1419,7 +1421,8 @@ fn normalize_llvm_assembly(assembly: &str, next_offset: usize) -> String {
             };
             format!("{mnemonic} {}", parts.join(", "))
         }
-        "v_mov_b32_e32" => {
+        "v_mov_b32_e32" | "v_mov_b32_e64" => {
+            let mnemonic = "v_mov_b32_e32";
             let (destination, source) = operands.split_once(", ").unwrap();
             let normalized = match source {
                 "1.0" => "0x3f800000".to_owned(),

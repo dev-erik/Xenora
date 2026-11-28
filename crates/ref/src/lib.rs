@@ -896,6 +896,7 @@ pub fn decode(code: &[u8]) -> Result<Vec<DecodedInstruction>, ReferenceError> {
                                 | 283
                                 | 284
                                 | 285
+                                | 385
                                 | 439
                                 | 440
                                 | 441
@@ -1379,7 +1380,7 @@ fn decode_vop3_integer(bytes: &[u8], offset: usize) -> Result<(Op, usize), Refer
             | 284
             | 285
     );
-    let unary = matches!(opcode, 439..=443);
+    let unary = matches!(opcode, 385 | 439..=443);
     let raw = [second & 511, (second >> 9) & 511, (second >> 18) & 511];
     if unary && (raw[1] != 128 || raw[2] != 128) {
         return Err(error(offset, "noncanonical VOP3 unary SRC1/SRC2"));
@@ -1604,6 +1605,11 @@ fn decode_vop3_integer(bytes: &[u8], offset: usize) -> Result<(Op, usize), Refer
             args[2],
         ),
         329 => Op::VectorTernary(VectorTernary::ExtractSigned, dst, args[0], args[1], args[2]),
+        385 => match args[0] {
+            CompareSource::Vector(src) => Op::Move(dst, Source::Register(src)),
+            CompareSource::Scalar(src) => Op::MoveScalar(dst, src),
+            CompareSource::Immediate(bits) => Op::Move(dst, Source::Immediate(bits)),
+        },
         883 => Op::VectorTernary(VectorTernary::MadU32U16, dst, args[0], args[1], args[2]),
         885 => Op::VectorTernary(VectorTernary::MadI32I16, dst, args[0], args[1], args[2]),
         836 => Op::VectorTernary(VectorTernary::PermuteBytes, dst, args[0], args[1], args[2]),

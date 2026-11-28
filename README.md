@@ -343,6 +343,9 @@ The native test suite enables Metal API and shader validation and tests the supp
 For copy/paste targeted commands, expected output and the distinction between
 offscreen pixel checks and an application window, see the
 [local graphics validation guide](docs/testing/local-graphics-checkpoint.md#run-focused-graphics-checks).
+The [shader roadmap](docs/shaders/stage3-roadmap.md) and
+[latest move-instruction checkpoint](docs/testing/local-graphics-checkpoint.md#stage-31-increment-vop3-bit-preserving-move)
+distinguish local Metal tests from independent acceptance and full compatibility.
 
 ### Verify guest execution
 

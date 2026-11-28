@@ -46,7 +46,7 @@ const fn concat_forms<const N: usize>() -> [(&'static str, EncodingFamily); N] {
 }
 
 /// Decoded forms not yet described by the semantic registry.
-const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 135] = [
+const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 136] = [
     ("DS_PERMUTE_B32", EncodingFamily::Ds),
     ("DS_BPERMUTE_B32", EncodingFamily::Ds),
     ("DS_SWIZZLE_B32", EncodingFamily::Ds),
@@ -71,6 +71,7 @@ const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 135] = [
     ("V_MAX_U32", EncodingFamily::Vop3),
     ("V_XNOR_B32", EncodingFamily::Vop3),
     ("V_SUB_NC_U32", EncodingFamily::Vop3),
+    ("V_MOV_B32", EncodingFamily::Vop3),
     ("V_PERM_B32", EncodingFamily::Vop3),
     ("V_ADD_NC_I32", EncodingFamily::Vop3),
     ("V_SUB_NC_I32", EncodingFamily::Vop3),
@@ -1319,6 +1320,7 @@ fn move_b32(first: u32, bytes: &[u8]) -> Result<(Instruction, u8), DecodeErrorKi
 
 // Explicit identities keep arity independent of arithmetic category.
 enum CheckedVectorOp {
+    Move,
     MadSad(VectorMadSadOp),
     BinaryAlias(VectorBinaryOp),
     UnaryAlias(VectorUnaryOp),
@@ -1329,6 +1331,7 @@ enum CheckedVectorOp {
 impl CheckedVectorOp {
     fn from_word(first: u32) -> Option<Self> {
         Some(match first & 0xffff0000 {
+            0xd5810000 => Self::Move,
             0xd5420000 => Self::MadSad(VectorMadSadOp::MadI32I24),
             0xd5430000 => Self::MadSad(VectorMadSadOp::MadU32U24),
             0xd55a0000 => Self::MadSad(VectorMadSadOp::SadU8),
@@ -1413,12 +1416,13 @@ impl CheckedVectorOp {
     fn arity(&self) -> usize {
         match self {
             Self::Product(_) | Self::BitBinary(_) | Self::BinaryAlias(_) => 2,
-            Self::UnaryAlias(_) => 1,
+            Self::Move | Self::UnaryAlias(_) => 1,
             Self::Ternary(_) | Self::MadSad(_) => 3,
         }
     }
     fn mnemonic(&self) -> &'static str {
         match self {
+            Self::Move => "v_mov_b32_e64",
             Self::BinaryAlias(op) => op.assembly_name(),
             Self::UnaryAlias(op) => match op {
                 VectorUnaryOp::NotB32 => "v_not_b32_e64",
@@ -1527,6 +1531,7 @@ fn vector_integer_vop3(
         ));
     }
     let instruction = match op {
+        CheckedVectorOp::Move => Instruction::MoveB32 { dst, src: src0 },
         CheckedVectorOp::MadSad(op) => Instruction::VectorMadSad {
             op,
             clamp: first & 0x8000 != 0,

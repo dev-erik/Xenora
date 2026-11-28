@@ -1627,6 +1627,7 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
                 | 283
                 | 284
                 | 285
+                | 385
                 | 439
                 | 440
                 | 441
@@ -1653,7 +1654,7 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
             return Err(fail("unsupported VOP3 modifiers"));
         }
         let raw = [next % 512, (next / 512) % 512, (next / 262144) % 512];
-        let count = if matches!(opcode, 439..=443) {
+        let count = if matches!(opcode, 385 | 439..=443) {
             1
         } else if matches!(
             opcode,
@@ -1787,6 +1788,12 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
             344 => Insn::VMiddleSigned(dst, args[0], args[1], args[2]),
             345 => Insn::VMiddleUnsigned(dst, args[0], args[1], args[2]),
             329 => Insn::VSignedField(dst, args[0], args[1], args[2]),
+            385 => match args[0] {
+                CmpSrc::Sgpr(src) => Insn::VMovFromSgpr(dst, src),
+                CmpSrc::Vcc => Insn::VMovFromVcc(dst),
+                CmpSrc::Vgpr(src) => Insn::VMov(dst, Src::Reg(src)),
+                CmpSrc::Imm(bits) => Insn::VMov(dst, Src::Imm(bits)),
+            },
             883 | 885 => Insn::VMad16(opcode == 885, dst, args[0], args[1], args[2]),
             836 => Insn::VBytePermute(dst, args[0], args[1], args[2]),
             837 => Insn::VXad(dst, args[0], args[1], args[2]),

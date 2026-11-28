@@ -2526,3 +2526,15 @@ gpu = "acceptance pending"
 recognized = true
 decoded = true
 llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_mov_b32_e64"
+encoding = "VOP3; checked source and canonical unused SRC1/SRC2; modifiers rejected"
+representation = "8 B or 12 B with literal; canonical move IR/display"
+lowering = "MSL bit-preserving move; existing compute and graphics lowering"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
