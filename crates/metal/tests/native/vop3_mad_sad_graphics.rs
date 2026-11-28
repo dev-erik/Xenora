@@ -870,3 +870,90 @@ fn alignbyte_windows_sources_and_aliases() {
     }
     assert_eq!(count, 1296);
 }
+
+const PACKED_ROWS: &[(u32, u32, [u32; 12])] = &[
+    (
+        0x0001ffff,
+        0xffff0001,
+        [
+            0xffffffff, 0x00000000, 0x0002fffe, 0xfffe8000, 0x7fff0000, 0xffff0000, 0x00010001,
+            0xffffffff, 0x00000000, 0x0002fffe, 0xffffffff, 0x00010001,
+        ],
+    ),
+    (
+        0x80007fff,
+        0x7fff8000,
+        [
+            0x80008000, 0xffffffff, 0x0001ffff, 0x7fff0000, 0x7fff0001, 0x7fffffff, 0x7fff7fff,
+            0x80008000, 0xffffffff, 0x0001ffff, 0x80008000, 0x7fff7fff,
+        ],
+    ),
+    (
+        0xffff8000,
+        0x0002ffff,
+        [
+            0xfffe8000, 0x00017fff, 0xfffd8001, 0x0000ffff, 0x0000ffff, 0x0000ffff, 0x0002ffff,
+            0xffff8000, 0x00017fff, 0xfffd8001, 0xffffffff, 0x00028000,
+        ],
+    ),
+    (
+        0x000f0010,
+        0x80018001,
+        [
+            0x800f0010, 0x80108011, 0x800e800f, 0x80008001, 0x00018001, 0xffff8001, 0x000f0010,
+            0x80018001, 0x80108011, 0x800e800f, 0x80018001, 0x000f0010,
+        ],
+    ),
+    (
+        0x001f0001,
+        0xffff0001,
+        [
+            0xffe10001, 0x001e0002, 0x00200000, 0x80000002, 0x00010000, 0xffff0000, 0x001f0001,
+            0xffff0001, 0x001e0002, 0x00200000, 0xffff0001, 0x001f0001,
+        ],
+    ),
+    (
+        0x00000000,
+        0xffffffff,
+        [
+            0x00000000, 0xffffffff, 0x00010001, 0xffffffff, 0xffffffff, 0xffffffff, 0x00000000,
+            0xffffffff, 0xffffffff, 0x00010001, 0xffffffff, 0x00000000,
+        ],
+    ),
+    (
+        0xffffffff,
+        0xffffffff,
+        [
+            0x00010001, 0xfffefffe, 0x00000000, 0x80008000, 0x00010001, 0xffffffff, 0xffffffff,
+            0xffffffff, 0xfffefffe, 0x00000000, 0xffffffff, 0xffffffff,
+        ],
+    ),
+    (
+        0x1234abcd,
+        0xfedc5678,
+        [
+            0x3cb06618, 0x11100245, 0x13585555, 0xedc00000, 0x0fed0002, 0xffed0002, 0x12345678,
+            0xfedcabcd, 0x11100245, 0x13585555, 0xfedcabcd, 0x12345678,
+        ],
+    ),
+];
+#[test]
+fn packed_binary_graphics() {
+    let gpu = NativeCompute::new().unwrap();
+    for &(a, b, wants) in PACKED_ROWS {
+        for (i, op) in [1u32, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13]
+            .into_iter()
+            .enumerate()
+        {
+            for dst in [8, 9, 255] {
+                let mut ps = pixel(0, dst, [264, 265, 128], None, false);
+                ps[16..20].copy_from_slice(&(0xcc004000 | op << 16 | dst).to_le_bytes());
+                ps[20..24].copy_from_slice(&(0x1a000000u32 | 264 | 265 << 9).to_le_bytes());
+                assert_eq!(
+                    render(&gpu, &ps, [a, b, 0, 0, 0, 0, 0, 0]),
+                    vec![wants[i].to_le_bytes().to_vec()]
+                );
+            }
+        }
+    }
+}

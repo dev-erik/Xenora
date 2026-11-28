@@ -42,18 +42,23 @@ the existing numerical contracts. Native compute and varying-color graphics
 checks passed; modifiers, broader source modes and independent acceptance remain
 open. See the [FP32 encoding checkpoint](../testing/local-graphics-checkpoint.md#stage-31-increment-vop3-fp32-addition-and-multiplication).
 
+The packed integer binary batch adds twelve VOP3P forms with default half
+selection and VGPR sources. Native compute/graphics and cross-half-corruption
+mutation checks passed. Other operand modes and independent acceptance remain
+open. See the [packed arithmetic checkpoint](../testing/local-graphics-checkpoint.md#stage-31-batch-packed-integer-binary-arithmetic).
+
 ## Whole-stage map
 
 | Stage | Decoded / inventoried | Undecoded | Remaining work | Relative effort |
 | --- | ---: | ---: | --- | --- |
-| S3.1 Arithmetic | 170 / 480 | 310 | Wider/packed arithmetic, floating point, conversions, source and modifier modes | XL |
+| S3.1 Arithmetic | 182 / 480 | 298 | Wider/packed arithmetic, floating point, conversions, source and modifier modes | XL |
 | S3.2 Control flow | 8 / 24 | 16 | Compute loops, calls/returns, divergence, debug/trap/halt and termination protocols | L–XL |
 | S3.3 Masks and comparisons | 12 / 419 | 407 | Comparison predicates/types, dynamic EXEC, divergent lane state and reconvergence | XL |
 | S3.4 Wave and lane | 11 / 11 | 0 | Broader operands, dynamic masks, partial populations, graphics/helper lanes and disputed semantics | L–XL |
 | S3.5 Memory and interfaces | 14 / 509 | 495 | Address spaces, descriptors, LDS, atomics, images, ordering and stage interfaces | XL |
 | S3.6 Numerical correctness | Cross-cutting | Not a separate instruction bucket | Rounding, special values, denormals, precision and differential tests | L–XL |
 | State operations awaiting assignment | 0 / 22 | 22 | Classify ownership, define state/runtime contracts and implement | Uncertain |
-| Inventory total | 215 / 1465 | 1250 | Includes the state bucket; excludes a second count for S3.6 | Not additive |
+| Inventory total | 227 / 1465 | 1238 | Includes the state bucket; excludes a second count for S3.6 | Not additive |
 
 Effort bands are planning judgments, not measured completion percentages or
 calendar promises. **L** means several substantial implementation-and-validation
@@ -82,12 +87,12 @@ control-flow forms and unresolved wave-operation semantics explicitly.
 
 ## What drives the workload
 
-The 1,250 undecoded forms share implementation prerequisites. Shared
+The 1,238 undecoded forms share implementation prerequisites. Shared
 semantics and representations can cover many variants, but their encoding and
 boundary tests still need evidence.
 
-- Arithmetic: 310 missing forms include 37 scalar, 71 VOP1, 23 VOP2, 146 VOP3,
-  29 packed VOP3P and 4 VOP3SDST forms. Paired registers, packed widths and mixed
+- Arithmetic: 298 missing forms include 37 scalar, 71 VOP1, 23 VOP2, 146 VOP3,
+  17 packed VOP3P and 4 VOP3SDST forms. Paired registers, packed widths and mixed
   outputs are prerequisites for some families.
 - Masks/comparisons: 178 missing VOPC and 191 VOP3 forms dominate the count.
   Shared comparison semantics help; dynamic EXEC and reconvergence are separate

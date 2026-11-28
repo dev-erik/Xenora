@@ -14,9 +14,9 @@ pub use graphics::{
 
 pub use xenora_decoder::Architecture;
 use xenora_decoder::{
-    BufferLoadKind, DecodeError, DecodedInstruction, Instruction, ScalarSource, VectorBinary,
-    VectorBinaryOp, VectorBitBinaryOp, VectorClampOp, VectorCompareOp, VectorMadSadOp,
-    VectorProductOp, VectorSource, VectorTernaryOp, VectorUnaryOp,
+    BufferLoadKind, DecodeError, DecodedInstruction, Instruction, PackedBinaryOp, ScalarSource,
+    VectorBinary, VectorBinaryOp, VectorBitBinaryOp, VectorClampOp, VectorCompareOp,
+    VectorMadSadOp, VectorProductOp, VectorSource, VectorTernaryOp, VectorUnaryOp,
 };
 
 /// SGPR index of `vcc_lo`.
@@ -424,6 +424,7 @@ impl Op {
                         format!("{left} {symbol} ({right} & 31u)")
                     }
                     Binary::Vector(operation) => vector_expression(operation, &left, &right),
+                    Binary::Packed(op) => packed_expression(op, &left, &right),
                     Binary::Clamped(op) => clamped_expression(op, &left, &right),
                     _ => format!("{left} {symbol} {right}"),
                 }
@@ -503,6 +504,7 @@ enum Binary {
     /// A registry VOP2 integer operation, lowered by its typed template.
     Vector(VectorBinary),
     Clamped(VectorClampOp),
+    Packed(PackedBinaryOp),
 }
 
 impl Binary {
@@ -517,6 +519,7 @@ impl Binary {
             Self::Xor => ("xor.b32", "^"),
             Self::FloatAdd => ("add.f32", "+"),
             Self::FloatMul => ("mul.f32", "*"),
+            Self::Packed(op) => (op.mnemonic(), ""),
             Self::Clamped(op) => (op.mnemonic(), ""),
             Self::Vector(operation) => (
                 match operation {
@@ -570,6 +573,34 @@ fn vector_expression(operation: VectorBinary, left: &str, right: &str) -> String
 
 // Integer saturation is applied to the mathematical result before narrowing.
 // Products use low/high32 words instead of requiring Metal64-bit arithmetic.
+// AMD RDNA2 12.10: mask each lane before packing; no carry crosses bit15.
+fn packed_expression(op: PackedBinaryOp, a: &str, b: &str) -> String {
+    use PackedBinaryOp::*;
+    [0, 16]
+        .into_iter()
+        .map(|shift| {
+            let x = format!("((({a}) >> {shift}u) & 65535u)");
+            let y = format!("((({b}) >> {shift}u) & 65535u)");
+            let sx = format!("(as_type<int>({x} << 16u) >> 16u)");
+            let sy = format!("(as_type<int>({y} << 16u) >> 16u)");
+            let value = match op {
+                MulU16 => format!("{x} * {y}"),
+                AddI16 | AddU16 => format!("{x} + {y}"),
+                SubI16 | SubU16 => format!("{x} - {y}"),
+                LshlB16 => format!("{y} << ({x} & 15u)"),
+                LshrB16 => format!("{y} >> ({x} & 15u)"),
+                AshrI16 => format!("as_type<uint>({sy} >> ({x} & 15u))"),
+                MaxI16 => format!("as_type<uint>(max({sx}, {sy}))"),
+                MinI16 => format!("as_type<uint>(min({sx}, {sy}))"),
+                MaxU16 => format!("max({x}, {y})"),
+                MinU16 => format!("min({x}, {y})"),
+            };
+            format!("((({value}) & 65535u) << {shift}u)")
+        })
+        .collect::<Vec<_>>()
+        .join(" | ")
+}
+
 fn clamped_expression(op: VectorClampOp, a: &str, b: &str) -> String {
     match op {
         VectorClampOp::AddU32 => {
@@ -626,6 +657,7 @@ fn vector_unary_expression(op: VectorUnaryOp, source: &str) -> String {
 // Return the existing arithmetic primitive and whether assembly sources reverse.
 fn alias_binary(op: VectorBinaryOp) -> (Binary, bool) {
     match op {
+        VectorBinaryOp::Packed(op) => (Binary::Packed(op), false),
         VectorBinaryOp::Alu(op) => (Binary::Vector(op.lowering()), op.swaps_sources()),
         // RDNA2 pp185,187: signed add/subtract without carry. Unsigned math preserves wrapping bits.
         VectorBinaryOp::AddNcI32 => (Binary::Vector(VectorBinary::Add), false),

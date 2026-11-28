@@ -234,5 +234,5 @@ fn names_display_and_existing_identity_count() {
         );
     }
     // Includes the bounded control, wait and Wave32 MBCNT forms.
-    assert_eq!(xenora_decoder::SEMANTIC_FORMS.len(), 215);
+    assert_eq!(xenora_decoder::SEMANTIC_FORMS.len(), 227);
 }

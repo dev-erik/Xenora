@@ -1854,3 +1854,59 @@ cargo test --locked -p xenora-semantic-review --test float_e64 -- --include-igno
 cargo test --locked -p xenora-metal --features gpu-tests --test native_compute vop3_float_pixel_arithmetic
 LLVM_BIN="$(brew --prefix llvm)/bin" cargo test --locked -p xenora-decoder --test float_e64 --test gfx1030 -- --include-ignored --nocapture
 ```
+
+
+## Stage 3.1 batch: packed integer binary arithmetic
+
+28 November 2026. Added twelve VOP3P binary integer forms with executable
+compute and integer-graphics lowering: `V_PK_MUL_LO_U16`, `V_PK_ADD_I16`,
+`V_PK_SUB_I16`, `V_PK_LSHLREV_B16`, `V_PK_LSHRREV_B16`, `V_PK_ASHRREV_I16`,
+`V_PK_MAX_I16`, `V_PK_MIN_I16`, `V_PK_ADD_U16`, `V_PK_SUB_U16`,
+`V_PK_MAX_U16`, and `V_PK_MIN_U16`.
+
+The admitted contract uses VGPR sources and the default packed half selection.
+Each result half is narrowed separately, so overflow never carries between halves.
+Shift counts use the low four bits of the corresponding source half; signed
+right shift and signed min/max use the sign of each 16-bit lane. The whole
+32-bit destination is preserved for inactive EXEC lanes. Source snapshots precede
+writes, including destination aliases. No condition code is modified.
+
+Semantics follow public AMD RDNA2 section 12.10 (pp162–164), with encodings checked
+against native LLVM. Scalar/literal sources, non-default half selection, negation,
+saturation and noncanonical unused fields are rejected. These restrictions are
+part of the current implementation contract, not claims that the hardware lacks
+those modes. The lead implemented and tested this batch; independent acceptance
+remains pending. This is not validation on AMD or Xbox hardware.
+
+Local results:
+
+- Test-first regression demonstrated the missing packed opcodes.
+- Affected CPU suites: **948 passed, 0 failed, 75 ignored**. Ignored tests do not
+  establish native verification.
+- **1,152 native compute cases**: twelve forms × eight fixed operand pairs × four
+  destination choices × full/sparse/empty EXEC. Each case spans 35 invocations.
+- **288 native integer graphics readbacks**, including source aliases and v255.
+  Fixed answers cover signed boundaries, wrapping overflow/borrow, mixed halves
+  and counts beyond 15. Both Metal validation layers were enabled.
+- **36 exact LLVM encoding rows**; each 9-bit source field tested across all
+  selectors, with register boundaries, truncation and rejected modifier bits.
+  Rejection tests exercise production and both independent-byte-decoding
+  references. The full fixture oracle passed **1,394 three-way comparisons
+  across 203 canonical IR mnemonics**.
+- Removing result-half masks deliberately caused a native graphics readback
+  failure, exposing cross-half corruption. The source was restored, and the
+  graphics and compute tests passed again.
+- All-feature Clippy passed. Logs: `artifacts/s31-packed/`.
+
+S3.1 now has **182/480 decoded forms with executable subsets**, with **298 forms
+still undecoded**. Operand variants, numerical contracts and independent review
+remain additional work; this does not close S3.1.
+
+```sh
+export CARGO_BUILD_TARGET=aarch64-apple-darwin CARGO_BUILD_JOBS=2
+export MTL_DEBUG_LAYER=1 MTL_SHADER_VALIDATION=1
+export MTL_SHADER_VALIDATION_REPORT_TO_STDERR=1 MTL_SHADER_VALIDATION_ABORT_ON_FAULT=1
+cargo test --locked -p xenora-semantic-review --test packed_binary -- --include-ignored
+cargo test --locked -p xenora-metal --features gpu-tests --test native_compute packed_binary_graphics
+LLVM_BIN="$(brew --prefix llvm)/bin" cargo test --locked -p xenora-decoder --test packed_binary --test gfx1030 -- --include-ignored --nocapture
+```

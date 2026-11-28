@@ -2574,3 +2574,147 @@ gpu = "acceptance pending"
 recognized = true
 decoded = true
 llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_pk_mul_lo_u16"
+encoding = "VOP3P; VGPR sources; default half selection; no clamp or negation"
+representation = "8 B; two independent 16-bit results packed in one word"
+lowering = "MSL packed integer arithmetic; compute and integer graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_pk_add_i16"
+encoding = "VOP3P; VGPR sources; default half selection; no clamp or negation"
+representation = "8 B; two independent 16-bit results packed in one word"
+lowering = "MSL packed integer arithmetic; compute and integer graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_pk_sub_i16"
+encoding = "VOP3P; VGPR sources; default half selection; no clamp or negation"
+representation = "8 B; two independent 16-bit results packed in one word"
+lowering = "MSL packed integer arithmetic; compute and integer graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_pk_lshlrev_b16"
+encoding = "VOP3P; VGPR sources; default half selection; no clamp or negation"
+representation = "8 B; two independent 16-bit results packed in one word"
+lowering = "MSL packed integer arithmetic; compute and integer graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_pk_lshrrev_b16"
+encoding = "VOP3P; VGPR sources; default half selection; no clamp or negation"
+representation = "8 B; two independent 16-bit results packed in one word"
+lowering = "MSL packed integer arithmetic; compute and integer graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_pk_ashrrev_i16"
+encoding = "VOP3P; VGPR sources; default half selection; no clamp or negation"
+representation = "8 B; two independent 16-bit results packed in one word"
+lowering = "MSL packed integer arithmetic; compute and integer graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_pk_max_i16"
+encoding = "VOP3P; VGPR sources; default half selection; no clamp or negation"
+representation = "8 B; two independent 16-bit results packed in one word"
+lowering = "MSL packed integer arithmetic; compute and integer graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_pk_min_i16"
+encoding = "VOP3P; VGPR sources; default half selection; no clamp or negation"
+representation = "8 B; two independent 16-bit results packed in one word"
+lowering = "MSL packed integer arithmetic; compute and integer graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_pk_add_u16"
+encoding = "VOP3P; VGPR sources; default half selection; no clamp or negation"
+representation = "8 B; two independent 16-bit results packed in one word"
+lowering = "MSL packed integer arithmetic; compute and integer graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_pk_sub_u16"
+encoding = "VOP3P; VGPR sources; default half selection; no clamp or negation"
+representation = "8 B; two independent 16-bit results packed in one word"
+lowering = "MSL packed integer arithmetic; compute and integer graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_pk_max_u16"
+encoding = "VOP3P; VGPR sources; default half selection; no clamp or negation"
+representation = "8 B; two independent 16-bit results packed in one word"
+lowering = "MSL packed integer arithmetic; compute and integer graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_pk_min_u16"
+encoding = "VOP3P; VGPR sources; default half selection; no clamp or negation"
+representation = "8 B; two independent 16-bit results packed in one word"
+lowering = "MSL packed integer arithmetic; compute and integer graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"

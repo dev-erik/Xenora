@@ -10,6 +10,10 @@ Guest execution uses original, purpose-built test programs. Commercial Xbox game
 remains unsupported.
 
 ### Changed
+- Added twelve packed 16-bit integer binary forms in VOP3P for compute and integer
+  graphics: multiply, signed/unsigned add/subtract and min/max, and three shifts.
+  The initial subset uses VGPR sources and default half selection; saturation,
+  negation, other source modes and independent acceptance remain open.
 - Decode unmodified VGPR-only VOP3 FP32 addition and multiplication through the
   existing arithmetic path, preserving compute numerical restrictions. Broader
   source/modifier modes and independent acceptance remain open.

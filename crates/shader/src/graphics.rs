@@ -2823,6 +2823,7 @@ fn emit_range(
                 let b = format!("as_type<uint>({right})");
                 let expression = match operator {
                     Binary::Vector(operation) => super::vector_expression(operation, &a, &b),
+                    Binary::Packed(op) => super::packed_expression(op, &a, &b),
                     Binary::Clamped(op) => super::clamped_expression(op, &a, &b),
                     Binary::Add => format!("{a} + {b}"),
                     Binary::And => format!("{a} & {b}"),

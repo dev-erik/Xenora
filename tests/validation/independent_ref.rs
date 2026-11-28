@@ -164,6 +164,7 @@ enum Insn {
     /// VOP2 integer opcode 9-12, 17-20, 30 or 37-39: VDST, SRC0, VSRC1.
     VInt(u32, u8, CmpSrc, u8),
     VUnary(Unary, u8, CmpSrc),
+    VPacked(u8, u8, CmpSrc, CmpSrc),
     VAddF(u8, u8, u8),
     VMulF(u8, u8, u8),
     Load(u8, u8, bool),
@@ -815,7 +816,8 @@ fn lane_step(
     let read_vcc = || sgpr[106].ok_or_else(|| format!("{offset:#x}: uninitialized vcc_lo"));
     // New VOP3 forms capture every source before committing, including SRC2.
     let vop3 = match insn {
-        Insn::VSaturate(_, d, a, b)
+        Insn::VPacked(_, d, a, b)
+        | Insn::VSaturate(_, d, a, b)
         | Insn::VAlias(_, d, a, b)
         | Insn::VMulLow(d, a, b)
         | Insn::VMulHighUnsigned(d, a, b)
@@ -870,6 +872,35 @@ fn lane_step(
         check_destination(dst, lane.pending_read, offset)?;
         let [a, b, c] = values;
         let result = match insn {
+            Insn::VPacked(op, ..) => {
+                let mut result = 0u32;
+                for power in [1u32, 65536] {
+                    let x = (a / power) % 65536;
+                    let y = (b / power) % 65536;
+                    let signed = |v: u32| {
+                        if v >= 32768 {
+                            i64::from(v) - 65536
+                        } else {
+                            i64::from(v)
+                        }
+                    };
+                    let value = match op {
+                        1 => i64::from(x) * i64::from(y),
+                        2 | 10 => i64::from(x) + i64::from(y),
+                        3 | 11 => i64::from(x) - i64::from(y),
+                        4 => i64::from(y) * 2i64.pow(x % 16),
+                        5 => i64::from(y) / 2i64.pow(x % 16),
+                        6 => signed(y).div_euclid(2i64.pow(x % 16)),
+                        7 => signed(x).max(signed(y)),
+                        8 => signed(x).min(signed(y)),
+                        12 => i64::from(x.max(y)),
+                        13 => i64::from(x.min(y)),
+                        _ => unreachable!(),
+                    };
+                    result += value.rem_euclid(65536) as u32 * power;
+                }
+                result
+            }
             Insn::VMulLow(..) | Insn::VMulHighUnsigned(..) | Insn::VMulHighSigned(..) => {
                 let (a0, a1, b0, b1) = (a % 65536, a / 65536, b % 65536, b / 65536);
                 let (p00, p01, p10, p11) = (a0 * b0, a0 * b1, a1 * b0, a1 * b1);
@@ -1590,6 +1621,24 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
     let first = word(code, offset)?;
     let fail = |detail: &str| format!("{offset:#x}: {detail}");
     let opcode = (first / 65536) % 1024;
+    if first / 16777216 == 0xcc && matches!(opcode,1..=8|10..=13) {
+        let second = word(code, offset + 4)?;
+        let a = second % 512;
+        let b = (second / 512) % 512;
+        if (first / 256) % 256 != 64 || second / 262144 != 0x680 || a < 256 || b < 256 {
+            return Err(fail("unsupported packed operand/modifier mode"));
+        }
+        return Ok((
+            Insn::VPacked(
+                opcode as u8,
+                first as u8,
+                CmpSrc::Vgpr(a as u8),
+                CmpSrc::Vgpr(b as u8),
+            ),
+            8,
+        ));
+    }
+
     if first >> 26 == 53
         && matches!(
             opcode,

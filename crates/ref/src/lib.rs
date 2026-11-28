@@ -428,6 +428,8 @@ pub enum ClampOp {
 /// Canonical e64 aliases retain two independently decoded generic sources.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum VectorAlias {
+    /// Validated packed binary opcode.
+    Packed(u8),
     Legacy(VectorAlu),
     Integer(VectorInteger),
 }
@@ -839,6 +841,27 @@ pub fn decode(code: &[u8]) -> Result<Vec<DecodedInstruction>, ReferenceError> {
                         src: *a,
                         index: Some(lane as u8),
                     },
+                    8,
+                )
+            }
+            [dst, flags, op @ (1..=8 | 10..=13), 0xcc, a, b, c, d, ..] => {
+                let second = u32::from_le_bytes([*a, *b, *c, *d]);
+                let left = second & 511;
+                let right = (second >> 9) & 511;
+                if *flags != 0x40 || second & 0xfffc0000 != 0x1a000000 || left < 256 || right < 256
+                {
+                    return Err(error(
+                        offset,
+                        "unsupported packed source selection or modifiers",
+                    ));
+                }
+                (
+                    Op::VectorBinaryAlias(
+                        VectorAlias::Packed(*op),
+                        *dst,
+                        CompareSource::Vector(left as u8),
+                        CompareSource::Vector(right as u8),
+                    ),
                     8,
                 )
             }
@@ -2272,6 +2295,30 @@ fn execute_wave(
                                 (0, i64::from(u32::MAX))
                             };
                             result.clamp(low, high) as u32
+                        }
+                        Op::VectorBinaryAlias(VectorAlias::Packed(kind), ..) => {
+                            let mut packed = 0;
+                            for shift in [0, 16] {
+                                let x = (a >> shift) & 65535;
+                                let y = (b >> shift) & 65535;
+                                let sx = x as i16 as i32;
+                                let sy = y as i16 as i32;
+                                let value = match kind {
+                                    1 => x * y,
+                                    2 | 10 => x + y,
+                                    3 | 11 => x.wrapping_sub(y),
+                                    4 => y << (x & 15),
+                                    5 => y >> (x & 15),
+                                    6 => (sy >> (x & 15)) as u32,
+                                    7 => sx.max(sy) as u32,
+                                    8 => sx.min(sy) as u32,
+                                    12 => x.max(y),
+                                    13 => x.min(y),
+                                    _ => unreachable!(),
+                                };
+                                packed |= (value & 65535) << shift;
+                            }
+                            packed
                         }
                         Op::VectorBinaryAlias(VectorAlias::Integer(kind), ..) => kind.apply(a, b),
                         Op::VectorBinaryAlias(VectorAlias::Legacy(kind), ..) => {

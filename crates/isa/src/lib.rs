@@ -77,9 +77,78 @@ impl fmt::Display for VectorSource {
     }
 }
 
+/// Unmodified packed integer arithmetic on two independent 16-bit halves.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
+pub enum PackedBinaryOp {
+    /// `v_pk_mul_lo_u16`.
+    MulU16 = 1,
+    /// `v_pk_add_i16`.
+    AddI16 = 2,
+    /// `v_pk_sub_i16`.
+    SubI16 = 3,
+    /// `v_pk_lshlrev_b16`.
+    LshlB16 = 4,
+    /// `v_pk_lshrrev_b16`.
+    LshrB16 = 5,
+    /// `v_pk_ashrrev_i16`.
+    AshrI16 = 6,
+    /// `v_pk_max_i16`.
+    MaxI16 = 7,
+    /// `v_pk_min_i16`.
+    MinI16 = 8,
+    /// `v_pk_add_u16`.
+    AddU16 = 10,
+    /// `v_pk_sub_u16`.
+    SubU16 = 11,
+    /// `v_pk_max_u16`.
+    MaxU16 = 12,
+    /// `v_pk_min_u16`.
+    MinU16 = 13,
+}
+impl PackedBinaryOp {
+    /// Select a supported packed binary opcode.
+    pub const fn from_opcode(op: u8) -> Option<Self> {
+        Some(match op {
+            1 => Self::MulU16,
+            2 => Self::AddI16,
+            3 => Self::SubI16,
+            4 => Self::LshlB16,
+            5 => Self::LshrB16,
+            6 => Self::AshrI16,
+            7 => Self::MaxI16,
+            8 => Self::MinI16,
+            10 => Self::AddU16,
+            11 => Self::SubU16,
+            12 => Self::MaxU16,
+            13 => Self::MinU16,
+            _ => return None,
+        })
+    }
+    /// Assembly mnemonic.
+    pub const fn mnemonic(self) -> &'static str {
+        match self {
+            Self::MulU16 => "v_pk_mul_lo_u16",
+            Self::AddI16 => "v_pk_add_i16",
+            Self::SubI16 => "v_pk_sub_i16",
+            Self::LshlB16 => "v_pk_lshlrev_b16",
+            Self::LshrB16 => "v_pk_lshrrev_b16",
+            Self::AshrI16 => "v_pk_ashrrev_i16",
+            Self::MaxI16 => "v_pk_max_i16",
+            Self::MinI16 => "v_pk_min_i16",
+            Self::AddU16 => "v_pk_add_u16",
+            Self::SubU16 => "v_pk_sub_u16",
+            Self::MaxU16 => "v_pk_max_u16",
+            Self::MinU16 => "v_pk_min_u16",
+        }
+    }
+}
+
 /// Value-only integer binary operation with two full VOP3 source operands.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum VectorBinaryOp {
+    /// Packed, unmodified low/high halfword arithmetic.
+    Packed(PackedBinaryOp),
     /// Existing registry arithmetic semantics.
     Alu(VectorAluOp),
     /// Unclamped signed subtraction; wrapping bits, no carry-in or carry-out.
@@ -103,6 +172,7 @@ impl VectorBinaryOp {
     /// Canonical e64 assembly mnemonic.
     pub const fn assembly_name(self) -> &'static str {
         match self {
+            Self::Packed(op) => op.mnemonic(),
             Self::Alu(VectorAluOp::MulI32I24) => "v_mul_i32_i24_e64",
             Self::Alu(VectorAluOp::MulHiI32I24) => "v_mul_hi_i32_i24_e64",
             Self::Alu(VectorAluOp::MulU32U24) => "v_mul_u32_u24_e64",
