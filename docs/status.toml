@@ -2469,7 +2469,7 @@ llvm = "three-way passed"
 
 [[instruction]]
 form = "v_mad_u32_u16"
-encoding = "VOP3; checked sources with width-dependent inline bits; zero modifiers and bounded multiplicand literals"
+encoding = "VOP3; checked sources with width-dependent inline bits; zero modifiers; full32 shared literals with operand-specific widths (extension review pending)"
 representation = "8 B or 12 B with shared literal"
 lowering = "MSL low-halfword multiplication and full-word wrapping accumulation; compute and graphics"
 reference = "implemented"
@@ -2481,7 +2481,7 @@ llvm = "three-way passed"
 
 [[instruction]]
 form = "v_mad_i32_i16"
-encoding = "VOP3; checked sources with width-dependent inline bits; zero modifiers and bounded multiplicand literals"
+encoding = "VOP3; checked sources with width-dependent inline bits; zero modifiers; full32 shared literals with operand-specific widths (extension review pending)"
 representation = "8 B or 12 B with shared literal"
 lowering = "MSL low-halfword multiplication and full-word wrapping accumulation; compute and graphics"
 reference = "implemented"

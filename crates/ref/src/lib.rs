@@ -1413,13 +1413,6 @@ fn decode_vop3_integer(bytes: &[u8], offset: usize) -> Result<(Op, usize), Refer
     if literal && bytes.len() < 12 {
         return Err(error(offset, "truncated VOP3 literal"));
     }
-    // High literal halves remain a deferred subset, not architecturally invalid.
-    if matches!(opcode, 883 | 885)
-        && raw[..2].contains(&255)
-        && u32::from_le_bytes(bytes[8..12].try_into().unwrap()) > 0xffff
-    {
-        return Err(error(offset, "unsupported MAD16 high literal half"));
-    }
     let mut args = [CompareSource::Immediate(0); 3];
     for (i, &src) in active.iter().enumerate() {
         args[i] = decode_vector_source(

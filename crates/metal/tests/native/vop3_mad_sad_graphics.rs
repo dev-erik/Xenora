@@ -483,34 +483,6 @@ fn mad16_source_aliases_scalar_legal_literals_and_shared_literal_pixels() {
     }
 }
 
-#[test]
-fn mad16_graphics_strict_multiplicand_source_contract_rejections() {
-    // These are admission checks for the initial subset, not claims that the
-    // excluded encodings are invalid on AMD hardware. Keep SRC2 full32 literals
-    // covered positively above; only multiplicand literal values are bounded.
-    let mut types = GraphicsPipelineTypes::default();
-    types.colors[0] = GraphicsExportType::Uint;
-    for op in [883, 885] {
-        for position in 0..2 {
-            for literal in [0x00010000, 0x80000000, 0xffffffff] {
-                let mut source = [264, 265, 266];
-                source[position] = 255;
-                let code = pixel(op, 11, source, Some(literal), false);
-                assert!(
-                    compile_graphics_pipeline_typed(Architecture::Gfx1030, VS, &code, types)
-                        .is_err(),
-                    "op={op} position={position} overwide literal={literal:08x}",
-                );
-            }
-        }
-        let code = pixel(op, 11, [255; 3], Some(0x00010000), false);
-        assert!(
-            compile_graphics_pipeline_typed(Architecture::Gfx1030, VS, &code, types).is_err(),
-            "op={op} shared literal is also a multiplicand",
-        );
-    }
-}
-
 // Table 20 and p185: columns are unsigned/signed HALF times one,
 // FP32 raw addend plus one, and unsigned/signed HALF squared plus FP32.
 // These fixed answers do not call either evaluator or a production table.
@@ -709,4 +681,83 @@ fn perm_b32_each_sign_selector_is_independent() {
             vec![want.to_le_bytes().to_vec()]
         );
     }
+}
+
+// Fixed source-width expectations; unselected operands are 2,3,5.
+const MAD16_WIDE_GRAPHICS_ANSWERS: &[(u32, [u32; 7], [u32; 7])] = &[
+    (
+        0xffff8000,
+        [
+            0x00018005, 0x00010005, 0x40000005, 0xffff8006, 0x00010000, 0x00008000, 0x3fff8000,
+        ],
+        [
+            0xfffe8005, 0xffff0005, 0x40000005, 0xffff8006, 0xfffe0000, 0xfffe8000, 0x3fff8000,
+        ],
+    ),
+    (
+        0xffffffff,
+        [
+            0x00030002, 0x00020003, 0xfffe0006, 0x00000005, 0x0002fffc, 0x0001fffd, 0xfffe0000,
+        ],
+        [
+            0x00000002, 0x00000003, 0x00000006, 0x00000005, 0xfffffffc, 0xfffffffd, 0x00000000,
+        ],
+    ),
+    (
+        0x12345678,
+        [
+            0x0001036d, 0x0000acf5, 0x1d34d845, 0x1234567e, 0x123559e0, 0x12350368, 0x2f692eb8,
+        ],
+        [
+            0x0001036d, 0x0000acf5, 0x1d34d845, 0x1234567e, 0x123559e0, 0x12350368, 0x2f692eb8,
+        ],
+    ),
+    (
+        0x80000000,
+        [
+            0x00000005, 0x00000005, 0x00000005, 0x80000006, 0x80000000, 0x80000000, 0x80000000,
+        ],
+        [
+            0x00000005, 0x00000005, 0x00000005, 0x80000006, 0x80000000, 0x80000000, 0x80000000,
+        ],
+    ),
+    (
+        0x00010000,
+        [
+            0x00000005, 0x00000005, 0x00000005, 0x00010006, 0x00010000, 0x00010000, 0x00010000,
+        ],
+        [
+            0x00000005, 0x00000005, 0x00000005, 0x00010006, 0x00010000, 0x00010000, 0x00010000,
+        ],
+    ),
+];
+
+#[test]
+fn mad16_full_word_shared_literals_and_aliases() {
+    let gpu = NativeCompute::new().unwrap();
+    let mut count = 0;
+    for &(literal, unsigned, signed) in MAD16_WIDE_GRAPHICS_ANSWERS {
+        for (op, answers) in [(883, unsigned), (885, signed)] {
+            for mask in 1..8 {
+                let mut sources = [264, 265, 266];
+                for (i, source) in sources.iter_mut().enumerate() {
+                    if mask & (1 << i) != 0 {
+                        *source = 255;
+                    }
+                }
+                for dst in [8, 9, 10, 11] {
+                    assert_eq!(
+                        render(
+                            &gpu,
+                            &pixel(op, dst, sources, Some(literal), false),
+                            [2, 3, 5, 0, 0, 0, 0, 0]
+                        ),
+                        vec![answers[mask - 1].to_le_bytes().to_vec()]
+                    );
+                    count += 1;
+                }
+            }
+        }
+    }
+    assert_eq!(count, 280);
 }

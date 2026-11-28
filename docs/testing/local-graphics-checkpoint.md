@@ -1666,3 +1666,47 @@ in `typed_attachments.rs`, and a literal unwrap in `inline_float_sources.rs`.
 The required default-feature lint check passed. A follow-up simplified those
 test declarations and initializers without changing expectations; the all-feature
 Clippy check then passed too. The affected native tests were rerun separately.
+
+
+## Stage 3.1 increment: full-word MAD16 literals
+
+28 November 2026. Removed a conservative decoder/reference restriction that
+rejected shared literals above `0xffff` for `V_MAD_U32_U16` and `V_MAD_I32_I16`.
+LLVM emits such literals for valid negative operands: for example, `-32768`
+produces the literal word `0xffff8000`. Each multiplicand uses its low 16 bits;
+SRC2 retains the full 32-bit word even when sharing the same literal.
+The existing arithmetic lowering already implements these widths.
+
+The contract follows AMD RDNA2 section 6.2 and p185, with encoding corroboration
+from native LLVM. Added fixed answers cover five full-word literals in all seven
+shared-source combinations, destination aliases including v255, and full, sparse
+and empty EXEC. Existing modifier, scalar-bus, truncation and initialization
+checks remain. An original assembled fixture reproduces the negative shared
+literal with a varying multiplicand.
+
+Local validation:
+
+- CPU regressions: **917 passed, 0 failed, 67 ignored**; ignores are not evidence.
+- MAD16 native compute: **1,176 dispatches**, including **840 new combination
+  cases** and the new assembled fixture. Both GPU validation layers were enabled.
+- MAD16 native graphics: **400 exact integer readbacks**, including **280 new
+  shared-literal/alias cases**; four test functions passed without skips.
+- Decoder suite: seven tests passed, including **174 exact LLVM encoding rows**.
+- A deliberate decoder mutation truncating the shared accumulator literal failed
+  at a native graphics readback assertion. The source was restored and all four
+  MAD16 graphics tests passed again.
+
+The extension awaits independent review. Prior accepted bounded evidence remains
+historical; it does not automatically accept these added operand modes.
+No decoded count changes: S3.1 remains 166/480 with 314 undecoded forms.
+Modifier support, wider arithmetic, floating-point/conversion families and
+cross-stage/numerical acceptance remain open. Logs: `artifacts/s31-mad16-wide/`.
+
+```sh
+export CARGO_BUILD_TARGET=aarch64-apple-darwin CARGO_BUILD_JOBS=2
+export MTL_DEBUG_LAYER=1 MTL_SHADER_VALIDATION=1
+export MTL_SHADER_VALIDATION_REPORT_TO_STDERR=1 MTL_SHADER_VALIDATION_ABORT_ON_FAULT=1
+cargo test --locked -p xenora-semantic-review --test mad16_independent -- --include-ignored
+cargo test --locked -p xenora-metal --features gpu-tests --test native_compute mad16_
+LLVM_BIN="$(brew --prefix llvm)/bin" cargo test --locked -p xenora-decoder --test vop3_mad16 -- --include-ignored
+```

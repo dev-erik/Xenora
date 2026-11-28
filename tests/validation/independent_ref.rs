@@ -1711,10 +1711,6 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
         } else {
             0
         };
-        // Deliberate subset restrictions; no claim these encodings are invalid AMD forms.
-        if matches!(opcode, 883 | 885) && raw[..2].contains(&255) && literal >= 65536 {
-            return Err(fail("unsupported MAD16 multiplicand constant"));
-        }
         let mut args = [CmpSrc::Imm(0); 3];
         for i in 0..count {
             args[i] = match raw[i] {

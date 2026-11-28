@@ -1496,13 +1496,6 @@ fn vector_integer_vop3(
         op,
         CheckedVectorOp::Ternary(VectorTernaryOp::MadU32U16 | VectorTernaryOp::MadI32I16)
     );
-    // Conservative literal subset, not a hardware-invalidity claim.
-    if mad16 && raw[..2].contains(&255) && literal.is_some_and(|bits| bits > 0xffff) {
-        return Err(unsupported(
-            mnemonic,
-            "multiplicand shared literal must fit the supported unsigned 16-bit subset",
-        ));
-    }
     // Nonliteral selectors use the existing bounded vector-source domain.
     // Every active literal position receives the same single trailing word.
     let mut sources = [VectorSource::Immediate(0); 3];

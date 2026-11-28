@@ -27,6 +27,8 @@ either path. The [changelog](../CHANGELOG.md) records notable changes.
 
 ## Native Metal graphics
 
+- [Full-word MAD16 literal validation](testing/local-graphics-checkpoint.md#stage-31-increment-full-word-mad16-literals) — Negative and shared literals with operand-specific widths, native checks and pending independent review.
+
 - [Signed addition and byte permutation](testing/local-graphics-checkpoint.md#stage-31-increment-signed-addition-and-byte-permutation) — New bounded arithmetic forms, native validation commands and pending independent acceptance.
 
 - [Signed subtraction validation](testing/local-graphics-checkpoint.md#stage-31-increment-signed-subtraction-saturation) — Bounded S3.1 arithmetic, wrapping and saturation cases, with separate review status.

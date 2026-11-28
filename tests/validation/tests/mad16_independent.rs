@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! Handwritten answers from public AMD RDNA2 70648 p185.
-//! Nonzero modifiers and high-half multiplicand literals are deferred subset forms.
+//! Nonzero modifiers remain outside the admitted subset.
 //! https://docs.amd.com/v/u/en-US/rdna2-shader-instruction-set-architecture
 //! Encoding checked against amdgpu_isa_rdna2.xml SHA256
 //! d671ecbc36543674ab59e9b2feffd56718fd2137e7ad913c314f2e2508b9f4f7.
@@ -81,9 +81,6 @@ fn cases() -> Vec<Case> {
         for pos in 0..3 {
             for literal in [false, true] {
                 let values = [a, b, c];
-                if literal && pos < 2 && values[pos] > 0xffff {
-                    continue;
-                }
                 let mut src = [257, 258, 259];
                 let mut body = vec![0x7e0402ff, b, 0x7e0602ff, c];
                 if literal {
@@ -126,7 +123,7 @@ fn cases() -> Vec<Case> {
             });
         }
     }
-    assert_eq!(out.len(), 258);
+    assert_eq!(out.len(), 262);
     out
 }
 // Table 20 and p185: columns are unsigned/signed HALF times one,
@@ -268,20 +265,8 @@ fn native_mad16_compute() {
 }
 
 #[test]
-fn multiplicand_constant_subset_and_full_width_addend() {
+fn width_specific_inline_constants_and_full_width_addend() {
     for op in [UNSIGNED, SIGNED] {
-        for pos in 0..2 {
-            for literal in [0x10000, 0xffffffff] {
-                let mut src = [129, 129, 255];
-                src[pos] = 255;
-                let mut body = instruction(op, 4, src).to_vec();
-                body.push(literal);
-                let code = program(&body, 4);
-                assert!(xenora_ref::decode(&code).is_err());
-                assert!(independent_ref::execute(&code, &[0]).is_err());
-                assert!(compile(Gfx1030, &code).is_err());
-            }
-        }
         // Float inline in the 32-bit addend is raw F32 bits: 1.0 + integer product1.
         check(
             &Case {
@@ -315,4 +300,130 @@ fn fixture_case() -> Case {
 #[test]
 fn assembled_fixture_known_answers() {
     check(&fixture_case(), None);
+}
+
+// Literal, unsigned answers for source masks1..7, signed answers for masks1..7.
+// Unselected source words are 2,3,5. Multiplicands use low16; accumulator uses full32.
+const WIDE_LITERAL_ANSWERS: &[(u32, [u32; 7], [u32; 7])] = &[
+    (
+        0xffff8000,
+        [
+            0x00018005, 0x00010005, 0x40000005, 0xffff8006, 0x00010000, 0x00008000, 0x3fff8000,
+        ],
+        [
+            0xfffe8005, 0xffff0005, 0x40000005, 0xffff8006, 0xfffe0000, 0xfffe8000, 0x3fff8000,
+        ],
+    ),
+    (
+        0xffffffff,
+        [
+            0x00030002, 0x00020003, 0xfffe0006, 0x00000005, 0x0002fffc, 0x0001fffd, 0xfffe0000,
+        ],
+        [
+            0x00000002, 0x00000003, 0x00000006, 0x00000005, 0xfffffffc, 0xfffffffd, 0x00000000,
+        ],
+    ),
+    (
+        0x12345678,
+        [
+            0x0001036d, 0x0000acf5, 0x1d34d845, 0x1234567e, 0x123559e0, 0x12350368, 0x2f692eb8,
+        ],
+        [
+            0x0001036d, 0x0000acf5, 0x1d34d845, 0x1234567e, 0x123559e0, 0x12350368, 0x2f692eb8,
+        ],
+    ),
+    (
+        0x80000000,
+        [
+            0x00000005, 0x00000005, 0x00000005, 0x80000006, 0x80000000, 0x80000000, 0x80000000,
+        ],
+        [
+            0x00000005, 0x00000005, 0x00000005, 0x80000006, 0x80000000, 0x80000000, 0x80000000,
+        ],
+    ),
+    (
+        0x00010000,
+        [
+            0x00000005, 0x00000005, 0x00000005, 0x00010006, 0x00010000, 0x00010000, 0x00010000,
+        ],
+        [
+            0x00000005, 0x00000005, 0x00000005, 0x00010006, 0x00010000, 0x00010000, 0x00010000,
+        ],
+    ),
+];
+fn wide_literal_cases() -> Vec<Case> {
+    let mut out = Vec::new();
+    for &(literal, unsigned, signed) in WIDE_LITERAL_ANSWERS {
+        for (op, answers) in [(UNSIGNED, unsigned), (SIGNED, signed)] {
+            for mask in 1..8 {
+                let mut sources = [257, 258, 259];
+                for (i, source) in sources.iter_mut().enumerate() {
+                    if mask & (1 << i) != 0 {
+                        *source = 255;
+                    }
+                }
+                for dst in [1, 2, 3, 255] {
+                    for exec in [u32::MAX, 0x80000005, 0] {
+                        let old = match dst {
+                            1 => 2,
+                            2 => 3,
+                            3 => 5,
+                            _ => 0x13579bdf,
+                        };
+                        let mut body = vec![0x7e040283, 0x7e060285];
+                        if dst == 255 {
+                            body.extend([0x7ffe02ff, old]);
+                        }
+                        body.extend([0xbefe03ff, exec]);
+                        body.extend(instruction(op, dst, sources));
+                        body.extend([literal, 0xbefe03c1]);
+                        out.push(Case {
+                            code: program(&body, dst),
+                            input: vec![2; 35],
+                            expected: (0..35)
+                                .map(|i| {
+                                    if exec & (1 << (i % 32)) != 0 {
+                                        answers[mask - 1]
+                                    } else {
+                                        old
+                                    }
+                                })
+                                .collect(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+    assert_eq!(out.len(), 840);
+    out
+}
+#[test]
+fn shared_full_word_literals_keep_operand_widths() {
+    for case in wide_literal_cases() {
+        check(&case, None);
+    }
+}
+#[test]
+#[ignore = "requires native Metal validation"]
+fn native_mad16_wide_literals() {
+    assert_eq!(std::env::var("MTL_DEBUG_LAYER").as_deref(), Ok("1"));
+    assert_eq!(std::env::var("MTL_SHADER_VALIDATION").as_deref(), Ok("1"));
+    let gpu = xenora_metal::NativeCompute::new().unwrap();
+    for case in wide_literal_cases() {
+        check(&case, Some(&gpu));
+    }
+    check(&wide_literal_fixture(), Some(&gpu));
+}
+
+fn wide_literal_fixture() -> Case {
+    Case {
+        code: include_bytes!("../../../fixtures/rdna2/vop3-mad16-wide-literal.bin").to_vec(),
+        input: vec![0, 1, 0x8000, 0xffff, 0xdead0002],
+        expected: vec![0xffff8000, 0xffff0000, 0x3fff8000, 0, 0xfffe8000],
+    }
+}
+#[test]
+fn assembled_negative_shared_literal_keeps_full_addend() {
+    check(&wide_literal_fixture(), None);
 }

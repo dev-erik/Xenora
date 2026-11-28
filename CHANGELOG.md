@@ -10,6 +10,9 @@ Guest execution uses original, purpose-built test programs. Commercial Xbox game
 remains unsupported.
 
 ### Changed
+- Accept full-word shared literals for MAD16, including negative literals emitted
+  by LLVM. Multiplicands use low16 bits while the accumulator retains all32 bits;
+  the expanded operand domain awaits independent acceptance.
 - Simplified existing native GPU test types and initializers to allow all-feature
   Clippy validation without suppressing lint rules or changing test expectations.
 - Implemented signed saturation for `V_SUB_NC_I32` in compute and graphics;

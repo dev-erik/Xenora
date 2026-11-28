@@ -170,15 +170,6 @@ fn shared_literals_all_positions_truncation_and_stream_boundaries() {
                         *value = 255;
                     }
                 }
-                if mask & 3 != 0 && literal > 0xffff {
-                    assert!(matches!(
-                        decode_at(Gfx1030, &code(op, 255, raw, literal), 0)
-                            .unwrap_err()
-                            .kind,
-                        DecodeErrorKind::UnsupportedForm { .. }
-                    ));
-                    continue;
-                }
                 let len = if mask == 0 { 8 } else { 12 };
                 let bytes = code(op, 255, raw, literal);
                 for cut in 0..len {
@@ -303,7 +294,25 @@ fn llvm_exact_source_matrix() {
             ));
         }
     }
-    assert_eq!(rows.len(), 146);
+    for (op, name) in [(883, "v_mad_u32_u16"), (885, "v_mad_i32_i16")] {
+        for literal in [-32768i32, -17] {
+            for mask in 1..8 {
+                let mut raw = [257, 258, 259];
+                let mut operands = ["v1".to_string(), "v2".to_string(), "v3".to_string()];
+                for i in 0..3 {
+                    if mask & (1 << i) != 0 {
+                        raw[i] = 255;
+                        operands[i] = literal.to_string();
+                    }
+                }
+                rows.push((
+                    format!("{name} v5, {}", operands.join(", ")),
+                    code(op, 5, raw, literal as u32),
+                ));
+            }
+        }
+    }
+    assert_eq!(rows.len(), 174);
     let llvm = std::env::var_os("LLVM_BIN")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| "/opt/homebrew/opt/llvm/bin".into())
@@ -365,7 +374,7 @@ fn position_specific_literal_boundaries_and_full_accumulator() {
                     }
                 }
                 let result = decode_at(Gfx1030, &code(op, 5, raw, literal), 0);
-                assert_eq!(result.is_ok(), mask & 3 == 0 || literal <= 0xffff);
+                assert!(result.is_ok());
             }
         }
     }

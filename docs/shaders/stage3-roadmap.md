@@ -12,7 +12,9 @@ source and modifier restrictions.
 
 The counts include the validated bounded MAD_U32_U16/MAD_I32_I16 pair.
 Position-specific inline constants expand these existing forms without increasing
-the decoded count. Modifiers and broad multiplicand literal support remain open.
+the decoded count. Full32 shared literals now retain low16 multiplicands and a
+full32 accumulator, including negative literals emitted by LLVM. This extension
+awaits independent acceptance; modifiers remain open.
 
 The subsequent signed-subtraction increment adds bounded `V_SUB_NC_I32`
 (opcode 886). Signed saturation is now implemented and awaits independent review;
