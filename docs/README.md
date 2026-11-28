@@ -88,6 +88,7 @@ either path. The [changelog](../CHANGELOG.md) records notable changes.
 
 - [Engineering progress](progress.md) — Verification commands, metric definitions, and open release gates.
 - [Integrated Stage 2 acceptance](testing/stage2-integrated-acceptance.md) — Seven resource contracts, cross-workstream evidence and final acceptance limits.
+- [Packed multiply-add validation](testing/local-graphics-checkpoint.md#stage-31-batch-packed-multiply-add) — Default packed halves, native readback evidence and reproduction commands.
 - [Local graphics checkpoint](testing/local-graphics-checkpoint.md) — Bounded acceptance, reproducible gates, local results and evidence limitations.
 - [Mixed-width multiply-add validation](testing/local-graphics-checkpoint.md#stage-31-increment-width-dependent-mad16-inline-constants) — S3.1 MAD16 inline widths, native readback evidence and reproduction commands.
 - [XOR-add and packed-byte arithmetic validation](testing/local-graphics-checkpoint.md#stage-31-increment-xor-add-byte-average-and-masked-differences) — Bounded S3.1 native compute/graphics evidence and reproduction commands.

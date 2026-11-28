@@ -164,6 +164,7 @@ enum Insn {
     /// VOP2 integer opcode 9-12, 17-20, 30 or 37-39: VDST, SRC0, VSRC1.
     VInt(u32, u8, CmpSrc, u8),
     VUnary(Unary, u8, CmpSrc),
+    VPackedMad(u8, CmpSrc, CmpSrc, CmpSrc),
     VPacked(u8, u8, CmpSrc, CmpSrc),
     VAddF(u8, u8, u8),
     VMulF(u8, u8, u8),
@@ -824,7 +825,8 @@ fn lane_step(
         | Insn::VMask(d, a, b)
         | Insn::VCountAdd(d, a, b)
         | Insn::VMulHighSigned(d, a, b) => Some((d, [a, b, CmpSrc::Imm(0)])),
-        Insn::VMadSad(_, _, d, a, b, c)
+        Insn::VPackedMad(d, a, b, c)
+        | Insn::VMadSad(_, _, d, a, b, c)
         | Insn::VLeastSigned(d, a, b, c)
         | Insn::VLeastUnsigned(d, a, b, c)
         | Insn::VGreatestSigned(d, a, b, c)
@@ -872,6 +874,16 @@ fn lane_step(
         check_destination(dst, lane.pending_read, offset)?;
         let [a, b, c] = values;
         let result = match insn {
+            Insn::VPackedMad(..) => {
+                let mut result = 0;
+                for power in [1u32, 65536] {
+                    let x = (a / power) % 65536;
+                    let y = (b / power) % 65536;
+                    let z = (c / power) % 65536;
+                    result += ((u64::from(x) * u64::from(y) + u64::from(z)) % 65536) as u32 * power;
+                }
+                result
+            }
             Insn::VPacked(op, ..) => {
                 let mut result = 0u32;
                 for power in [1u32, 65536] {
@@ -1621,6 +1633,22 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
     let first = word(code, offset)?;
     let fail = |detail: &str| format!("{offset:#x}: {detail}");
     let opcode = (first / 65536) % 1024;
+    if first / 16777216 == 0xcc && matches!(opcode, 0 | 9) {
+        let second = word(code, offset + 4)?;
+        let src = [second % 512, (second / 512) % 512, (second / 262144) % 512];
+        if (first / 256) % 256 != 64 || second / 134217728 != 3 || src.iter().any(|s| *s < 256) {
+            return Err(fail("unsupported packed MAD selection/modifiers"));
+        }
+        return Ok((
+            Insn::VPackedMad(
+                first as u8,
+                CmpSrc::Vgpr(src[0] as u8),
+                CmpSrc::Vgpr(src[1] as u8),
+                CmpSrc::Vgpr(src[2] as u8),
+            ),
+            8,
+        ));
+    }
     if first / 16777216 == 0xcc && matches!(opcode,1..=8|10..=13) {
         let second = word(code, offset + 4)?;
         let a = second % 512;

@@ -2718,3 +2718,27 @@ gpu = "acceptance pending"
 recognized = true
 decoded = true
 llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_pk_mad_i16"
+encoding = "VOP3P; VGPR sources; default half selection; no clamp or negation"
+representation = "8 B; two independent 16-bit results packed in one word"
+lowering = "MSL packed multiply-add arithmetic; compute and integer graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_pk_mad_u16"
+encoding = "VOP3P; VGPR sources; default half selection; no clamp or negation"
+representation = "8 B; two independent 16-bit results packed in one word"
+lowering = "MSL packed multiply-add arithmetic; compute and integer graphics"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"

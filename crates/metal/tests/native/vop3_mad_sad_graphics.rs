@@ -957,3 +957,33 @@ fn packed_binary_graphics() {
         }
     }
 }
+
+const PACKED_MAD_ROWS: &[(u32, u32, u32, u32)] = &[
+    (0x0001ffff, 0xffff0001, 0x00010001, 0x00000000),
+    (0x80007fff, 0x7fff8000, 0xffff8000, 0x7fff0000),
+    (0xffffffff, 0xffffffff, 0xffffffff, 0x00000000),
+    (0x80008000, 0x80008000, 0x7fff7fff, 0x7fff7fff),
+    (0x00020003, 0x00040005, 0x00060007, 0x000e0016),
+    (0x00000000, 0xffffffff, 0x12345678, 0x12345678),
+    (0x1234abcd, 0xfedc5678, 0x13579bdf, 0x500701f7),
+    (0xffff0001, 0x0001ffff, 0x00010001, 0x00000000),
+];
+
+#[test]
+fn packed_mad_graphics() {
+    let gpu = NativeCompute::new().unwrap();
+    for &(a, b, c, want) in PACKED_MAD_ROWS {
+        for op in [0u32, 9] {
+            for dst in [8, 9, 10, 255] {
+                let mut ps = pixel(0, dst, [264, 265, 266], None, false);
+                ps[16..20].copy_from_slice(&(0xcc004000 | op << 16 | dst).to_le_bytes());
+                ps[20..24]
+                    .copy_from_slice(&(0x18000000u32 | 264 | 265 << 9 | 266 << 18).to_le_bytes());
+                assert_eq!(
+                    render(&gpu, &ps, [a, b, c, 0, 0, 0, 0, 0]),
+                    vec![want.to_le_bytes().to_vec()]
+                );
+            }
+        }
+    }
+}

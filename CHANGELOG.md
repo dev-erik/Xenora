@@ -10,6 +10,9 @@ Guest execution uses original, purpose-built test programs. Commercial Xbox game
 remains unsupported.
 
 ### Changed
+- Added packed signed/unsigned 16-bit multiply-add for default VGPR halves in
+  compute and integer graphics, preserving wrapping and inactive destinations.
+  Other operand/modifier modes and independent acceptance remain open.
 - Added twelve packed 16-bit integer binary forms in VOP3P for compute and integer
   graphics: multiply, signed/unsigned add/subtract and min/max, and three shifts.
   The initial subset uses VGPR sources and default half selection; saturation,

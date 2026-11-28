@@ -49,7 +49,7 @@ fn source_domains_lengths_and_modifiers() {
             assert!(decode(Gfx1030, &changed).is_err(), "op={op} bit={bit}");
         }
     }
-    for op in [0, 9, 14, 15, 127] {
+    for op in [14, 15, 127] {
         assert!(decode(Gfx1030, &code(op, 5, 257, 258)).is_err());
     }
 }

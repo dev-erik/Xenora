@@ -1910,3 +1910,38 @@ cargo test --locked -p xenora-semantic-review --test packed_binary -- --include-
 cargo test --locked -p xenora-metal --features gpu-tests --test native_compute packed_binary_graphics
 LLVM_BIN="$(brew --prefix llvm)/bin" cargo test --locked -p xenora-decoder --test packed_binary --test gfx1030 -- --include-ignored --nocapture
 ```
+
+## Stage 3.1 batch: packed multiply-add
+
+`V_PK_MAD_I16` and `V_PK_MAD_U16` now execute on compute and integer graphics
+with default VGPR half selections. Each half wraps independently to 16 bits;
+full, sparse and empty EXEC preserve the existing destination contract. Scalar
+and literal sources, saturation, negation and other half selections remain
+unsupported. Semantics derive from the public AMD RDNA2 guide §12.10, not Xbox
+hardware. Independent acceptance remains pending.
+
+Local verification on Apple M4 Max:
+
+- 192 native compute cases (two forms, eight fixed triples, four destination
+  choices, three EXEC masks), each spanning 35 invocations.
+- 64 native integer graphics readbacks, including all three source aliases and
+  v255. Both Metal validation layers enabled.
+- Six exact LLVM encoding rows; exhaustive 9-bit selector-domain checks on all
+  three sources, truncation, and modifier rejection in all three decoders.
+- Affected CPU suites: 978 passed, zero failed, 80 ignored. Ignored tests are not
+  GPU evidence. Full LLVM fixture oracle: 1,403 comparisons, 205 canonical IR
+  mnemonics, 34 tests passed.
+- Removing the accumulator caused a native readback failure. Restoring it passed
+  the graphics regression. All-feature Clippy passed.
+
+Logs: `artifacts/s31-packed-mad/`. Current S3.1 inventory: **184/480 decoded**,
+**296 undecoded**. This is bounded executable coverage, not stage completion.
+
+```sh
+export CARGO_BUILD_TARGET=aarch64-apple-darwin CARGO_BUILD_JOBS=2
+export MTL_DEBUG_LAYER=1 MTL_SHADER_VALIDATION=1
+export MTL_SHADER_VALIDATION_REPORT_TO_STDERR=1 MTL_SHADER_VALIDATION_ABORT_ON_FAULT=1
+cargo test --locked -p xenora-semantic-review --test packed_mad -- --include-ignored
+cargo test --locked -p xenora-metal --features gpu-tests --test native_compute packed_mad_graphics
+cargo test --locked -p xenora-decoder --test packed_mad --test gfx1030 -- --include-ignored
+```

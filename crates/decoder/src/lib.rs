@@ -46,7 +46,7 @@ const fn concat_forms<const N: usize>() -> [(&'static str, EncodingFamily); N] {
 }
 
 /// Decoded forms not yet described by the semantic registry.
-const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 151] = [
+const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 153] = [
     ("DS_PERMUTE_B32", EncodingFamily::Ds),
     ("DS_BPERMUTE_B32", EncodingFamily::Ds),
     ("DS_SWIZZLE_B32", EncodingFamily::Ds),
@@ -160,6 +160,8 @@ const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 151] = [
     ("V_BFI_B32", EncodingFamily::Vop3),
     ("V_ADD3_U32", EncodingFamily::Vop3),
     ("V_AND_OR_B32", EncodingFamily::Vop3),
+    ("V_PK_MAD_I16", EncodingFamily::Vop3p),
+    ("V_PK_MAD_U16", EncodingFamily::Vop3p),
     ("V_PK_MUL_LO_U16", EncodingFamily::Vop3p),
     ("V_PK_ADD_I16", EncodingFamily::Vop3p),
     ("V_PK_SUB_I16", EncodingFamily::Vop3p),
@@ -380,6 +382,34 @@ fn unsupported(mnemonic: &'static str, detail: &'static str) -> DecodeErrorKind 
 
 fn decode_gfx1030(bytes: &[u8], offset: usize) -> Result<(Instruction, u8), DecodeErrorKind> {
     let first = word(bytes, 4)?;
+    if matches!(first >> 16, 0xcc00 | 0xcc09) {
+        let second = word(bytes, 8)?;
+        let sources = [second & 511, (second >> 9) & 511, (second >> 18) & 511];
+        let op = if first >> 16 == 0xcc00 {
+            VectorTernaryOp::PackedMadI16
+        } else {
+            VectorTernaryOp::PackedMadU16
+        };
+        if first & 0xff00 != 0x4000
+            || second & 0xf8000000 != 0x18000000
+            || sources.iter().any(|s| *s < 256)
+        {
+            return Err(unsupported(
+                op.mnemonic(),
+                "expected unmodified packed VGPR halves",
+            ));
+        }
+        return Ok((
+            Instruction::VectorTernary {
+                op,
+                dst: first as u8,
+                src0: VectorSource::Register(sources[0] as u8),
+                src1: VectorSource::Register(sources[1] as u8),
+                src2: VectorSource::Register(sources[2] as u8),
+            },
+            8,
+        ));
+    }
     if first & 0xff800000 == 0xcc000000
         && let Some(op) = PackedBinaryOp::from_opcode(((first >> 16) & 127) as u8)
     {

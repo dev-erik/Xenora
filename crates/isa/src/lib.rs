@@ -309,6 +309,10 @@ impl VectorBitBinaryOp {
 /// Value-only three-source 32-bit vector operation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum VectorTernaryOp {
+    /// Packed signed 16-bit multiply-add with wrapping halfword results.
+    PackedMadI16,
+    /// Packed unsigned 16-bit multiply-add with wrapping halfword results.
+    PackedMadU16,
     /// `v_bfi_b32`.
     BfiB32,
     /// `v_add3_u32`.
@@ -363,6 +367,8 @@ impl VectorTernaryOp {
     /// Returns the unmodified VOP3 mnemonic.
     pub const fn mnemonic(self) -> &'static str {
         match self {
+            Self::PackedMadI16 => "v_pk_mad_i16",
+            Self::PackedMadU16 => "v_pk_mad_u16",
             Self::BfiB32 => "v_bfi_b32",
             Self::Add3U32 => "v_add3_u32",
             Self::AndOrB32 => "v_and_or_b32",

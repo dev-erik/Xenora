@@ -163,6 +163,8 @@ pub enum BitBinary {
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum VectorTernary {
+    PackedMadSigned,
+    PackedMadUnsigned,
     MinimumSigned,
     MinimumUnsigned,
     MaximumSigned,
@@ -841,6 +843,30 @@ pub fn decode(code: &[u8]) -> Result<Vec<DecodedInstruction>, ReferenceError> {
                         src: *a,
                         index: Some(lane as u8),
                     },
+                    8,
+                )
+            }
+            [dst, flags, op @ (0 | 9), 0xcc, a, b, c, d, ..] => {
+                let second = u32::from_le_bytes([*a, *b, *c, *d]);
+                let src = [second & 511, (second >> 9) & 511, (second >> 18) & 511];
+                if *flags != 0x40
+                    || second & 0xf8000000 != 0x18000000
+                    || src.iter().any(|s| *s < 256)
+                {
+                    return Err(error(offset, "unsupported packed MAD operand or modifier"));
+                }
+                (
+                    Op::VectorTernary(
+                        if *op == 0 {
+                            VectorTernary::PackedMadSigned
+                        } else {
+                            VectorTernary::PackedMadUnsigned
+                        },
+                        *dst,
+                        CompareSource::Vector(src[0] as u8),
+                        CompareSource::Vector(src[1] as u8),
+                        CompareSource::Vector(src[2] as u8),
+                    ),
                     8,
                 )
             }
@@ -2455,6 +2481,29 @@ fn execute_wave(
                         }
                         Op::VectorTernary(VectorTernary::AlignBits, ..) => {
                             (((u64::from(a) << 32) | u64::from(b)) >> (c & 31)) as u32
+                        }
+                        Op::VectorTernary(
+                            VectorTernary::PackedMadSigned | VectorTernary::PackedMadUnsigned,
+                            ..,
+                        ) => {
+                            let mut result = 0;
+                            for shift in [0, 16] {
+                                let x = (a >> shift) & 65535;
+                                let y = (b >> shift) & 65535;
+                                let z = (c >> shift) & 65535;
+                                let value = if matches!(
+                                    op,
+                                    Op::VectorTernary(VectorTernary::PackedMadSigned, ..)
+                                ) {
+                                    (i64::from(x as i16) * i64::from(y as i16)
+                                        + i64::from(z as i16))
+                                        as u32
+                                } else {
+                                    x * y + z
+                                };
+                                result |= (value & 65535) << shift;
+                            }
+                            result
                         }
                         Op::VectorTernary(VectorTernary::AlignBytes, ..) => {
                             ((u64::from(a) << 32) | u64::from(b))
