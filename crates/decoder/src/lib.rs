@@ -46,7 +46,7 @@ const fn concat_forms<const N: usize>() -> [(&'static str, EncodingFamily); N] {
 }
 
 /// Decoded forms not yet described by the semantic registry.
-const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 137] = [
+const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 139] = [
     ("DS_PERMUTE_B32", EncodingFamily::Ds),
     ("DS_BPERMUTE_B32", EncodingFamily::Ds),
     ("DS_SWIZZLE_B32", EncodingFamily::Ds),
@@ -161,6 +161,8 @@ const HANDWRITTEN_FORMS: [(&str, EncodingFamily); 137] = [
     ("V_ADD3_U32", EncodingFamily::Vop3),
     ("V_AND_OR_B32", EncodingFamily::Vop3),
     ("V_ADD_F32", EncodingFamily::Vop2),
+    ("V_ADD_F32", EncodingFamily::Vop3),
+    ("V_MUL_F32", EncodingFamily::Vop3),
     ("V_ADD_NC_U32", EncodingFamily::Vop3),
     ("V_AND_B32", EncodingFamily::Vop2),
     ("V_ASHRREV_I32", EncodingFamily::Vop2),
@@ -983,6 +985,37 @@ fn decode_gfx1030(bytes: &[u8], offset: usize) -> Result<(Instruction, u8), Deco
         let src1 = ((first >> 9) & 0xff) as u8;
         let (src0, len) = vector_src0(first, bytes, "v_xor_b32_e32")?;
         return Ok((Instruction::VectorXorB32 { dst, src0, src1 }, len));
+    }
+    if matches!(first & 0xffff0000, 0xd5030000 | 0xd5080000) {
+        let second = word(bytes, 8)?;
+        let multiply = first & 0xffff0000 == 0xd5080000;
+        let mnemonic = if multiply {
+            "v_mul_f32_e64"
+        } else {
+            "v_add_f32_e64"
+        };
+        let a = second & 511;
+        let b = (second >> 9) & 511;
+        if first & 0xff00 != 0
+            || second >> 27 != 0
+            || (second >> 18) & 511 != 128
+            || a < 256
+            || b < 256
+        {
+            return Err(unsupported(
+                mnemonic,
+                "expected unmodified VGPR sources and unused SRC2 inline zero",
+            ));
+        }
+        let (dst, src0, src1) = (first as u8, a as u8, b as u8);
+        return Ok((
+            if multiply {
+                Instruction::VectorMulF32 { dst, src0, src1 }
+            } else {
+                Instruction::VectorAddF32 { dst, src0, src1 }
+            },
+            8,
+        ));
     }
     if V_ADD_F32.matches(first) {
         let (dst, src0, src1) = vop2_registers(first, "v_add_f32_e32")?;

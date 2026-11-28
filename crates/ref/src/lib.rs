@@ -842,6 +842,35 @@ pub fn decode(code: &[u8]) -> Result<Vec<DecodedInstruction>, ReferenceError> {
                     8,
                 )
             }
+            [dst, flags, op @ (3 | 8), 0xd5, a, b, c, d, ..] => {
+                let second = u32::from_le_bytes([*a, *b, *c, *d]);
+                let left = second & 511;
+                let right = (second >> 9) & 511;
+                if *flags != 0
+                    || second >> 27 != 0
+                    || (second >> 18) & 511 != 128
+                    || left < 256
+                    || right < 256
+                {
+                    return Err(error(
+                        offset,
+                        "floating VOP3 requires unmodified VGPR sources and canonical SRC2",
+                    ));
+                }
+                (
+                    Op::Vector(
+                        if *op == 3 {
+                            VectorAlu::FloatAdd
+                        } else {
+                            VectorAlu::FloatMultiply
+                        },
+                        *dst,
+                        CompareSource::Vector(left as u8),
+                        right as u8,
+                    ),
+                    8,
+                )
+            }
             [_, _, _, _, ..]
                 if {
                     let first = u32::from_le_bytes(bytes[..4].try_into().unwrap());

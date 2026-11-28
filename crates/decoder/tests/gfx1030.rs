@@ -873,6 +873,7 @@ fn compares_fixture_instructions_against_llvm() {
         include_bytes!("../../../fixtures/rdna2/vop3-word-arithmetic.bin"),
         include_bytes!("../../../fixtures/rdna2/vop3-move.bin"),
         include_bytes!("../../../fixtures/rdna2/vop3-alignbyte.bin"),
+        include_bytes!("../../../fixtures/rdna2/vop3-float.bin"),
         include_bytes!("../../../fixtures/rdna2/vector-compare.bin"),
         high_registers,
         &matrix,
@@ -1169,12 +1170,12 @@ fn distinguishes_llvm_invalid_encodings_from_xenora_subset_rejections() {
         &[0x8008_097c],                                        // SOP2 M0 remains unsupported
         &[0x3803_fefa, 0xff00_e401],                           // OR DPP
         &[0x3803_fef9, 0x0606_0601],                           // OR SDWA
-        &[0xd503_0001, 0x0202_0501],                           // FP ADD e64 remains unsupported
-        &[0x2dff_fefa, 0xff00_e401],                           // Shift DPP
-        &[0x3402_04f9, 0x0606_0601],                           // Shift SDWA
-        &[0xbf8c_3f71],                                        // Different wait counter
-        &[0xbf82_fffe],                                        // Branch before stream
-        &[0xbf82_0001, 0xbf81_0000],                           // Branch to EOF
+        &[0xd503_8001, 0x0202_0501], // FP ADD e64 clamp remains unsupported
+        &[0x2dff_fefa, 0xff00_e401], // Shift DPP
+        &[0x3402_04f9, 0x0606_0601], // Shift SDWA
+        &[0xbf8c_3f71],              // Different wait counter
+        &[0xbf82_fffe],              // Branch before stream
+        &[0xbf82_0001, 0xbf81_0000], // Branch to EOF
         &[0xbf84_0001, 0x7e04_02ff, 0x1234_5678, 0xbf81_0000], // Branch into literal
     ];
     // Former subset rejections now have explicit alias representations.
@@ -1265,6 +1266,9 @@ fn literal_bits(text: &str) -> Option<u32> {
 fn normalize_llvm_assembly(assembly: &str, next_offset: usize) -> String {
     let (mnemonic, operands) = assembly.split_once(' ').unwrap_or((assembly, ""));
     match mnemonic {
+        "v_add_f32_e64" | "v_mul_f32_e64" => {
+            format!("{} {operands}", mnemonic.replace("e64", "e32"))
+        }
         "ds_swizzle_b32" if operands.ends_with(" offset:swizzle(SWAP,16)") => {
             let registers = operands.strip_suffix(" offset:swizzle(SWAP,16)").unwrap();
             format!("{mnemonic} {registers} offset:16415")
@@ -1431,6 +1435,7 @@ fn normalize_llvm_assembly(assembly: &str, next_offset: usize) -> String {
             let (destination, source) = operands.split_once(", ").unwrap();
             let normalized = match source {
                 "1.0" => "0x3f800000".to_owned(),
+                "2.0" => "0x40000000".to_owned(),
                 literal if literal_bits(literal).is_some() => {
                     format!("0x{:x}", literal_bits(literal).unwrap())
                 }

@@ -10,6 +10,9 @@ Guest execution uses original, purpose-built test programs. Commercial Xbox game
 remains unsupported.
 
 ### Changed
+- Decode unmodified VGPR-only VOP3 FP32 addition and multiplication through the
+  existing arithmetic path, preserving compute numerical restrictions. Broader
+  source/modifier modes and independent acceptance remain open.
 - Implemented `V_ALIGNBYTE_B32` for checked unmodified sources in compute and
   integer graphics, with explicit large-count behavior and masked destination
   preservation. Independent semantic acceptance remains pending.

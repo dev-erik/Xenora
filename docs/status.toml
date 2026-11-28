@@ -2550,3 +2550,27 @@ gpu = "acceptance pending"
 recognized = true
 decoded = true
 llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_add_f32_e64"
+encoding = "VOP3; VGPR sources; canonical SRC2; all modifiers rejected"
+representation = "8 B; canonical existing FP32 operation"
+lowering = "MSL existing FP32 arithmetic; existing exact-compute and graphics contracts"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"
+
+[[instruction]]
+form = "v_mul_f32_e64"
+encoding = "VOP3; VGPR sources; canonical SRC2; all modifiers rejected"
+representation = "8 B; canonical existing FP32 operation"
+lowering = "MSL existing FP32 arithmetic; existing exact-compute and graphics contracts"
+reference = "implemented"
+cpu = "local known-answer test passed"
+gpu = "acceptance pending"
+recognized = true
+decoded = true
+llvm = "local exact encoding checks passed"

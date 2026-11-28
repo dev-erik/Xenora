@@ -228,3 +228,55 @@ fn translated_inline_compute_sources_match_literal_words() {
         }
     }
 }
+
+#[test]
+fn vop3_float_pixel_arithmetic() {
+    let gpu = NativeCompute::new().unwrap();
+    let ps = include_bytes!("../../../../fixtures/rdna2/vop3-float-ps.bin");
+    let old = include_bytes!("../../../../fixtures/rdna2/x9-pixel-arithmetic-ps.bin");
+    let vs = include_bytes!("../../../../fixtures/rdna2/x9-varying-vs.bin");
+    let pipeline = compile_graphics_pipeline(Architecture::Gfx1030, vs, ps).unwrap();
+    assert_eq!(
+        pipeline.shader.msl,
+        compile_graphics_pipeline(Architecture::Gfx1030, vs, old)
+            .unwrap()
+            .shader
+            .msl
+    );
+    for (color, expected) in [
+        ([0.5, 0.5, 0.5, 1.0], [128, 64, 191, 255]),
+        ([0.0, 0.0, 0.0, 1.0], [64, 0, 64, 255]),
+        ([1.0, 1.0, 0.25, 1.0], [191, 128, 128, 255]),
+    ] {
+        let colors = [color; 3];
+        let actual = gpu
+            .submit_view_binding_triangle_targets_with_uniforms_rgba8(
+                &[TriangleShader {
+                    source: &pipeline.shader.msl,
+                    entries: ENTRIES,
+                }],
+                &TriangleTargetsPass {
+                    draws: &[TriangleDraw {
+                        vertices: &POS,
+                        colors: &colors,
+                        viewport: [1, 1],
+                    }],
+                    states: &[TriangleState::default()],
+                    extent: [1, 1],
+                    clears: &[[7, 11, 13, 255]],
+                    clear_depth: None,
+                },
+                &[vec![]],
+                None,
+                &[None],
+                &[DrawUniforms {
+                    required_mask: pipeline.required_uniform_mask,
+                    values: None,
+                }],
+            )
+            .unwrap()
+            .wait()
+            .unwrap();
+        assert_eq!(actual, vec![expected.to_vec()]);
+    }
+}

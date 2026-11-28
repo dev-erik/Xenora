@@ -223,6 +223,8 @@ The wider LLVM operand matrix exercises decoding only. ABI means application bin
 | `v_perm_b32` | VOP3; three checked sources; modifiers rejected | 8 B or 12 B with shared literal | yes | yes | local exact encoding checks passed | MSL byte selection, sign expansion and constant selectors; compute and graphics | implemented | local known-answer test passed | acceptance pending |
 | `v_mov_b32_e64` | VOP3; checked source and canonical unused SRC1/SRC2; modifiers rejected | 8 B or 12 B with literal; canonical move IR/display | yes | yes | local exact encoding checks passed | MSL bit-preserving move; existing compute and graphics lowering | implemented | local known-answer test passed | acceptance pending |
 | `v_alignbyte_b32` | VOP3; three checked sources; modifiers rejected | 8 B or 12 B with shared literal | yes | yes | local exact encoding checks passed | MSL byte window over two words; five-bit count; compute and graphics | implemented | local known-answer test passed | acceptance pending |
+| `v_add_f32_e64` | VOP3; VGPR sources; canonical SRC2; all modifiers rejected | 8 B; canonical existing FP32 operation | yes | yes | local exact encoding checks passed | MSL existing FP32 arithmetic; existing exact-compute and graphics contracts | implemented | local known-answer test passed | acceptance pending |
+| `v_mul_f32_e64` | VOP3; VGPR sources; canonical SRC2; all modifiers rejected | 8 B; canonical existing FP32 operation | yes | yes | local exact encoding checks passed | MSL existing FP32 arithmetic; existing exact-compute and graphics contracts | implemented | local known-answer test passed | acceptance pending |
 <!-- status:instructions:end -->
 
 ## Automated three-way comparison

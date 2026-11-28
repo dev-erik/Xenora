@@ -1806,3 +1806,51 @@ cargo test --locked -p xenora-semantic-review --test alignbyte_b32 -- --include-
 cargo test --locked -p xenora-metal --features gpu-tests --test native_compute alignbyte_windows
 LLVM_BIN="$(brew --prefix llvm)/bin" cargo test --locked -p xenora-decoder --test alignbyte_b32 --test gfx1030 -- --include-ignored --nocapture
 ```
+
+
+## Stage 3.1 increment: VOP3 FP32 addition and multiplication
+
+28 November 2026. Added the VOP3 encodings of `V_ADD_F32` and `V_MUL_F32`
+(opcodes 259 and 264). The admitted subset has two VGPR sources, no modifiers,
+and canonical unused SRC2. Both encodings reuse the existing typed arithmetic
+operations and their compute/graphics lowering; the canonical display retains
+the e32 spelling while offsets and lengths retain the 8-byte encoding.
+
+This is execution support for a bounded operand subset, not generic opcode
+recognition. Scalar/literal inputs, input/output modifiers, rounding modes and
+broader floating-point behavior remain open. Compute preserves the existing
+requirement to prove exact positive-normal arithmetic: unknown runtime inputs
+are still rejected, and tests explicitly check that rejection for both encodings.
+Graphics preserves the existing floating-point stage contract.
+
+Local evidence:
+
+- The new regression failed before the opcode implementation.
+- Affected CPU suites: **941 passed, 0 failed, 73 ignored**; ignored tests are not
+  evidence of native execution.
+- **32 native compute cases**: two operations × four destination aliases × four
+  fixed positive-normal operands, with hand-specified exact answers.
+- **Three native graphics readbacks** from an original pixel shader performing
+  both operations on interpolated colors. Answers are fixed RGBA8 bytes; input
+  colors vary between draws. Both encodings produce identical MSL.
+- Decoder tests check each 9-bit source selector in both positions, destination
+  boundaries, truncation, canonical padding and unsupported modifiers. Two exact
+  LLVM rows passed. The original assembled compute fixture contributes to
+  **1,376 three-way instruction comparisons across 191 canonical IR mnemonics**.
+  The graphics fixture has interpolation that the compute reference does not
+  decode; its validation is assembly reproducibility and native graphics output.
+- All-feature Clippy passed. Both Metal validation layers were enabled for native
+  tests. Logs: `artifacts/s31-float-e64/`.
+
+Independent acceptance remains pending. S3.1 now has **170/480 decoded forms**
+with executable subsets, **310 undecoded**, and additional operand/numerical
+coverage debt. Neither the whole stage nor Xbox shader compatibility is complete.
+
+```sh
+export CARGO_BUILD_TARGET=aarch64-apple-darwin CARGO_BUILD_JOBS=2
+export MTL_DEBUG_LAYER=1 MTL_SHADER_VALIDATION=1
+export MTL_SHADER_VALIDATION_REPORT_TO_STDERR=1 MTL_SHADER_VALIDATION_ABORT_ON_FAULT=1
+cargo test --locked -p xenora-semantic-review --test float_e64 -- --include-ignored
+cargo test --locked -p xenora-metal --features gpu-tests --test native_compute vop3_float_pixel_arithmetic
+LLVM_BIN="$(brew --prefix llvm)/bin" cargo test --locked -p xenora-decoder --test float_e64 --test gfx1030 -- --include-ignored --nocapture
+```

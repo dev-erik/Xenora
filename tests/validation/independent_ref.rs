@@ -2081,6 +2081,29 @@ fn decode_one(code: &[u8], offset: usize) -> Result<(Insn, usize), String> {
         };
         return Ok((instruction, length));
     }
+    if matches!(first >> 16, 0xd503 | 0xd508) {
+        let second = word(code, offset + 4)?;
+        let a = second % 512;
+        let b = (second / 512) % 512;
+        if first & 0xff00 != 0
+            || second / (1 << 27) != 0
+            || (second / (1 << 18)) % 512 != 128
+            || a < 256
+            || b < 256
+        {
+            return Err(fail(
+                "floating VOP3 requires unmodified VGPR inputs and canonical padding",
+            ));
+        }
+        return Ok((
+            if first >> 16 == 0xd503 {
+                Insn::VAddF(first as u8, a as u8, b as u8)
+            } else {
+                Insn::VMulF(first as u8, a as u8, b as u8)
+            },
+            8,
+        ));
+    }
     if matches!(first >> 25, 3 | 8) {
         if first & 0x100 == 0 {
             return Err(fail("floating VOP2 requires VGPR SRC0"));
